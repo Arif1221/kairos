@@ -85,6 +85,6 @@ PlayerApp      AppContainer: hand-written dependency wiring
   ```
 
 ## Getting the APK from GitHub
-**Releases (recommended):** open the repo's **Releases** page and download `app-online-release.apk` (Kairos Online) or `app-play-release.apk` (offline Kairos). A release is made automatically when a `v*` tag is pushed.
+**Releases (recommended):** open the repo's **Releases** page and download `app-online-release.apk` (Kairos Online) or `app-play-release.apk` (offline Kairos). A release is made automatically when `versionName` in `app/build.gradle.kts` changes on `main` (or when a `v*` tag is pushed).
 
 **Every push:** `.github/workflows/build.yml` builds both flavors. Open **Actions**, pick the run, and download `kairos-online-apk` or `kairos-play-apk` under Artifacts (zips). Both are R8-optimised and signed with the fixed sideload key, so newer builds install over older ones.
