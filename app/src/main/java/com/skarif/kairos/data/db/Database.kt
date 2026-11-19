@@ -155,7 +155,10 @@ abstract class PlaylistDao {
 @Dao
 interface PlayEventDao {
     @Insert
-    suspend fun insert(e: PlayEventEntity)
+    suspend fun insert(e: PlayEventEntity): Long
+
+    @androidx.room.Update
+    suspend fun update(e: PlayEventEntity)
 
     @Query("SELECT * FROM play_events ORDER BY startedAt")
     fun observeAll(): Flow<List<PlayEventEntity>>

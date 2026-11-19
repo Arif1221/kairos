@@ -99,7 +99,7 @@ class MainActivity : ComponentActivity() {
 private val TABS = listOf("home", "library", "stats", "search")
 
 /** Screens whose top edge is dark in every theme. */
-private val DARK_TOP = setOf("library", "stats", "now", "collection/{key}")
+private val DARK_TOP = setOf("library", "now", "collection/{key}")
 
 /** Player screens and sheets rise from the bottom, like the design's sheets. */
 private val sheetEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
@@ -133,7 +133,7 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
         val view = LocalView.current
         val darkUi = P.colors.dark
         val darkTop = darkUi || route in DARK_TOP
-        val darkBottom = darkUi || route == "stats"
+        val darkBottom = darkUi
         if (!view.isInEditMode) {
             SideEffect {
                 val window = (view.context as Activity).window

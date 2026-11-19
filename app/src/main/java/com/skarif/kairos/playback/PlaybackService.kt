@@ -56,6 +56,10 @@ class PlaybackService : MediaSessionService() {
     private var playingSince = 0L
     private var listenedMs = 0L
     private var songStartedAt = 0L
+    /** Row id of the current song's play event once saved, so later saves update the same row. */
+    private var eventRow = EventRow()
+    private val saveLock = kotlinx.coroutines.sync.Mutex()
+    private var tickJob: kotlinx.coroutines.Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -141,10 +145,17 @@ class PlaybackService : MediaSessionService() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             val now = System.currentTimeMillis()
-            if (isPlaying) playingSince = now
-            else if (playingSince > 0) {
-                listenedMs += now - playingSince
-                playingSince = 0
+            if (isPlaying) {
+                playingSince = now
+                tickJob?.cancel()
+                tickJob = scope.launch { while (true) { kotlinx.coroutines.delay(15_000); saveListening() } }
+            } else {
+                tickJob?.cancel()
+                if (playingSince > 0) {
+                    listenedMs += now - playingSince
+                    playingSince = 0
+                }
+                saveListening()
             }
         }
     }
@@ -201,13 +212,28 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private fun recordListening() {
+    /**
+     * Saves the current song's listening time. Called every 15 s while playing, on pause, and
+     * when the song changes, so Stats update live and nothing is lost if the app is killed.
+     */
+    private fun saveListening() {
         val id = currentSongId ?: return
         val total = listenedMs + if (playingSince > 0) System.currentTimeMillis() - playingSince else 0
         if (total < 5_000) return
         val duration = session?.player?.duration?.takeIf { it > 0 } ?: Long.MAX_VALUE
-        val event = PlayEventEntity(songId = id, startedAt = songStartedAt, listenedMs = total, completed = total >= duration * 0.9)
-        container.scope.launch { container.db.playEvents().insert(event) }
+        val row = eventRow
+        val startedAt = songStartedAt
+        container.scope.launch(Dispatchers.IO) { saveLock.lock(); try {
+            val dao = container.db.playEvents()
+            val e = PlayEventEntity(id = row.id, songId = id, startedAt = startedAt, listenedMs = total, completed = total >= duration * 0.9)
+            if (row.id == 0L) row.id = dao.insert(e) else dao.update(e)
+        } finally { saveLock.unlock() } }
+    }
+
+    /** Final save for the song that is ending; the next song starts a new row. */
+    private fun recordListening() {
+        saveListening()
+        eventRow = EventRow()
         listenedMs = 0
         playingSince = 0
     }
@@ -218,4 +244,9 @@ class PlaybackService : MediaSessionService() {
         const val EXTRA_NEEDS_RESTART = "needs_restart"
         val isBitPerfectPossible: Boolean get() = Build.VERSION.SDK_INT >= 34
     }
+}
+
+/** Row id of a song's play event once saved, so later saves update the same row. */
+private class EventRow {
+    var id = 0L
 }

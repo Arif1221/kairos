@@ -74,6 +74,12 @@ data class StatsUi(
     val bars: List<StatBar> = emptyList(),
     val top: List<TopSong> = emptyList(),
     val streakDays: Int = 0,
+    val uniqueSongs: Int = 0,
+    val avgPerDayMs: Long = 0,
+    val completedPct: Int = 0,
+    /** e.g. "9 PM", the hour you most often start listening. */
+    val peakHour: String = "",
+    val topArtists: List<Pair<String, Long>> = emptyList(),
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -313,7 +319,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         var streak = 0
         var d = if (today in days) today else today.minusDays(1)
         while (d in days) { streak++; d = d.minusDays(1) }
-        return StatsUi(total, inRange.size, change, bars, top, streak)
+        val spanDays = when (range) {
+            StatsRange.ALL -> (days.minOrNull()?.let { java.time.temporal.ChronoUnit.DAYS.between(it, today) + 1 } ?: 1L)
+            else -> java.time.temporal.ChronoUnit.DAYS.between(from, today) + 1
+        }.coerceAtLeast(1L)
+        val peak = inRange.groupingBy { Instant.ofEpochMilli(it.startedAt).atZone(zone).hour }.eachCount().maxByOrNull { it.value }?.key
+        val peakHour = peak?.let { h -> java.time.LocalTime.of(h, 0).format(java.time.format.DateTimeFormatter.ofPattern("h a", loc)) } ?: ""
+        val artistTime = HashMap<String, Pair<String, Long>>()
+        inRange.forEach { e ->
+            byId[e.songId]?.let { s ->
+                splitArtists(s.artist).forEach { a ->
+                    val k = a.lowercase()
+                    artistTime[k] = a to ((artistTime[k]?.second ?: 0L) + e.listenedMs)
+                }
+            }
+        }
+        return StatsUi(
+            total, inRange.size, change, bars, top, streak,
+            uniqueSongs = inRange.mapTo(HashSet()) { it.songId }.size,
+            avgPerDayMs = total / spanDays,
+            completedPct = if (inRange.isEmpty()) 0 else inRange.count { it.completed } * 100 / inRange.size,
+            peakHour = peakHour,
+            topArtists = artistTime.values.sortedByDescending { it.second }.take(5),
+        )
     }
 
     fun setStatsRange(r: StatsRange) { _statsRange.value = r; _selectedBar.value = -1 }
