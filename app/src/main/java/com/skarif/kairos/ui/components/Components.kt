@@ -194,6 +194,23 @@ fun Card(modifier: Modifier = Modifier, color: Color = P.colors.card, content: @
  */
 @Composable
 fun ScreenBackground(art: Bitmap?, blur: Boolean, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+    if (LocalBackdrop.current) {
+        // The app draws one shared backdrop behind every page; pages only draw their content.
+        Box(modifier.fillMaxSize(), content = content)
+    } else {
+        Box(modifier.fillMaxSize()) {
+            Backdrop(art, blur)
+            content()
+        }
+    }
+}
+
+/** True where a shared [Backdrop] is already drawn behind the page. */
+val LocalBackdrop = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/** Theme colour, the blurred cover and the dot grid: the app's background. */
+@Composable
+fun Backdrop(art: Bitmap?, blur: Boolean, modifier: Modifier = Modifier) {
     val c = P.colors
     Box(modifier.fillMaxSize().background(c.bg)) {
         if (blur && art != null) {
@@ -227,7 +244,6 @@ fun ScreenBackground(art: Bitmap?, blur: Boolean, modifier: Modifier = Modifier,
                 onDrawBehind { drawPath(dots, Color(0x337F7F7F)) }
             },
         )
-        content()
     }
 }
 

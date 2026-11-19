@@ -76,6 +76,11 @@ import com.skarif.kairos.ui.screens.hasAudioPermission
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.PlayerTheme
 import kotlinx.coroutines.runBlocking
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.unit.sp
+import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
@@ -155,8 +160,39 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
             }
         }
 
-        CompositionLocalProvider(LocalPlayer provides player) {
+        // Shown once after a crash, so the report can be copied and sent.
+        var crash by remember { mutableStateOf(java.io.File(context.filesDir, PlayerApp.CRASH_FILE).takeIf { it.exists() }?.readText()) }
+        crash?.let { text ->
+            val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { java.io.File(context.filesDir, PlayerApp.CRASH_FILE).delete(); crash = null },
+                containerColor = P.colors.sheet,
+                title = { Text("Kairos stopped last time", color = P.colors.text) },
+                text = {
+                    Text(
+                        text.take(1800), color = P.colors.muted,
+                        style = androidx.compose.ui.text.TextStyle(fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                        modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                    )
+                },
+                confirmButton = {
+                    androidx.compose.material3.TextButton({
+                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(text))
+                        java.io.File(context.filesDir, PlayerApp.CRASH_FILE).delete(); crash = null
+                    }) { Text("Copy report", color = P.colors.text) }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton({ java.io.File(context.filesDir, PlayerApp.CRASH_FILE).delete(); crash = null }) { Text("Close", color = P.colors.muted) }
+                },
+            )
+        }
+
+        CompositionLocalProvider(LocalPlayer provides player, com.skarif.kairos.ui.components.LocalBackdrop provides true) {
         Box(Modifier.fillMaxSize()) {
+            // One shared background behind every page: pages slide over it instead of each
+            // drawing (and blurring) its own copy, which is what made transitions heavy.
+            val backArt by vm.artwork.collectAsStateWithLifecycle()
+            com.skarif.kairos.ui.components.Backdrop(backArt, settings.blurBackground)
             NavHost(
                 nav, startDestination = start,
                 // Push: the new page slides in from the right, the old one drifts left and fades.

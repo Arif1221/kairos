@@ -165,7 +165,7 @@ private fun Modifier.placeAt(rect: () -> Rect): Modifier = layout { measurable, 
     layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(r.left.roundToInt(), r.top.roundToInt()) }
 }
 
-private fun mix(a: Float, b: Float, t: Float) = a + (b - a) * t
+private fun mix(a: Float, b: Float, t: Float) = a + (b - a) * t.coerceIn(0f, 1f)
 
 /**
  * The player layer. Sits above every page; [miniBottomPx] is how far above the screen's bottom
@@ -252,22 +252,34 @@ fun PlayerSheet(
             val full = pageRect.value.let { r ->
                 if (ctrl.page == PlayerPage.MAIN) r.translate(0f, -ctrl.mainScroll.value.toFloat()) else r
             }
-            return lerp(mini, full, p)
+            return lerp(mini, full, p.coerceIn(0f, 1f))
         }
 
         val miniBg = if (c.dark) Color(0xF0262626) else Color(0xF5FFFFFF)
 
-        // 1. The surface: a floating card when collapsed, the whole screen when open.
+        // 1. The surface: a floating card when collapsed, the whole screen when open. It is drawn
+        // full size and clipped to the sheet's shape, so the blurred backdrop inside is drawn once
+        // and only the clip moves: no re-render of the blur while the sheet grows.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val p = ctrl.progress.value
+                    // A new shape each frame moves the clip; the content underneath is not redrawn.
+                    shape = SheetShape(sheetRect(p), mix(30f, 0f, p).coerceAtLeast(0f).dp.toPx())
+                    clip = true
+                    shadowElevation = mix(10f, 0f, p).dp.toPx()
+                },
+        ) {
+            Box(Modifier.fillMaxSize().drawBehind { drawRect(lerp(miniBg, c.bg, ctrl.progress.value)) })
+            if (open) {
+                com.skarif.kairos.ui.components.Backdrop(art, settings.blurBackground, Modifier.graphicsLayer { alpha = ctrl.progress.value })
+            }
+        }
+        // Touch area and mini content, sized to the sheet.
         Box(
             Modifier
                 .placeAt { sheetRect(ctrl.progress.value) }
-                .graphicsLayer {
-                    val p = ctrl.progress.value
-                    shape = RoundedCornerShape(mix(30f, 0f, p).dp)
-                    clip = true
-                    shadowElevation = mix(10f, 0f, p).dp.toPx()
-                }
-                .drawBehind { drawRect(lerp(miniBg, c.bg, ctrl.progress.value)) }
                 .draggable(
                     rememberDraggableState { ctrl.dragBy(it) },
                     Orientation.Vertical,
@@ -279,11 +291,6 @@ fun PlayerSheet(
                     interactionSource = null, indication = null,
                 ) { ctrl.expand() },
         ) {
-            if (open) {
-                Box(Modifier.fillMaxSize().graphicsLayer { alpha = ctrl.progress.value }) {
-                    ScreenBackground(art, settings.blurBackground) {}
-                }
-            }
             MiniContent(vm, ctrl, s.title, s.artist, now.isPlaying, now.durationMs.takeIf { it > 0 } ?: s.durationMs)
         }
 
@@ -298,8 +305,9 @@ fun PlayerSheet(
                         val p = ctrl.progress.value
                         val corners = pageRadius.value
                         val miniR = 16.dp.toPx()
-                        val top = mix(miniR, corners.x, p)
-                        val bottom = mix(miniR, corners.y, p)
+                        // Springs can overshoot a little; a corner radius must never go below zero.
+                        val top = mix(miniR, corners.x, p).coerceAtLeast(0f)
+                        val bottom = mix(miniR, corners.y, p).coerceAtLeast(0f)
                         shape = RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
                         clip = true
                         translationX = if (offset == 0) ctrl.skipX.value else ctrl.skipX.value + offset * size.width
@@ -425,4 +433,13 @@ private fun MiniContent(vm: MainViewModel, ctrl: PlayerController, title: String
             CircleButton(Ic.Next, "Next song", vm::next, size = 42.dp, container = Color.Transparent)
         }
     }
+}
+
+/** A rounded rectangle at a given position inside the layer: the player's clip. */
+private data class SheetShape(val rect: Rect, val radius: Float) : androidx.compose.ui.graphics.Shape {
+    override fun createOutline(
+        size: androidx.compose.ui.geometry.Size,
+        layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+        density: androidx.compose.ui.unit.Density,
+    ) = androidx.compose.ui.graphics.Outline.Rounded(androidx.compose.ui.geometry.RoundRect(rect, androidx.compose.ui.geometry.CornerRadius(radius)))
 }

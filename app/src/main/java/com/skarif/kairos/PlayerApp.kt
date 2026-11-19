@@ -18,7 +18,24 @@ class PlayerApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Keep the last crash's stack trace so the app can show it on the next launch;
+        // there is no other way to see it on a phone without a computer.
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching {
+                java.io.File(filesDir, CRASH_FILE).writeText(
+                    "Kairos ${packageManager.getPackageInfo(packageName, 0).versionName}\n" +
+                        "Android ${android.os.Build.VERSION.RELEASE}, ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n\n" +
+                        android.util.Log.getStackTraceString(error),
+                )
+            }
+            previous?.uncaughtException(thread, error)
+        }
         container = AppContainer(this)
+    }
+
+    companion object {
+        const val CRASH_FILE = "last_crash.txt"
     }
 }
 

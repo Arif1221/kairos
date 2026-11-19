@@ -16,8 +16,8 @@ object Motion {
     val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
     val EmphasizedAccelerate = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
 
-    /** Large surfaces: the player opening and closing, pages arriving. Barely any overshoot. */
-    fun <T> sheet() = spring<T>(dampingRatio = 0.9f, stiffness = 360f)
+    /** Large surfaces: the player opening and closing, pages arriving. No overshoot. */
+    fun <T> sheet() = spring<T>(dampingRatio = 1f, stiffness = 380f)
 
     /** Cards, covers and other mid-size elements moving into place. */
     fun <T> spatial() = spring<T>(dampingRatio = 0.85f, stiffness = 500f)
