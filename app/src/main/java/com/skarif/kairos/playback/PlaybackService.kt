@@ -29,6 +29,8 @@ import com.skarif.kairos.data.LyricsRepository
 import com.skarif.kairos.data.OutputMode
 import com.skarif.kairos.data.ReplayGainMode
 import com.skarif.kairos.data.Settings
+import com.skarif.kairos.data.StreamQuality
+import android.net.ConnectivityManager
 import com.skarif.kairos.data.db.PlayEventEntity
 import com.skarif.kairos.online.Flavor
 import kotlinx.coroutines.CoroutineScope
@@ -74,7 +76,9 @@ class PlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true) // pause when headphones are unplugged
             // Online flavor: a data source that also understands streamed songs' Uris.
-            .apply { Flavor.online?.let { setMediaSourceFactory(DefaultMediaSourceFactory(it.dataSourceFactory(this@PlaybackService))) } }
+            .apply {
+                Flavor.online?.let { setMediaSourceFactory(DefaultMediaSourceFactory(it.dataSourceFactory(this@PlaybackService, ::streamQuality))) }
+            }
             // Streams need the network to stay up while the screen is off.
             .setWakeMode(if (Flavor.online != null) C.WAKE_MODE_NETWORK else C.WAKE_MODE_LOCAL)
             .build()
@@ -191,6 +195,13 @@ class PlaybackService : MediaSessionService() {
                 putBoolean(EXTRA_NEEDS_RESTART, needsRestart())
             })
         }
+    }
+
+    /** The streaming tier for the next online song: data saver on mobile data if the user wants it. */
+    private fun streamQuality(): StreamQuality {
+        val s = container.settings.settings.value
+        val metered = getSystemService(ConnectivityManager::class.java)?.isActiveNetworkMetered == true
+        return if (s.dataSaverOnMobile && metered) StreamQuality.LOW else s.streamQuality
     }
 
     /** Float output is chosen when the player is built; changing the mode needs a new player. */

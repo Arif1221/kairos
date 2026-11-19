@@ -3,7 +3,11 @@ package com.skarif.kairos.online
 import android.content.Context
 import android.net.Uri
 import androidx.media3.datasource.DataSource
+import com.skarif.kairos.data.StreamQuality
 import com.skarif.kairos.data.db.SongEntity
+
+/** What to search: YouTube Music songs, or any YouTube video (played audio-only). */
+enum class OnlineKind(val label: String) { SONGS("Songs"), VIDEOS("Videos") }
 
 /**
  * A streaming source, present only in the "online" build flavor.
@@ -17,11 +21,14 @@ interface OnlineMusic {
     val name: String
 
     /** Songs matching [query]. Throws on network errors. */
-    suspend fun search(query: String): List<SongEntity>
+    suspend fun search(query: String, kind: OnlineKind = OnlineKind.SONGS): List<SongEntity>
 
     /** The Uri handed to the player; [dataSourceFactory] turns it into a real stream. */
     fun mediaUri(song: SongEntity): Uri
 
-    /** Plays both local files and this source's Uris. */
-    fun dataSourceFactory(context: Context): DataSource.Factory
+    /**
+     * Plays both local files and this source's Uris. [quality] is asked each time a stream is
+     * opened, so a settings or network change applies from the next song.
+     */
+    fun dataSourceFactory(context: Context, quality: () -> StreamQuality): DataSource.Factory
 }

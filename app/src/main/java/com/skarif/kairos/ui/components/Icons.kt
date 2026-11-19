@@ -55,6 +55,7 @@ object Ic {
     val RepeatOne by lazy { stroke("repeat1", "M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3M11 10l1.5-1v6") }
     val Search by lazy { stroke("search", "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4") }
     val Menu by lazy { stroke("menu", "M6 10h12M6 14h12") }
+    val Discover by lazy { stroke("discover", "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM15.5 8.5l-2 5-5 2 2-5z") }
     val Stats by lazy { stroke("stats", "M5 20v-8M12 20V4M19 20v-5") }
     val Library by lazy { stroke("library", "M5 4v16M10 4v16M14.5 4.5l5 15") }
     val Up by lazy { stroke("up", "M12 19V5M5 12l7-7 7 7") }

@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.LyricsPreference
 import com.skarif.kairos.data.OutputMode
 import com.skarif.kairos.data.ReplayGainMode
+import com.skarif.kairos.data.StreamQuality
 import com.skarif.kairos.data.ThemeMode
 import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.ScanState
@@ -172,6 +173,24 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 Segmented(listOf("Off", "Track", "Album"), s.replayGain.ordinal, { i ->
                     vm.updateSettings { it.copy(replayGain = ReplayGainMode.entries[i]) }
                 })
+            }
+
+            vm.onlineName?.let { source ->
+                Card {
+                    Text("Streaming", style = T.h2, color = c.text)
+                    Text("$source songs and videos play as audio only.", style = T.small, color = c.muted)
+                    Segmented(StreamQuality.entries.map { it.label }, s.streamQuality.ordinal, { i ->
+                        vm.updateSettings { it.copy(streamQuality = StreamQuality.entries[i]) }
+                    })
+                    Text(
+                        "About ${s.streamQuality.kbps} kbps, roughly ${"%.1f".format(s.streamQuality.kbps * 60 / 8 / 1000.0)} MB a minute. Applies from the next song.",
+                        style = T.small, color = c.muted,
+                    )
+                    ToggleRow(
+                        "Data saver on mobile data", s.dataSaverOnMobile, { v -> vm.updateSettings { it.copy(dataSaverOnMobile = v) } },
+                        "Uses ${StreamQuality.LOW.label} quality when you're not on Wi-Fi",
+                    )
+                }
             }
 
             Pill("Music folders", onFolders, icon = Ic.Folder, big = true, modifier = Modifier.fillMaxWidth())

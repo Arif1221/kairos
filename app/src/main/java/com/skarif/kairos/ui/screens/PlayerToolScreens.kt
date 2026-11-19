@@ -392,7 +392,7 @@ fun MenuDrawer(vm: MainViewModel, onClose: () -> Unit, onNavigate: (String) -> U
         Triple("Search", "search", Ic.Search), Triple("Statistics", "stats", Ic.Stats), Triple("Queue", "queue", Ic.Queue),
         Triple("Equalizer", "eq", Ic.Sliders), Triple(if (sleep.active) "Sleep timer (on)" else "Sleep timer", "sleep", Ic.Clock),
         Triple("Music folders", "folders", Ic.Folder), Triple("Settings", "settings", Ic.Settings),
-    )
+    ).let { base -> if (vm.onlineName != null) listOf(Triple("Discover", "discover", Ic.Discover)) + base else base }
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().background(Color(0x61000000)).clickable(onClickLabel = "Close menu", onClick = onClose))
         Column(

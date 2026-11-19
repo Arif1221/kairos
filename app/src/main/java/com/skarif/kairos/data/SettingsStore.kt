@@ -27,6 +27,9 @@ enum class ThemeMode { LIGHT, DARK, SYSTEM }
 enum class OutputMode { STANDARD, HI_RES, BIT_PERFECT }
 enum class LyricsPreference { EMBEDDED, LRC_FILE }
 enum class ReplayGainMode { OFF, TRACK, ALBUM }
+/** Streaming quality for the online source. [kbps] is what YouTube typically serves at that tier. */
+enum class StreamQuality(val label: String, val kbps: Int) { LOW("Data saver", 50), NORMAL("Normal", 128), HIGH("High", 160) }
+
 enum class SongSort(val label: String) {
     TITLE("Title"), ARTIST("Artist"), ALBUM("Album"), DATE_ADDED("Date added"), LENGTH("Length"), MOST_PLAYED("Most played")
 }
@@ -54,6 +57,10 @@ data class Settings(
     val onboarded: Boolean = false,
     val songSort: SongSort = SongSort.TITLE,
     val sortDescending: Boolean = false,
+    /** Online flavor only. */
+    val streamQuality: StreamQuality = StreamQuality.HIGH,
+    /** Online flavor only: use [StreamQuality.LOW] on metered (mobile) networks. */
+    val dataSaverOnMobile: Boolean = true,
 ) {
     val minDurationMs: Long get() = if (skipShortFiles) 30_000L else 0L
 }
@@ -84,6 +91,8 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
         val onboarded = booleanPreferencesKey("onboarded")
         val sort = stringPreferencesKey("song_sort")
         val sortDesc = booleanPreferencesKey("sort_desc")
+        val streamQuality = stringPreferencesKey("stream_quality")
+        val dataSaver = booleanPreferencesKey("data_saver_mobile")
     }
 
     val settings: StateFlow<Settings> = ds.data
@@ -120,6 +129,8 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
             onboarded = p[K.onboarded] ?: d.onboarded,
             songSort = enumOr(p[K.sort], d.songSort),
             sortDescending = p[K.sortDesc] ?: d.sortDescending,
+            streamQuality = enumOr(p[K.streamQuality], d.streamQuality),
+            dataSaverOnMobile = p[K.dataSaver] ?: d.dataSaverOnMobile,
         )
     }
 
@@ -144,6 +155,8 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
         p[K.onboarded] = s.onboarded
         p[K.sort] = s.songSort.name
         p[K.sortDesc] = s.sortDescending
+        p[K.streamQuality] = s.streamQuality.name
+        p[K.dataSaver] = s.dataSaverOnMobile
     }
 
     private inline fun <reified E : Enum<E>> enumOr(name: String?, default: E): E =

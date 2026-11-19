@@ -55,6 +55,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.db.SongEntity
 import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.OnlineSearch
+import com.skarif.kairos.online.OnlineKind
 import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.Pill
@@ -95,6 +96,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
     val q by vm.query.collectAsStateWithLifecycle()
     val results by vm.searchResults.collectAsStateWithLifecycle()
     val online by vm.onlineResults.collectAsStateWithLifecycle()
+    val onlineKind by vm.onlineKind.collectAsStateWithLifecycle()
     val songs by vm.songs.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
@@ -144,7 +146,13 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                             is OnlineSearch.Failed -> o.message
                             is OnlineSearch.Ready -> if (o.songs.isEmpty()) "Nothing on ${vm.onlineName}." else "From ${vm.onlineName}"
                         }
-                        Text(status, style = T.small, color = c.muted, modifier = Modifier.padding(top = 12.dp))
+                        Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Videos are played audio-only, like songs.
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OnlineKind.entries.forEach { k -> Pill(k.label, { vm.setOnlineKind(k) }, selected = onlineKind == k) }
+                            }
+                            Text(status, style = T.small, color = c.muted)
+                        }
                     }
                     val streamed = (online as? OnlineSearch.Ready)?.songs.orEmpty()
                     items(streamed, key = { "o${it.id}" }, span = { GridItemSpan(2) }) { s ->

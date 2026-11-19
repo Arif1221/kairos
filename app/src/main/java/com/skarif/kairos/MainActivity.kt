@@ -62,6 +62,7 @@ import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.LocalSharedScope
 import com.skarif.kairos.ui.components.ProvideNavScope
 import com.skarif.kairos.ui.screens.CollectionScreen
+import com.skarif.kairos.ui.screens.DiscoverScreen
 import com.skarif.kairos.ui.screens.EqualizerScreen
 import com.skarif.kairos.ui.screens.FoldersScreen
 import com.skarif.kairos.ui.screens.HomeScreen
@@ -96,7 +97,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private val TABS = listOf("home", "library", "stats", "search")
+private val TABS = listOf("home", "library", "stats", "search", "discover")
 
 /** Screens whose top edge is dark in every theme. */
 private val DARK_TOP = setOf("library", "now", "collection/{key}")
@@ -174,6 +175,9 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 screen("search", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
                     SearchScreen(vm, onMenu = openMenu, onOpenCollection = ::openCollection, onOpenNowPlaying = { nav.navigate("now") })
                 }
+                screen("discover", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
+                    DiscoverScreen(vm, onMenu = openMenu, onOpenNowPlaying = { nav.navigate("now") })
+                }
                 screen("now", enterTransition = sheetEnter, popExitTransition = sheetExit) {
                     NowPlayingScreen(
                         vm, onBack = { nav.popBackStack() }, onLyrics = { nav.navigate("lyrics") }, onQueue = { nav.navigate("queue") },
@@ -230,7 +234,7 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         MiniPlayer(vm, onOpen = { nav.navigate("now") })
-                        Dock(route = route, onTab = { nav.tab(it) }, onNow = { nav.navigate("now") })
+                        Dock(route = route, online = vm.onlineName != null, onTab = { nav.tab(it) }, onNow = { nav.navigate("now") })
                     }
                 }
             }
@@ -271,7 +275,7 @@ private fun NavHostController.tab(route: String) = navigate(route) {
 
 /** Design reference: the frosted circle dock with the coloured centre button. */
 @Composable
-private fun Dock(route: String?, onTab: (String) -> Unit, onNow: () -> Unit, modifier: Modifier = Modifier) {
+private fun Dock(route: String?, online: Boolean, onTab: (String) -> Unit, onNow: () -> Unit, modifier: Modifier = Modifier) {
     val c = P.colors
     val idle = if (c.dark) Color(0x1FFFFFFF) else Color(0xB3FFFFFF)
     val dockBg = if (c.dark) Color(0xD93C3C3A) else Color(0xCCC4C7BE)
@@ -290,9 +294,10 @@ private fun Dock(route: String?, onTab: (String) -> Unit, onNow: () -> Unit, mod
             )
         }
         tab("home", Ic.Home, "Home")
-        tab("library", Ic.Library, "Library")
+        // Online build: Discover takes Stats' place (Stats stays in the menu); six buttons don't fit narrow phones.
+        if (online) tab("discover", Ic.Discover, "Discover") else tab("library", Ic.Library, "Library")
         CircleButton(Ic.Play, "Now playing", onNow, size = 60.dp, container = c.accent, content = c.onAccent, iconSize = 22.dp)
-        tab("stats", Ic.Stats, "Statistics")
+        if (online) tab("library", Ic.Library, "Library") else tab("stats", Ic.Stats, "Statistics")
         tab("search", Ic.Search, "Search")
     }
 }
