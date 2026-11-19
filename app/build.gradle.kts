@@ -17,13 +17,22 @@ android {
         versionName = "0.6.0"
     }
 
+    signingConfigs {
+        // One fixed key, so every CI build installs over the previous one. A fresh debug key
+        // per CI run made Android refuse updates. Sideload-only; use a private upload key for Play.
+        create("kairos") {
+            storeFile = file("kairos-release.jks")
+            storePassword = "REMOVED"
+            keyAlias = "kairos"
+            keyPassword = "REMOVED"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            // Signed with the debug key so the optimised build installs directly.
-            // Before publishing on the Play Store, replace this with a real upload key.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("kairos")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
