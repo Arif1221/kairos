@@ -29,9 +29,16 @@ jobs:
         with:
           name: kairos-online-apk
           path: app/build/outputs/apk/online/release/*.apk
-      # Tag a commit "v1.2.3" to publish the online APK as a GitHub Release.
-      - name: Publish online APK to GitHub Releases
+      # Tag a commit "v1.2.3" to publish both APKs as a GitHub Release.
+      - name: Publish APKs to GitHub Releases
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/online/release/*.apk
+          generate_release_notes: true
+          body: |
+            **Which APK?**
+            - `app-online-release.apk`: Kairos Online. Your music plus YouTube Music and YouTube (audio only). Installs next to Kairos.
+            - `app-play-release.apk`: Kairos. Offline only, the same build that goes to the Play Store.
+          files: |
+            app/build/outputs/apk/online/release/*.apk
+            app/build/outputs/apk/play/release/*.apk

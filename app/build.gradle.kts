@@ -13,8 +13,8 @@ android {
         applicationId = "com.skarif.kairos"
         minSdk = 28 // DynamicsProcessing (10-band EQ) needs Android 9
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.6.4"
+        versionCode = 15
+        versionName = "0.7.0"
     }
 
     signingConfigs {

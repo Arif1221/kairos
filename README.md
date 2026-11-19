@@ -35,9 +35,16 @@ Home mixes, Stats, Playlists + New playlist, Queue, Equalizer screen, Sleep time
 | `play` | `assemblePlayRelease` | Offline player. No internet permission, no YouTube code in the APK. | Play Store |
 | `online` | `assembleOnlineRelease` | Same app plus YouTube Music search and streaming. Installs next to the play build (`com.skarif.kairos.online`). | GitHub Releases (tag `v*`) |
 
+Online build features:
+- **Discover** tab (replaces Stats in the dock; Stats is in the menu): "More from" shelves for your most played artists, trending, new releases and mood chips (Bollywood, Lo-fi, Punjabi...).
+- **Search** shows YouTube results under your own songs, with a **Songs / Videos** switch. Videos play as **audio only**; video streams are never downloaded. Shorts are skipped.
+- **Settings > Streaming**: Data saver (~50 kbps), Normal (~128 kbps) or High (~160 kbps Opus), plus "Data saver on mobile data" (default on). Applies from the next song.
+- Online songs can be favourited, added to playlists, queued, and count in Stats. No lyrics or ReplayGain for them (no file to read).
+
 How it is wired:
 - `main/.../online/OnlineMusic.kt` is the only thing shared code knows about. `Flavor.online` is `null` in `src/play` and `YouTubeMusic` in `src/online`.
 - Online songs are normal `songs` rows with a **negative id** and `volume = "online"`, so favourites, playlists, stats and the queue need no special cases. They are saved only once played, favourited or added to a playlist, and never appear in the Library.
+- Quality is read each time a stream opens (`dataSourceFactory(context, quality)`), so the setting and Wi-Fi/mobile changes apply from the next song. Resolved URLs are cached per song and quality for 3 hours.
 - Stream URLs expire, so the player gets `kairos-yt:<videoId>` and a `ResolvingDataSource` swaps in a fresh URL when the song is opened.
 - YouTube access goes through [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) (unofficial). When streaming breaks, bump `newpipeExtractor` in `gradle/libs.versions.toml` first.
 
@@ -78,5 +85,6 @@ PlayerApp      AppContainer: hand-written dependency wiring
   ```
 
 ## Getting the APK from GitHub
-Every push runs `.github/workflows/build.yml`. Open the repo's **Actions** tab, select the latest
-run, and download **kairos-apk** under Artifacts. It is a zip containing `app-release.apk` (optimised with R8, signed with the debug key).
+**Releases (recommended):** open the repo's **Releases** page and download `app-online-release.apk` (Kairos Online) or `app-play-release.apk` (offline Kairos). A release is made automatically when a `v*` tag is pushed.
+
+**Every push:** `.github/workflows/build.yml` builds both flavors. Open **Actions**, pick the run, and download `kairos-online-apk` or `kairos-play-apk` under Artifacts (zips). Both are R8-optimised and signed with the fixed sideload key, so newer builds install over older ones.
