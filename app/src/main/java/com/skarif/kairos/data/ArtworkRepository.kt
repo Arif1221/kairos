@@ -22,7 +22,7 @@ class ArtworkRepository(private val context: Context) {
     private val bitmaps = object : LruCache<String, Bitmap>(32 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
-    private val colors = LruCache<Long, AlbumColors>(200)
+    private val colors = LruCache<String, AlbumColors>(400)
 
     suspend fun load(song: SongEntity, sizePx: Int = 720): Bitmap? = withContext(Dispatchers.IO) {
         // Songs on one album share art, so cache per album: far fewer decodes in long lists.
@@ -45,11 +45,12 @@ class ArtworkRepository(private val context: Context) {
         bmp?.also { bitmaps.put(key, it) }
     }
 
-    /** Palette-API colour extraction, the same idea as the design's dynamic colour. */
-    suspend fun colorsFor(songId: Long, bitmap: Bitmap): AlbumColors = withContext(Dispatchers.Default) {
-        colors.get(songId)?.let { return@withContext it }
-        val accent = pickAccent(Palette.from(bitmap).maximumColorCount(16).generate())
-        AlbumColors(accent, onColorFor(accent)).also { colors.put(songId, it) }
+    /** The accent for a song's cover (cached per album, like the art itself). */
+    suspend fun colorsFor(song: SongEntity, bitmap: Bitmap): AlbumColors = withContext(Dispatchers.Default) {
+        val key = if (song.albumId > 0) "a${song.albumId}" else "s${song.id}"
+        colors.get(key)?.let { return@withContext it }
+        val accent = pickAccent(Palette.from(softwareCopy(bitmap)).maximumColorCount(16).generate())
+        AlbumColors(accent, onColorFor(accent)).also { colors.put(key, it) }
     }
 
     companion object {
@@ -59,8 +60,12 @@ class ArtworkRepository(private val context: Context) {
 
         /** The Palette accent of any bitmap (used to tint cards by their cover). */
         suspend fun paletteAccent(bitmap: Bitmap): Int = withContext(Dispatchers.Default) {
-            pickAccent(Palette.from(bitmap).maximumColorCount(16).generate())
+            pickAccent(Palette.from(softwareCopy(bitmap)).maximumColorCount(16).generate())
         }
+
+        /** Thumbnails can come back as GPU-only (HARDWARE) bitmaps, whose pixels can't be read. */
+        private fun softwareCopy(b: Bitmap): Bitmap =
+            if (Build.VERSION.SDK_INT >= 26 && b.config == Bitmap.Config.HARDWARE) b.copy(Bitmap.Config.ARGB_8888, false) else b
 
         /**
          * The accent is the colour that covers the most of the cover.

@@ -102,10 +102,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .flatMapLatest { id -> if (id == null) flowOf(null) else ct.db.songs().observe(id) }
         .state(null)
 
-    val artwork: StateFlow<Bitmap?> = currentSong.mapLatest { s -> s?.let { ct.artwork.load(it) } }.state(null)
+    /**
+     * The song and its cover, loaded together. Colours must be computed from this pair:
+     * combining the current song with "the latest cover" separately gave the new song the
+     * previous song's cover for a moment, and that wrong colour was then cached.
+     */
+    private val songArt: StateFlow<Pair<SongEntity, Bitmap?>?> = currentSong
+        .mapLatest { s -> s?.let { it to ct.artwork.load(it) } }
+        .state(null)
 
-    val albumColors: StateFlow<AlbumColors?> = combine(currentSong, artwork) { s, bmp ->
-        if (s != null && bmp != null) ct.artwork.colorsFor(s.id, bmp) else null
+    val artwork: StateFlow<Bitmap?> = songArt.map { it?.second }.state(null)
+
+    val albumColors: StateFlow<AlbumColors?> = songArt.mapLatest { pair ->
+        val (song, bmp) = pair ?: return@mapLatest null
+        bmp?.let { ct.artwork.colorsFor(song, it) }
     }.state(null)
 
     private val lyricsInputs = settings.map {
