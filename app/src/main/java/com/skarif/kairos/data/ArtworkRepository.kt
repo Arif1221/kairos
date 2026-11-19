@@ -63,26 +63,32 @@ class ArtworkRepository(private val context: Context) {
         }
 
         /**
-         * Picks the colour people perceive as "the cover's colour".
-         * Only swatches covering at least 4% of the image count, so film grain or a tiny logo can
-         * never win. Among those, area and vividness are balanced. Covers with no real colour
-         * (black-and-white, grey, sepia) get their dominant tone, kept muted.
+         * The accent is the colour that covers the most of the cover.
+         * Similar shades (hues within 30°) are added together first, so flames drawn in five
+         * yellows count as one big yellow. Greys, near-black and near-white are skipped.
+         * From the winning colour family, the clearest shade is used.
+         * Covers with no real colour (black-and-white, grey, sepia) get their dominant tone.
          */
         fun pickAccent(p: Palette): Int {
             val swatches = p.swatches
             if (swatches.isEmpty()) return DEFAULT_ACCENT
             val total = swatches.sumOf { it.population }.toFloat()
-            val hsl = FloatArray(3)
-            val colourful = swatches.filter { sw ->
+            data class Shade(val rgb: Int, val hue: Float, val sat: Float, val light: Float, val share: Float)
+            val shades = swatches.map { sw ->
+                val hsl = FloatArray(3)
                 ColorUtils.colorToHSL(sw.rgb, hsl)
-                hsl[1] >= 0.25f && hsl[2] in 0.15f..0.85f && sw.population / total >= 0.04f
+                Shade(sw.rgb, hsl[0], hsl[1], hsl[2], sw.population / total)
+            }.filter { it.sat >= 0.2f && it.light in 0.12f..0.88f }
+                .sortedByDescending { it.share }
+            if (shades.isEmpty()) return p.dominantSwatch?.rgb ?: DEFAULT_ACCENT
+
+            fun hueDistance(a: Float, b: Float): Float { val d = kotlin.math.abs(a - b); return minOf(d, 360f - d) }
+            val families = mutableListOf<MutableList<Shade>>()
+            for (sh in shades) {
+                families.firstOrNull { hueDistance(it.first().hue, sh.hue) <= 30f }?.add(sh) ?: families.add(mutableListOf(sh))
             }
-            val best = colourful.maxByOrNull { sw ->
-                ColorUtils.colorToHSL(sw.rgb, hsl)
-                val vivid = 0.2f + hsl[1]
-                (sw.population / total) * vivid * vivid * (1f - kotlin.math.abs(hsl[2] - 0.5f))
-            }
-            return (best ?: p.dominantSwatch)?.rgb ?: DEFAULT_ACCENT
+            val biggest = families.maxBy { f -> f.sumOf { it.share.toDouble() } }
+            return biggest.maxBy { it.share * it.sat * (1f - kotlin.math.abs(it.light - 0.5f)) }.rgb
         }
 
         /**
