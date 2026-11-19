@@ -240,6 +240,36 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 screen("folders") { FoldersScreen(vm, onBack = { nav.popBackStack() }) }
             }
 
+            // Where the mini player rests: above the dock on tabs, near the bottom edge elsewhere.
+            val showPlayer = route != null && route != "onboarding" && song != null
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val navBar = androidx.compose.foundation.layout.WindowInsets.navigationBars.getBottom(density).toFloat()
+            val targetBottom = navBar + with(density) { (if (route in TABS) 12.dp + 76.dp + 10.dp else 12.dp).toPx() }
+            val miniBottom by androidx.compose.animation.core.animateFloatAsState(targetBottom, Motion.spatial(), label = "miniBottom")
+
+            // A soft fade from just above the mini player down to the bottom edge, so content
+            // scrolling underneath recedes. It follows the mini player as it moves and fades out
+            // as the player opens. Drawn under the dock and the player.
+            if (showPlayer) {
+                val bg = P.colors.bg
+                Box(
+                    Modifier.fillMaxSize().drawBehind {
+                        val p = player.progress.value.coerceIn(0f, 1f)
+                        if (p >= 1f) return@drawBehind
+                        val top = size.height - miniBottom - 64.dp.toPx() - 48.dp.toPx()
+                        drawRect(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                0f to bg.copy(alpha = 0f), 0.35f to bg.copy(alpha = 0.8f), 1f to bg.copy(alpha = 0.95f),
+                                startY = top, endY = size.height,
+                            ),
+                            topLeft = androidx.compose.ui.geometry.Offset(0f, top),
+                            size = androidx.compose.ui.geometry.Size(size.width, size.height - top),
+                            alpha = 1f - p,
+                        )
+                    },
+                )
+            }
+
             // Dock. It sinks away as the player opens, tied to the same progress as the player.
             AnimatedVisibility(
                 route in TABS,
@@ -255,9 +285,10 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                             translationY = p * size.height
                             alpha = 1f - p
                         }
-                        // Soft fade behind the mini player and dock, so cards scrolling under them recede.
+                        // Soft fade behind the dock, so cards scrolling under it recede. With a song
+                        // loaded the player layer draws this fade instead, so it moves with the mini player.
                         .drawBehind {
-                            drawRect(
+                            if (song == null) drawRect(
                                 androidx.compose.ui.graphics.Brush.verticalGradient(
                                     0f to bg.copy(alpha = 0f), 0.3f to bg.copy(alpha = 0.8f), 1f to bg.copy(alpha = 0.95f),
                                     startY = -40.dp.toPx(), endY = size.height,
@@ -276,11 +307,7 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
             }
 
             // The player: mini player above the dock, the whole screen when open.
-            if (route != null && route != "onboarding") {
-                val density = androidx.compose.ui.platform.LocalDensity.current
-                val navBar = androidx.compose.foundation.layout.WindowInsets.navigationBars.getBottom(density).toFloat()
-                val targetBottom = navBar + with(density) { (if (route in TABS) 12.dp + 76.dp + 10.dp else 12.dp).toPx() }
-                val miniBottom by androidx.compose.animation.core.animateFloatAsState(targetBottom, Motion.spatial(), label = "miniBottom")
+            if (showPlayer) {
                 PlayerSheet(
                     vm, player, miniBottom,
                     onAlbum = ::openAlbum,
