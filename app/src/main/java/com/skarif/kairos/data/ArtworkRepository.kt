@@ -48,7 +48,7 @@ class ArtworkRepository(private val context: Context) {
     /** Palette-API colour extraction, the same idea as the design's dynamic colour. */
     suspend fun colorsFor(songId: Long, bitmap: Bitmap): AlbumColors = withContext(Dispatchers.Default) {
         colors.get(songId)?.let { return@withContext it }
-        val accent = pickAccent(Palette.from(bitmap).maximumColorCount(24).generate())
+        val accent = pickAccent(Palette.from(bitmap).maximumColorCount(16).generate())
         AlbumColors(accent, onColorFor(accent)).also { colors.put(songId, it) }
     }
 
@@ -63,29 +63,36 @@ class ArtworkRepository(private val context: Context) {
         }
 
         /**
-         * Picks the colour people perceive as "the cover's colour": the most common swatch that is
-         * actually colourful. Grey covers fall back to their dominant colour.
+         * Picks the colour people perceive as "the cover's colour".
+         * Only swatches covering at least 4% of the image count, so film grain or a tiny logo can
+         * never win. Among those, area and vividness are balanced. Covers with no real colour
+         * (black-and-white, grey, sepia) get their dominant tone, kept muted.
          */
         fun pickAccent(p: Palette): Int {
+            val swatches = p.swatches
+            if (swatches.isEmpty()) return DEFAULT_ACCENT
+            val total = swatches.sumOf { it.population }.toFloat()
             val hsl = FloatArray(3)
-            val colourful = p.swatches.filter { ColorUtils.colorToHSL(it.rgb, hsl); hsl[1] >= 0.22f && hsl[2] in 0.12f..0.88f }
+            val colourful = swatches.filter { sw ->
+                ColorUtils.colorToHSL(sw.rgb, hsl)
+                hsl[1] >= 0.25f && hsl[2] in 0.15f..0.85f && sw.population / total >= 0.04f
+            }
             val best = colourful.maxByOrNull { sw ->
                 ColorUtils.colorToHSL(sw.rgb, hsl)
-                sw.population * hsl[1] * hsl[1] * (1f - kotlin.math.abs(hsl[2] - 0.5f))
+                val vivid = 0.2f + hsl[1]
+                (sw.population / total) * vivid * vivid * (1f - kotlin.math.abs(hsl[2] - 0.5f))
             }
-            return (best ?: p.vibrantSwatch ?: p.dominantSwatch)?.rgb ?: DEFAULT_ACCENT
+            return (best ?: p.dominantSwatch)?.rgb ?: DEFAULT_ACCENT
         }
 
         /**
-         * Keeps an accent readable: lightness 0.32-0.58 on light backgrounds, 0.45-0.70 on dark ones,
-         * and a little saturation so grey covers still give a usable tint.
+         * Keeps an accent readable against the background: lightness 0.32-0.58 in the light theme,
+         * 0.45-0.70 in the dark one. Hue and saturation are left as the cover has them.
          */
         fun tuneAccent(argb: Int, dark: Boolean): Int {
             val hsl = FloatArray(3)
             ColorUtils.colorToHSL(argb, hsl)
             hsl[2] = if (dark) hsl[2].coerceIn(0.45f, 0.70f) else hsl[2].coerceIn(0.32f, 0.58f)
-            // Lift washed-out colours, but never dull a vivid one.
-            if (hsl[1] > 0.08f) hsl[1] = hsl[1].coerceAtLeast(0.35f)
             return ColorUtils.HSLToColor(hsl)
         }
 
