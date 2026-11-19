@@ -22,3 +22,36 @@ jobs:
         with:
           name: kairos-apk
           path: app/build/outputs/apk/release/*.apk
+
+  release:
+    # Offline releases: publishes v<versionName> with the APK when main gets a version not yet released.
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read version
+        id: v
+        run: echo "name=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+      - name: Check for an existing release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.v.outputs.name }}" >/dev/null 2>&1; then echo "exists=true" >> "$GITHUB_OUTPUT"; else echo "exists=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/download-artifact@v4
+        if: steps.check.outputs.exists == 'false'
+        with:
+          name: kairos-apk
+          path: apk
+      - name: Publish release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.v.outputs.name }}"
+          mv apk/*.apk "Kairos-$V.apk"
+          gh release create "v$V" "Kairos-$V.apk" --target "$GITHUB_SHA" \
+            --title "Kairos $V (offline)" --generate-notes
