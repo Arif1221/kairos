@@ -60,6 +60,7 @@ fun OnboardingScreen(vm: MainViewModel, onDone: () -> Unit) {
     val scan by vm.scan.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     var denied by remember { mutableStateOf(false) }
+    val online = vm.onlineName
     var step by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         if (result[audioPermission] == true || hasAudioPermission(context)) {
@@ -81,12 +82,20 @@ fun OnboardingScreen(vm: MainViewModel, onDone: () -> Unit) {
                 Box(Modifier.size(84.dp).clip(RoundedCornerShape(28.dp)).background(c.accent), contentAlignment = Alignment.Center) {
                     Icon(Ic.Music, null, tint = c.onAccent, modifier = Modifier.size(34.dp))
                 }
-                Text(mixedHeadline("Welcome to " to false, "Kairos" to true), style = T.h1.copy(fontSize = 44.sp, lineHeight = 47.sp), color = c.text)
-                Text("An offline player for the music already on your phone.", style = T.body.copy(fontSize = 17.sp, lineHeight = 24.sp), color = c.muted)
+                Text(mixedHeadline("Welcome to " to false, (if (online != null) "Kairos Online" else "Kairos") to true), style = T.h1.copy(fontSize = 44.sp, lineHeight = 47.sp), color = c.text)
+                Text(
+                    if (online != null) "The music on your phone, plus $online and YouTube, in one player."
+                    else "An offline player for the music already on your phone.",
+                    style = T.body.copy(fontSize = 17.sp, lineHeight = 24.sp), color = c.muted,
+                )
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (online != null) {
+                        WelcomeRow(Ic.Discover, "Stream $online", "Songs and videos as audio, with a data saver")
+                        WelcomeRow(Ic.Music, "Keeps what you stream", "Played songs work offline afterwards")
+                    }
                     WelcomeRow(Ic.Lyrics, "Synced lyrics", "Read from your files' tags or .lrc files")
                     WelcomeRow(Ic.Sliders, "Hi-res and bit-perfect output", "With a 10-band equalizer")
-                    WelcomeRow(Ic.Shuffle, "Mixes that build themselves", "From what you play and what you've added")
+                    if (online == null) WelcomeRow(Ic.Shuffle, "Mixes that build themselves", "From what you play and what you've added")
                 }
                 Spacer(Modifier.weight(1f))
                 Pill("Get started", { step = 1 }, selected = true, big = true, modifier = Modifier.fillMaxWidth())
@@ -100,7 +109,8 @@ fun OnboardingScreen(vm: MainViewModel, onDone: () -> Unit) {
                 }
                 Text(mixedHeadline("All " to false, "your music" to true, ", right on " to false, "this phone" to true), style = T.h1, color = c.text)
                 Text(
-                    "To build your library the app needs to read the audio files stored here. Nothing is uploaded and nothing leaves your phone.",
+                    if (online != null) "To add the songs stored on this phone, the app needs to read your audio files. They're never uploaded. You can also skip this and only stream."
+                    else "To build your library the app needs to read the audio files stored here. Nothing is uploaded and nothing leaves your phone.",
                     style = T.body.copy(fontSize = 16.sp, lineHeight = 23.sp), color = c.muted,
                 )
                 if (denied) {
@@ -116,6 +126,13 @@ fun OnboardingScreen(vm: MainViewModel, onDone: () -> Unit) {
                     }
                     request.launch(perms.toTypedArray())
                 }, selected = true, big = true, modifier = Modifier.fillMaxWidth())
+                if (online != null) {
+                    // Streaming needs no permission; the library can be added later from Settings > Music folders.
+                    Pill("Skip, just stream", {
+                        vm.updateSettings { it.copy(onboarded = true) }
+                        onDone()
+                    }, big = true, modifier = Modifier.fillMaxWidth())
+                }
             } else {
                 Text(mixedHeadline("Finding " to false, "your" to true, " songs" to false), style = T.h1, color = c.text)
                 Card(color = c.accent) {

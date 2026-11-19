@@ -8,6 +8,7 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.datasource.cache.CacheDataSource
 import com.skarif.kairos.data.StreamQuality
 import com.skarif.kairos.data.db.ONLINE_VOLUME
 import com.skarif.kairos.data.db.SongEntity
@@ -39,9 +40,28 @@ internal object YouTubeMusic : OnlineMusic {
 
     override val name = "YouTube Music"
 
-    private val streamUrls = ConcurrentHashMap<String, Pair<String, Long>>()
+    private class Resolved(val url: String, val at: Long)
+    private val streamUrls = ConcurrentHashMap<String, Resolved>()
+
+    /**
+     * The quality each song is played at, fixed the first time it is opened in this process.
+     * Seeks reopen the stream at a byte offset, so switching quality mid-song would corrupt it.
+     */
+    private val pinned = ConcurrentHashMap<String, StreamQuality>()
 
     private val init by lazy { NewPipe.init(NewPipeDownloader) }
+
+    /** YouTube sometimes fails a request that works a moment later. */
+    private inline fun <T> retry(times: Int = 2, block: () -> T): T {
+        var last: Exception? = null
+        repeat(times) { attempt ->
+            try { return block() } catch (e: Exception) {
+                last = e
+                if (attempt < times - 1) Thread.sleep(600)
+            }
+        }
+        throw last!!
+    }
 
     override suspend fun search(query: String, kind: OnlineKind): List<SongEntity> = withContext(Dispatchers.IO) {
         init
@@ -50,34 +70,64 @@ internal object YouTubeMusic : OnlineMusic {
             OnlineKind.SONGS -> YoutubeSearchQueryHandlerFactory.MUSIC_SONGS
             OnlineKind.VIDEOS -> YoutubeSearchQueryHandlerFactory.VIDEOS
         }
-        val extractor = yt.getSearchExtractor(query, listOf(filter), "")
-        extractor.fetchPage()
-        extractor.initialPage.items.filterIsInstance<StreamInfoItem>()
-            .filter { kind == OnlineKind.SONGS || !it.isShortFormContent } // Shorts aren't music
-            .mapNotNull { it.toSong(kind) }
+        retry {
+            val extractor = yt.getSearchExtractor(query, listOf(filter), "")
+            extractor.fetchPage()
+            extractor.initialPage.items.filterIsInstance<StreamInfoItem>()
+                .filter { kind == OnlineKind.SONGS || !it.isShortFormContent } // Shorts aren't music
+                .mapNotNull { it.toSong(kind) }
+        }
     }
+
+    override suspend fun lyrics(song: SongEntity): String? = withContext(Dispatchers.IO) { LrcLib.find(song) }
 
     override fun mediaUri(song: SongEntity): Uri = Uri.parse("$SCHEME:${song.fileName}")
 
+    private fun cacheKey(videoId: String, q: StreamQuality) = "yt:$videoId:$q"
+
+    override fun isCached(context: Context, song: SongEntity): Boolean =
+        StreamQuality.entries.any { StreamCache.isComplete(context, cacheKey(song.fileName, it)) }
+
+    override fun cacheBytes(context: Context): Long = StreamCache.get(context).cacheSpace
+
+    override fun clearCache(context: Context) {
+        StreamCache.clear(context)
+        pinned.clear()
+    }
+
+    /** Which quality to use for [videoId]: already pinned, else one fully cached (plays offline), else the setting. */
+    private fun qualityFor(context: Context, videoId: String, setting: () -> StreamQuality): StreamQuality =
+        pinned.getOrPut(videoId) {
+            StreamQuality.entries.reversed().firstOrNull { StreamCache.isComplete(context, cacheKey(videoId, it)) } ?: setting()
+        }
+
     override fun dataSourceFactory(context: Context, quality: () -> StreamQuality): DataSource.Factory {
+        val app = context.applicationContext
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent(NewPipeDownloader.USER_AGENT)
             .setAllowCrossProtocolRedirects(true)
-        // Local files and content:// Uris pass straight through; our Uris become the real stream URL
-        // when the player opens them, so URLs are always fresh (they expire).
-        return ResolvingDataSource.Factory(DefaultDataSource.Factory(context, http)) { spec ->
-            if (spec.uri.scheme != SCHEME) spec
-            else spec.withUri(Uri.parse(streamUrl(spec.uri.schemeSpecificPart, quality())))
+        // Our Uris become the real stream URL only when bytes are missing from the cache,
+        // so URLs are always fresh (they expire) and cached songs need no network at all.
+        val resolving = ResolvingDataSource.Factory(http) { spec ->
+            val id = spec.uri.schemeSpecificPart
+            spec.withUri(Uri.parse(streamUrl(id, qualityFor(app, id, quality))))
         }
+        val cached = CacheDataSource.Factory()
+            .setCache(StreamCache.get(app))
+            .setUpstreamDataSourceFactory(resolving)
+            .setCacheKeyFactory { spec -> spec.uri.schemeSpecificPart.let { cacheKey(it, qualityFor(app, it, quality)) } }
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        val local = DefaultDataSource.Factory(app)
+        return DataSource.Factory { RoutingDataSource(SCHEME, local.createDataSource(), cached.createDataSource()) }
     }
 
     /** Called on the player's loading thread, so blocking here is fine. */
     private fun streamUrl(videoId: String, quality: StreamQuality): String {
         val key = "$videoId|$quality"
-        streamUrls[key]?.let { (url, at) -> if (System.currentTimeMillis() - at < URL_TTL_MS) return url }
+        streamUrls[key]?.let { if (System.currentTimeMillis() - it.at < URL_TTL_MS) return it.url }
         try {
             init
-            val info = StreamInfo.getInfo(ServiceList.YouTube, "https://www.youtube.com/watch?v=$videoId")
+            val info = retry { StreamInfo.getInfo(ServiceList.YouTube, "https://www.youtube.com/watch?v=$videoId") }
             // Audio-only streams; video streams are never fetched, so videos cost the same data as songs.
             val streams = info.audioStreams
                 .filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl }
@@ -88,7 +138,7 @@ internal object YouTubeMusic : OnlineMusic {
                 StreamQuality.HIGH -> streams.last()
                 StreamQuality.NORMAL -> streams.lastOrNull { kbps(it) in 1..140 } ?: streams.first()
             }
-            return pick.content.also { streamUrls[key] = it to System.currentTimeMillis() }
+            return pick.content.also { streamUrls[key] = Resolved(it, System.currentTimeMillis()) }
         } catch (e: IOException) {
             throw e
         } catch (e: Exception) {

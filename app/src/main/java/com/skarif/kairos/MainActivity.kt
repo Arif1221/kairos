@@ -57,6 +57,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.skarif.kairos.online.Flavor
 import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
@@ -104,7 +105,12 @@ class MainActivity : ComponentActivity() {
         // A first run (or a restore without the music permission) starts on the welcome screen.
         // Read the stored flag before the first frame so a returning user never sees it flash.
         val onboarded = runBlocking { (application as PlayerApp).container.settings.load().onboarded }
-        val start = if (onboarded && hasAudioPermission(this)) "home" else "onboarding"
+        // Online build: streaming needs no permission, so a user who skipped the library starts on Discover.
+        val start = when {
+            onboarded && hasAudioPermission(this) -> "home"
+            onboarded && Flavor.online != null -> "discover"
+            else -> "onboarding"
+        }
         setContent { PlayerRoot(start) }
     }
 }
@@ -204,7 +210,10 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 popExitTransition = { slideOutHorizontally(tween(320, easing = Motion.EmphasizedAccelerate)) { it / 5 } + fadeOut(tween(200)) },
             ) {
                 screen("onboarding") {
-                    OnboardingScreen(vm) { nav.navigate("home") { popUpTo("onboarding") { inclusive = true } } }
+                    OnboardingScreen(vm) {
+                        val next = if (hasAudioPermission(context) || Flavor.online == null) "home" else "discover"
+                        nav.navigate(next) { popUpTo("onboarding") { inclusive = true } }
+                    }
                 }
                 screen("home", enterTransition = tabEnter, exitTransition = tabExit) {
                     HomeScreen(

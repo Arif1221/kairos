@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.ArtworkRepository
 import com.skarif.kairos.data.db.SongEntity
+import com.skarif.kairos.data.db.isOnline
 import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.formatTime
@@ -175,7 +176,7 @@ fun SongActionsDialog(vm: MainViewModel, song: SongEntity, onOpenAlbum: (Long) -
                     DialogItem("Play next") { vm.playNext(listOf(song)); onDismiss() }
                 }
                 DialogItem(if (song.id in favs) "Remove from favourites" else "Add to favourites") { vm.toggleFavorite(song.id); onDismiss() }
-                DialogItem("Go to album") { onOpenAlbum(song.albumId); onDismiss() }
+                if (!song.isOnline) DialogItem("Go to album") { onOpenAlbum(song.albumId); onDismiss() }
                 if (playlists.isNotEmpty()) Text("Add to playlist", Modifier.padding(top = 10.dp, bottom = 4.dp), style = T.small, color = c.muted)
                 playlists.forEach { p -> DialogItem(p.name) { vm.addToPlaylist(p.id, listOf(song.id)); onDismiss() } }
             }

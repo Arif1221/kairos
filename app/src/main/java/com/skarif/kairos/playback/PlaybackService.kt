@@ -11,6 +11,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DecoderReuseEvaluation
@@ -143,7 +144,23 @@ class PlaybackService : MediaSessionService() {
             .build()
     }
 
+    /** Online songs skipped in a row because they failed to load; stops a dead network from racing through the queue. */
+    private var onlineSkips = 0
+
     private val playerListener = object : Player.Listener {
+        // An online song that fails to load (removed video, YouTube change, no network) is skipped
+        // rather than stopping playback, up to 3 in a row.
+        override fun onPlayerError(error: PlaybackException) {
+            val p = session?.player ?: return
+            val online = (p.currentMediaItem?.mediaId?.toLongOrNull() ?: 0L) < 0
+            if (online && onlineSkips < 3 && p.hasNextMediaItem()) {
+                onlineSkips++
+                p.seekToNextMediaItem()
+                p.prepare()
+                p.play()
+            }
+        }
+
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             recordListening()
             currentSongId = mediaItem?.mediaId?.toLongOrNull()
@@ -156,6 +173,7 @@ class PlaybackService : MediaSessionService() {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             val now = System.currentTimeMillis()
             if (isPlaying) {
+                onlineSkips = 0 // something is playing again
                 playingSince = now
                 tickJob?.cancel()
                 tickJob = scope.launch { while (true) { kotlinx.coroutines.delay(15_000); saveListening() } }

@@ -14,8 +14,8 @@ android {
         minSdk = 28 // DynamicsProcessing (10-band EQ) needs Android 9
         targetSdk = 35
         // Online: main's version + a 4th online number; versionCode = main's * 10 + that number.
-        versionCode = 211
-        versionName = "0.7.5.1"
+        versionCode = 212
+        versionName = "0.7.5.2"
     }
 
     signingConfigs {
@@ -98,6 +98,7 @@ dependencies {
 
     "onlineImplementation"(libs.newpipe.extractor)
     "onlineImplementation"(libs.okhttp)
+    "onlineImplementation"(libs.media3.database)
 
     testImplementation(libs.junit)
 }

@@ -190,6 +190,13 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                         "Data saver on mobile data", s.dataSaverOnMobile, { v -> vm.updateSettings { it.copy(dataSaverOnMobile = v) } },
                         "Uses ${StreamQuality.LOW.label} quality when you're not on Wi-Fi",
                     )
+                    val cacheBytes by vm.onlineUi.cacheBytes.collectAsStateWithLifecycle()
+                    androidx.compose.runtime.LaunchedEffect(Unit) { vm.onlineUi.refreshCacheSize() }
+                    Text(
+                        "Saved for offline: ${cacheBytes / 1_048_576} MB of 1024 MB. Songs you stream are kept so they play without a connection; the oldest go first.",
+                        style = T.small, color = c.muted,
+                    )
+                    Pill("Clear saved songs", { vm.onlineUi.clearCache() }, icon = Ic.Trash, modifier = Modifier.fillMaxWidth())
                 }
             }
 

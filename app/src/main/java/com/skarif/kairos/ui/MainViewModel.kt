@@ -73,22 +73,6 @@ sealed interface OnlineSearch {
     data class Failed(val message: String) : OnlineSearch
 }
 
-/** One row of the Discover page. */
-data class Shelf(val title: String, val songs: List<SongEntity>)
-
-sealed interface DiscoverState {
-    data object Loading : DiscoverState
-    data class Ready(val shelves: List<Shelf>) : DiscoverState
-    data class Failed(val message: String) : DiscoverState
-}
-
-/** Discover's mood chips: a label and the search behind it. */
-val DISCOVER_MOODS = listOf(
-    "Trending" to "trending songs", "Bollywood" to "bollywood hits", "Lo-fi" to "lofi chill",
-    "Punjabi" to "punjabi hits", "Hip hop" to "hip hop hits", "Romantic" to "romantic songs",
-    "Workout" to "workout songs", "Indie" to "indie hits", "Sad" to "sad songs", "Party" to "party songs",
-)
-
 /** A list of songs shown with the album-style screen: albums, playlists and mixes. */
 data class Collection(val key: String, val title: String, val subtitle: String, val songs: List<SongEntity>, val playlistId: Long? = null)
 
@@ -287,6 +271,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Online search results seen this session, so they can be saved when favourited or added to a playlist. */
     private val seenOnline = ConcurrentHashMap<Long, SongEntity>()
 
+    /** Discover, network state and the stream cache (online flavor; inert in the play build). */
+    val onlineUi = OnlineFeatures(app, ct, viewModelScope) { l -> l.forEach { seenOnline[it.id] = it } }
+
     private val _onlineKind = MutableStateFlow(OnlineKind.SONGS)
     val onlineKind: StateFlow<OnlineKind> = _onlineKind.asStateFlow()
     fun setOnlineKind(k: OnlineKind) { _onlineKind.value = k }
@@ -294,11 +281,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val onlineResults: StateFlow<OnlineSearch> = combine(
         _query.map { it.trim() }.distinctUntilChanged().debounce(450), // don't hit the network on every keystroke
         _onlineKind,
-    ) { q, k -> q to k }
-        .transformLatest { (q, kind) ->
+        onlineUi.networkUp, // re-runs the search when the connection comes back
+    ) { q, k, up -> Triple(q, k, up) }
+        .transformLatest { (q, kind, up) ->
             val source = Flavor.online
             if (source == null || q.isEmpty()) {
                 emit(OnlineSearch.Idle)
+                return@transformLatest
+            }
+            if (!up) {
+                emit(OnlineSearch.Failed("You're offline. Searching ${source.name} needs a connection."))
                 return@transformLatest
             }
             emit(OnlineSearch.Loading)
@@ -313,65 +305,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             emit(result)
         }.state(OnlineSearch.Idle)
-
-    private val _discover = MutableStateFlow<DiscoverState>(DiscoverState.Loading)
-    val discover: StateFlow<DiscoverState> = _discover.asStateFlow()
-
-    /** Selected mood chip (index into [DISCOVER_MOODS]) and its songs; -1 shows the shelves. */
-    private val _mood = MutableStateFlow(-1)
-    val mood: StateFlow<Int> = _mood.asStateFlow()
-    private val _moodSongs = MutableStateFlow<OnlineSearch>(OnlineSearch.Idle)
-    val moodSongs: StateFlow<OnlineSearch> = _moodSongs.asStateFlow()
-
-    private suspend fun searchOnline(q: String, kind: OnlineKind = OnlineKind.SONGS): List<SongEntity> =
-        Flavor.online!!.search(q, kind).also { l -> l.forEach { seenOnline[it.id] = it } }
-
-    /** Builds the Discover shelves: your most played artists first, then general picks. */
-    fun loadDiscover(force: Boolean = false) {
-        val source = Flavor.online ?: return
-        if (!force && _discover.value is DiscoverState.Ready) return
-        viewModelScope.launch {
-            _discover.value = DiscoverState.Loading
-            val byId = ct.db.songs().observeAll().first().associateBy { it.id }
-            val topArtists = ct.db.playEvents().observeAll().first()
-                .mapNotNull { byId[it.songId]?.artist }
-                .filter { it != "Unknown artist" }
-                .groupingBy { it }.eachCount()
-                .entries.sortedByDescending { it.value }.take(3).map { it.key }
-            val year = LocalDate.now().year
-            val plan = topArtists.map { "More from $it" to it } + listOf(
-                "Trending now" to "top songs $year",
-                "New releases" to "new songs $year",
-                "Chill & lo-fi" to "lofi chill",
-                "Bollywood hits" to "bollywood hits",
-            )
-            val shelves = coroutineScope {
-                plan.map { (title, q) ->
-                    async {
-                        try { Shelf(title, searchOnline(q).take(15)) }
-                        catch (e: CancellationException) { throw e }
-                        catch (e: Exception) { null }
-                    }
-                }.awaitAll()
-            }.filterNotNull().filter { it.songs.isNotEmpty() }
-            _discover.value = if (shelves.isEmpty()) DiscoverState.Failed("Couldn't reach ${source.name}. Check your connection.")
-            else DiscoverState.Ready(shelves)
-        }
-    }
-
-    private var moodJob: kotlinx.coroutines.Job? = null
-    fun selectMood(i: Int) {
-        moodJob?.cancel()
-        _mood.value = if (_mood.value == i) -1 else i
-        val m = _mood.value
-        if (m < 0) return
-        moodJob = viewModelScope.launch {
-            _moodSongs.value = OnlineSearch.Loading
-            _moodSongs.value = try { OnlineSearch.Ready(searchOnline(DISCOVER_MOODS[m].second)) }
-            catch (e: CancellationException) { throw e }
-            catch (e: Exception) { OnlineSearch.Failed("Couldn't load ${DISCOVER_MOODS[m].first}.") }
-        }
-    }
 
     /** Online songs only exist in Room once kept; do that before they are played or referenced. */
     private fun keepOnline(songs: List<SongEntity>) {

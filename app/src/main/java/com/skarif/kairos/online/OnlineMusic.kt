@@ -26,6 +26,18 @@ interface OnlineMusic {
     /** The Uri handed to the player; [dataSourceFactory] turns it into a real stream. */
     fun mediaUri(song: SongEntity): Uri
 
+    /** Lyrics (LRC if synced, else plain text) for an online song, or null. Throws on network errors. */
+    suspend fun lyrics(song: SongEntity): String?
+
+    /** True when the whole song is in the stream cache, so it plays without a connection. */
+    fun isCached(context: Context, song: SongEntity): Boolean
+
+    /** Bytes the stream cache uses on disk. */
+    fun cacheBytes(context: Context): Long
+
+    /** Empties the stream cache. Call off the main thread. */
+    fun clearCache(context: Context)
+
     /**
      * Plays both local files and this source's Uris. [quality] is asked each time a stream is
      * opened, so a settings or network change applies from the next song.

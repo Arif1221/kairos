@@ -14,6 +14,7 @@ import com.skarif.kairos.lyrics.ByteSource
 import com.skarif.kairos.lyrics.LrcParser
 import com.skarif.kairos.lyrics.Lyrics
 import com.skarif.kairos.lyrics.TagReader
+import com.skarif.kairos.online.Flavor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -36,7 +37,7 @@ class LyricsRepository(
     data class LyricsResult(val lyrics: Lyrics?)
 
     suspend fun load(song: SongEntity, s: Settings): Lyrics? = withContext(Dispatchers.IO) {
-        if (song.isOnline) return@withContext null // no file to read tags or a .lrc from
+        if (song.isOnline) return@withContext loadOnline(song) // no file to read tags or a .lrc from
         val key = "${song.id}|${s.readEmbeddedLyrics}|${s.readLrcFiles}|${s.lyricsPreference}|${s.lrcFolderUris.hashCode()}"
         cache.get(key)?.let { return@withContext it.lyrics }
 
@@ -50,6 +51,16 @@ class LyricsRepository(
         }?.takeUnless { it.isEmpty }
         cache.put(key, LyricsResult(pick))
         pick
+    }
+
+    /** Online songs: lyrics from the online source; network failures aren't cached, so they retry. */
+    private suspend fun loadOnline(song: SongEntity): Lyrics? {
+        val key = "online|${song.id}"
+        cache.get(key)?.let { return it.lyrics }
+        val text = runCatching { Flavor.online?.lyrics(song) }.getOrElse { return null }
+        val lyrics = text?.let { LrcParser.parse(it, "online") }?.takeUnless { it.isEmpty }
+        cache.put(key, LyricsResult(lyrics))
+        return lyrics
     }
 
     fun observeOffset(songId: Long): Flow<Long> = offsets.observe(songId).map { it ?: 0L }
