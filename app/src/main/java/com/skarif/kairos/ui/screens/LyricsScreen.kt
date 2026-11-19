@@ -43,6 +43,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.ui.draw.blur
@@ -87,7 +88,7 @@ private val Fg: Color @Composable get() = P.colors.text
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit) {
+fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCollapse: () -> Unit) {
     val c = P.colors
     val song by vm.currentSong.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
@@ -96,7 +97,7 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit) {
     val offset by vm.lyricsOffset.collectAsStateWithLifecycle()
     var options by rememberSaveable { mutableStateOf(false) }
 
-    com.skarif.kairos.ui.components.ScreenBackground(art, true) {
+    Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
@@ -104,10 +105,8 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 CircleButton(Ic.Down, "Back to now playing", onBack, size = 44.dp, container = Glass, content = Fg)
-                art?.let { bmp ->
-                    val img = remember(bmp) { bmp.asImageBitmap() }
-                    Image(img, null, Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
-                }
+                // The player layer draws the cover here (it shrinks from the big hero into this spot).
+                Spacer(Modifier.size(40.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         song?.title ?: "", style = T.title.copy(fontSize = 16.sp), color = Fg, maxLines = 1,
@@ -221,7 +220,7 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
             }
             val isCur = i == current
             val alpha by animateFloatAsState(when { isCur -> 1f; i < current -> 0.35f; else -> 0.55f }, tween(500, easing = FastOutSlowInEasing), label = "lineAlpha")
-            val scale by animateFloatAsState(if (isCur) 1f else 0.82f, tween(500, easing = FastOutSlowInEasing), label = "lineScale")
+            val scale by animateFloatAsState(if (isCur) 1f else 0.78f, tween(500, easing = FastOutSlowInEasing), label = "lineScale")
             var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
             val start = line.timeMs + offsetMs
             val end = lyrics.lines.getOrNull(i + 1)?.timeMs?.plus(offsetMs) ?: (start + 4000)
@@ -239,7 +238,7 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
                     .clickable(role = Role.Button, onClickLabel = "Play from this line") { onSeek(start) }
                     .then(if (isCur) Modifier.semantics { heading() } else Modifier),
                 // One weight for every line: switching weight re-wraps the text and makes it jump.
-                style = T.h1.copy(fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.ExtraBold),
+                style = T.h1.copy(fontSize = 35.sp, lineHeight = 41.sp, fontWeight = FontWeight.ExtraBold),
                 color = Fg,
                 onTextLayout = { layout = it },
             )

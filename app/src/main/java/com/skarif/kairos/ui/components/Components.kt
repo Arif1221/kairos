@@ -55,6 +55,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -191,6 +194,23 @@ fun Card(modifier: Modifier = Modifier, color: Color = P.colors.card, content: @
  */
 @Composable
 fun ScreenBackground(art: Bitmap?, blur: Boolean, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+    if (LocalBackdrop.current) {
+        // The app draws one shared backdrop behind every page; pages only draw their content.
+        Box(modifier.fillMaxSize(), content = content)
+    } else {
+        Box(modifier.fillMaxSize()) {
+            Backdrop(art, blur)
+            content()
+        }
+    }
+}
+
+/** True where a shared [Backdrop] is already drawn behind the page. */
+val LocalBackdrop = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/** Theme colour, the blurred cover and the dot grid: the app's background. */
+@Composable
+fun Backdrop(art: Bitmap?, blur: Boolean, modifier: Modifier = Modifier) {
     val c = P.colors
     Box(modifier.fillMaxSize().background(c.bg)) {
         if (blur && art != null) {
@@ -224,7 +244,6 @@ fun ScreenBackground(art: Bitmap?, blur: Boolean, modifier: Modifier = Modifier,
                 onDrawBehind { drawPath(dots, Color(0x337F7F7F)) }
             },
         )
-        content()
     }
 }
 
@@ -236,7 +255,7 @@ fun ScreenBackground(art: Bitmap?, blur: Boolean, modifier: Modifier = Modifier,
  */
 @Composable
 fun WaveformSeek(
-    positionMs: Long,
+    position: androidx.compose.runtime.State<Long>,
     durationMs: Long,
     seed: Long,
     onSeek: (Long) -> Unit,
@@ -247,37 +266,27 @@ fun WaveformSeek(
 ) {
     val c = P.colors
     val heights = remember(seed, bars) { val r = Random(seed); List(bars) { 0.3f + r.nextFloat() * 0.7f } }
-    // Position arrives every 200 ms. While playing, extrapolate it from the frame clock so the fill
-    // moves every frame at the real speed of the song, and only snap when a seek moves it far.
-    val live = androidx.compose.runtime.produceState(positionMs, positionMs, playing, durationMs) {
-        val start = if (!playing || kotlin.math.abs(positionMs - value) > 600) positionMs else maxOf(value, positionMs)
-        value = start
-        if (!playing) return@produceState
-        val t0 = androidx.compose.runtime.withFrameMillis { it }
-        while (true) {
-            androidx.compose.runtime.withFrameMillis { t ->
-                val est = positionMs + (t - t0)
-                value = maxOf(start, est).coerceAtMost(if (durationMs > 0) durationMs else est)
-            }
-        }
-    }
+    // New song: the bars grow up from the baseline one after another, left to right.
+    val appear = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(seed) { appear.snapTo(0f); appear.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
     // Frame clock for the bars' motion; only ticks while playing.
     val clock = androidx.compose.runtime.produceState(0f, playing) {
         if (!playing) return@produceState
         val t0 = androidx.compose.runtime.withFrameMillis { it } - (value * 1000).toLong()
         while (true) androidx.compose.runtime.withFrameMillis { t -> value = (t - t0) / 1000f }
     }
-    val motion by animateFloatAsState(if (playing) 1f else 0f, tween(500), label = "motion")
-    val target = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-    fun fracNow() = if (durationMs > 0) (live.value.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-    val shownSec by remember { androidx.compose.runtime.derivedStateOf { live.value / 1000 } }
+    val motion by animateFloatAsState(if (playing) 1f else 0f, tween(600), label = "motion")
+    // While scrubbing, the bar shows where your finger is and seeks once, when you let go.
+    var scrub by remember { mutableStateOf<Float?>(null) }
+    val lens by animateFloatAsState(if (scrub != null) 1f else 0f, spring(dampingRatio = 0.7f, stiffness = 500f), label = "lens")
+    fun frac(): Float = scrub ?: if (durationMs > 0) (position.value.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    val shownSec by remember(durationMs) {
+        androidx.compose.runtime.derivedStateOf { (scrub?.let { (it * durationMs).toLong() } ?: position.value) / 1000 }
+    }
     var widthPx by remember { mutableIntStateOf(0) }
     var tipW by remember { mutableIntStateOf(0) }
-    var dragging by remember { mutableStateOf(false) }
-    val tipScale by animateFloatAsState(if (dragging) 1.15f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "tip")
-    fun seekAt(x: Float) {
-        if (durationMs > 0 && widthPx > 0) onSeek(((x / widthPx).coerceIn(0f, 1f) * durationMs).toLong())
-    }
+    val tipScale by animateFloatAsState(if (scrub != null) 1.18f else 1f, spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium), label = "tip")
+    fun xToFrac(x: Float) = if (widthPx > 0) (x / widthPx).coerceIn(0f, 1f) else 0f
     Column(
         modifier
             .fillMaxWidth()
@@ -291,38 +300,45 @@ fun WaveformSeek(
                 .fillMaxWidth()
                 .height(barsHeight)
                 .onSizeChanged { widthPx = it.width }
-                .pointerInput(durationMs) { detectTapGestures { seekAt(it.x) } }
+                .pointerInput(durationMs) { detectTapGestures { if (durationMs > 0) onSeek((xToFrac(it.x) * durationMs).toLong()) } }
                 .pointerInput(durationMs) {
                     detectHorizontalDragGestures(
-                        onDragStart = { dragging = true; seekAt(it.x) },
-                        onDragEnd = { dragging = false },
-                        onDragCancel = { dragging = false },
-                    ) { change, _ -> seekAt(change.position.x) }
+                        onDragStart = { scrub = xToFrac(it.x) },
+                        onDragEnd = { scrub?.let { f -> if (durationMs > 0) onSeek((f * durationMs).toLong()) }; scrub = null },
+                        onDragCancel = { scrub = null },
+                    ) { change, _ -> change.consume(); scrub = xToFrac(change.position.x) }
                 }
                 .semantics {
                     contentDescription = "Seek bar"
-                    progressBarRangeInfo = ProgressBarRangeInfo(target, 0f..1f)
+                    progressBarRangeInfo = ProgressBarRangeInfo(if (durationMs > 0) (position.value.toFloat() / durationMs).coerceIn(0f, 1f) else 0f, 0f..1f)
                     setProgress { v -> onSeek((v * durationMs).toLong()); true }
                 },
         ) {
             Canvas(Modifier.fillMaxSize()) {
                 val gap = 4.dp.toPx()
                 val w = (size.width - gap * (bars - 1)) / bars
-                val playX = fracNow() * size.width
+                val playX = frac() * size.width
                 val t = clock.value
                 val radius = CornerRadius(minOf(w / 2, 8.dp.toPx()))
-                val hatch = c.onAccent.copy(alpha = 0.42f)
-                val solid = c.onAccent.copy(alpha = 0.92f)
+                val hatch = c.onAccent.copy(alpha = 0.38f)
+                val solid = c.onAccent.copy(alpha = 0.95f)
                 val step = 6.dp.toPx()
+                val a = appear.value
                 val rects = heights.mapIndexed { i, h ->
                     val left = i * (w + gap)
-                    // Bars around the playhead dance like a level meter while music plays; the rest
-                    // breathe faintly, so the whole bar feels alive without being busy.
-                    val near = (1f - kotlin.math.abs((left + w / 2) - playX) / (w * 4f)).coerceIn(0f, 1f)
-                    val beat = 0.5f + 0.5f * kotlin.math.sin(t * 7.3f + i * 1.7f) * kotlin.math.sin(t * 3.1f + i * 0.6f)
-                    val idle = 0.03f * kotlin.math.sin(t * 1.6f + i * 0.45f)
-                    val wobble = 1f + motion * (near * near * (beat * 0.32f - 0.08f) + idle)
-                    val bh = (size.height * h * wobble).coerceAtMost(size.height)
+                    val cx = left + w / 2
+                    // Grow in, staggered left to right.
+                    val grow = ((a * 1.6f) - i.toFloat() / bars * 0.6f).coerceIn(0f, 1f)
+                    // Playing: a soft wave travels through the played part, and the bars at the
+                    // playhead pulse like a level meter. Paused: everything settles.
+                    val near = (1f - kotlin.math.abs(cx - playX) / (w * 3.5f)).coerceIn(0f, 1f)
+                    val played = cx < playX
+                    val wave = if (played) 0.06f * kotlin.math.sin(t * 4.2f - i * 0.55f) else 0.02f * kotlin.math.sin(t * 1.4f + i * 0.4f)
+                    val beat = 0.5f + 0.5f * kotlin.math.sin(t * 9.1f + i * 1.3f) * kotlin.math.sin(t * 2.7f + i * 0.8f)
+                    // Scrubbing: a lens lifts the bars under your finger.
+                    val lensK = lens * (1f - (kotlin.math.abs(cx - playX) / (w * 2.5f)).coerceIn(0f, 1f))
+                    val scale = 1f + motion * (wave + near * near * (beat * 0.28f - 0.06f)) + lensK * 0.35f
+                    val bh = (size.height * h * scale * grow).coerceIn(w, size.height)
                     RoundRect(left, size.height - bh, left + w, size.height, radius)
                 }
                 // Unplayed: hatched.
@@ -335,12 +351,17 @@ fun WaveformSeek(
                         }
                     }
                 }
-                // Played: solid, clipped at the exact position so it fills smoothly through a bar.
+                // Played: solid, cut at the exact position so it fills smoothly through a bar.
                 clipRect(right = playX) {
                     rects.forEach { r -> drawPath(Path().apply { addRoundRect(r) }, solid) }
                 }
-                // Playhead.
+                // Playhead with a soft halo that breathes while music plays.
                 val ph = 4.dp.toPx()
+                val halo = (6.dp.toPx() + motion * 3.dp.toPx() * (0.5f + 0.5f * kotlin.math.sin(t * 3f))) * (1f + lens)
+                drawRoundRect(
+                    Color(0xFF151515).copy(alpha = 0.18f), Offset((playX - halo).coerceIn(0f, size.width - 2 * halo), 0f),
+                    Size(2 * halo, size.height), CornerRadius(halo),
+                )
                 drawRoundRect(
                     Color(0xFF151515), Offset((playX - ph / 2).coerceIn(0f, size.width - ph), 0f),
                     Size(ph, size.height), CornerRadius(ph / 2),
@@ -355,10 +376,10 @@ fun WaveformSeek(
                         .onSizeChanged { tipW = it.width }
                         .offset {
                             // Read in the layout phase: the tip follows the playhead without recomposing.
-                            val tipX = ((fracNow() * widthPx) - tipW / 2f).roundToInt().coerceIn(0, (widthPx - tipW).coerceAtLeast(0))
-                            IntOffset(tipX, (-22).dp.roundToPx())
+                            val tipX = ((frac() * widthPx) - tipW / 2f).roundToInt().coerceIn(0, (widthPx - tipW).coerceAtLeast(0))
+                            IntOffset(tipX, (-24).dp.roundToPx())
                         }
-                        .graphicsLayer { scaleX = tipScale; scaleY = tipScale }
+                        .graphicsLayer { scaleX = tipScale; scaleY = tipScale; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f) }
                         .clip(RoundedCornerShape(50))
                         .background(Color.White)
                         .padding(horizontal = 10.dp, vertical = 4.dp),
@@ -540,4 +561,29 @@ fun HatchedBars(
             }
         }
     }
+}
+
+/**
+ * A real bottom sheet: drag it down to close, tap outside to close, and the page behind stays
+ * put. [content] gets a `close` that slides the sheet away before [onDismiss] runs.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun KairosSheet(onDismiss: () -> Unit, content: @Composable androidx.compose.foundation.layout.ColumnScope.(close: () -> Unit) -> Unit) {
+    val c = P.colors
+    val state = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val close: () -> Unit = {
+        scope.launch { state.hide() }.invokeOnCompletion { if (!state.isVisible) onDismiss() }
+    }
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        containerColor = c.sheet,
+        shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp),
+        scrimColor = Color(0x66000000),
+        dragHandle = {
+            Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(40.dp, 5.dp).clip(RoundedCornerShape(3.dp)).background(c.muted.copy(alpha = 0.5f)))
+        },
+    ) { content(close) }
 }
