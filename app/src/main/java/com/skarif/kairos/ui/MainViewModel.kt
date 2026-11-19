@@ -233,7 +233,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (online.isNotEmpty()) ct.scope.launch { ct.db.songs().upsertAll(online) }
     }
 
-    private suspend fun keepOnlineIds(ids: Collection<Long>) {
+    private suspend fun keepOnlineIds(ids: List<Long>) {
         val rows = ids.mapNotNull { seenOnline[it] }
         if (rows.isNotEmpty()) ct.db.songs().upsertAll(rows)
     }
