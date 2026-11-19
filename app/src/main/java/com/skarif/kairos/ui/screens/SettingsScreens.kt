@@ -84,7 +84,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
     ScreenBackground(art, s.blurBackground) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding()
-                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 140.dp),
+                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             Header("Settings", onBack)

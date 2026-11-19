@@ -14,11 +14,11 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - name: Build debug APK and run unit tests
+      - name: Build optimised APK and run unit tests
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug testDebugUnitTest --stacktrace
+          ./gradlew assembleRelease testReleaseUnitTest --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: kairos-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: kairos-apk
+          path: app/build/outputs/apk/release/*.apk

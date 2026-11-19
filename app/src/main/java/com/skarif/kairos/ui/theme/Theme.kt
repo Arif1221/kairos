@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -12,16 +13,22 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
+import com.skarif.kairos.R
 import com.skarif.kairos.data.AlbumColors
 import com.skarif.kairos.data.ArtworkRepository
 import com.skarif.kairos.data.Settings
@@ -54,15 +61,24 @@ object P {
         @Composable @ReadOnlyComposable get() = LocalPlayerColors.current
 }
 
-/** Type scale from the design. Swap FontFamily for Urbanist once its font files are in res/font. */
+/** Urbanist, the design's typeface: one variable font file, one instance per weight. */
+@OptIn(ExperimentalTextApi::class)
+val Urbanist = FontFamily(
+    listOf(300, 400, 500, 600, 700, 800).map { w ->
+        Font(R.font.urbanist, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+    },
+)
+
+/** Type scale from the design. */
 object T {
-    val h1 = TextStyle(fontSize = 38.sp, lineHeight = 41.sp, letterSpacing = (-0.8).sp, fontWeight = FontWeight.Normal)
-    val h2 = TextStyle(fontSize = 22.sp, lineHeight = 26.sp, letterSpacing = (-0.3).sp, fontWeight = FontWeight.Bold)
-    val big = TextStyle(fontSize = 46.sp, lineHeight = 48.sp, letterSpacing = (-1.2).sp, fontWeight = FontWeight.Bold)
-    val title = TextStyle(fontSize = 16.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold)
-    val body = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium)
-    val small = TextStyle(fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.Medium)
-    val label = TextStyle(fontSize = 15.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+    private val base = TextStyle(fontFamily = Urbanist)
+    val h1 = base.copy(fontSize = 38.sp, lineHeight = 41.sp, letterSpacing = (-0.8).sp, fontWeight = FontWeight.Normal)
+    val h2 = base.copy(fontSize = 22.sp, lineHeight = 26.sp, letterSpacing = (-0.3).sp, fontWeight = FontWeight.Bold)
+    val big = base.copy(fontSize = 46.sp, lineHeight = 48.sp, letterSpacing = (-1.2).sp, fontWeight = FontWeight.Bold)
+    val title = base.copy(fontSize = 16.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold)
+    val body = base.copy(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium)
+    val small = base.copy(fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.Medium)
+    val label = base.copy(fontSize = 15.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
 }
 
 /** "Make it **yours**": the design's light/bold headline. Pass pairs of (text, bold). */
@@ -80,10 +96,12 @@ fun PlayerTheme(settings: Settings, album: AlbumColors?, content: @Composable ()
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
     val useArt = settings.colorFromArt && album != null
-    val targetAccent = Color(if (useArt) album!!.accent else settings.fixedColor)
-    val targetOn = Color(if (useArt) album!!.onAccent else ArtworkRepository.onColorFor(settings.fixedColor))
-    val accent by animateColorAsState(targetAccent, tween(600), label = "accent")
-    val onAccent by animateColorAsState(targetOn, tween(600), label = "onAccent")
+    // Album colours are tuned per theme so the accent never disappears into the background.
+    val tuned = remember(useArt, album, settings.fixedColor, dark) {
+        ArtworkRepository.tuneAccent(if (useArt) album!!.accent else settings.fixedColor, dark)
+    }
+    val accent by animateColorAsState(Color(tuned), tween(700), label = "accent")
+    val onAccent by animateColorAsState(Color(ArtworkRepository.onColorFor(tuned)), tween(700), label = "onAccent")
 
     val c = if (dark) {
         PlayerColors(
@@ -108,6 +126,11 @@ fun PlayerTheme(settings: Settings, album: AlbumColors?, content: @Composable ()
         lightColorScheme(primary = accent, onPrimary = onAccent, background = c.bg, surface = c.card, onBackground = c.text, onSurface = c.text)
     }
     MaterialTheme(colorScheme = scheme) {
-        CompositionLocalProvider(LocalPlayerColors provides c, LocalContentColor provides c.text, content = content)
+        CompositionLocalProvider(
+            LocalPlayerColors provides c,
+            LocalContentColor provides c.text,
+            LocalTextStyle provides T.body,
+            content = content,
+        )
     }
 }

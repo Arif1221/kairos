@@ -66,7 +66,7 @@ fun artColor(vm: MainViewModel, song: SongEntity?): Color {
     val argb by produceState<Int?>(null, song?.id) {
         value = song?.let { s -> vm.thumbnail(s)?.let { ArtworkRepository.paletteAccent(it) } }
     }
-    return argb?.let { Color(it) } ?: c.accent
+    return argb?.let { Color(ArtworkRepository.tuneAccent(it, c.dark)) } ?: c.accent
 }
 
 fun tintOf(card: Color, accent: Color, dark: Boolean): Color = lerp(card, accent, if (dark) 0.28f else 0.22f)
@@ -145,4 +145,17 @@ private fun DialogItem(text: String, onClick: () -> Unit) {
     TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Text(text, Modifier.fillMaxWidth(), style = T.title, color = P.colors.text)
     }
+}
+
+/** Seek bar that reads the playback position itself, so only it redraws 5 times a second. */
+@Composable
+fun LiveWaveformSeek(vm: MainViewModel, durationMs: Long, seed: Long, modifier: Modifier = Modifier, barsHeight: Dp = 66.dp, bars: Int = 26) {
+    val pos by vm.position.collectAsStateWithLifecycle()
+    com.skarif.kairos.ui.components.WaveformSeek(pos, durationMs, seed, vm::seekTo, modifier, barsHeight, bars)
+}
+
+@Composable
+fun LiveTime(vm: MainViewModel, durationMs: Long, color: Color) {
+    val pos by vm.position.collectAsStateWithLifecycle()
+    Text("${formatTime(pos)} / ${formatTime(durationMs)}", style = T.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = color)
 }

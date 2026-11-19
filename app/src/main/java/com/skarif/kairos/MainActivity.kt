@@ -1,12 +1,20 @@
 package com.skarif.kairos
 
+import android.app.Activity
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -21,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,9 +39,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -72,6 +84,14 @@ class MainActivity : ComponentActivity() {
 
 private val TABS = listOf("home", "library", "stats", "search")
 
+/** Player screens and sheets rise from the bottom, like the design's sheets. */
+private val sheetEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    slideInVertically(tween(380, easing = FastOutSlowInEasing)) { it / 4 } + fadeIn(tween(260))
+}
+private val sheetExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    slideOutVertically(tween(300, easing = FastOutSlowInEasing)) { it / 4 } + fadeOut(tween(220))
+}
+
 @Composable
 private fun PlayerRoot(vm: MainViewModel = viewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -90,40 +110,60 @@ private fun PlayerRoot(vm: MainViewModel = viewModel()) {
         fun openAlbum(id: Long) = openCollection("album:$id")
         val openMenu = { menuOpen = true }
 
+        // Status and navigation bar icons follow the app's theme, not the phone's.
+        val view = LocalView.current
+        val darkUi = P.colors.dark
+        if (!view.isInEditMode) {
+            SideEffect {
+                val window = (view.context as Activity).window
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !darkUi
+                    isAppearanceLightNavigationBars = !darkUi
+                }
+            }
+        }
+
         Box(Modifier.fillMaxSize()) {
-            NavHost(nav, startDestination = start) {
+            NavHost(
+                nav, startDestination = start,
+                enterTransition = { fadeIn(tween(240)) + slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { it / 12 } },
+                exitTransition = { fadeOut(tween(180)) },
+                popEnterTransition = { fadeIn(tween(240)) },
+                popExitTransition = { fadeOut(tween(180)) + slideOutHorizontally(tween(280)) { it / 12 } },
+            ) {
                 composable("onboarding") {
                     OnboardingScreen(vm) { nav.navigate("home") { popUpTo("onboarding") { inclusive = true } } }
                 }
-                composable("home") {
+                composable("home", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
                     HomeScreen(
                         vm, onMenu = openMenu, onSearch = { nav.tab("search") }, onOpenCollection = ::openCollection,
                         onOpenNowPlaying = { nav.navigate("now") }, onPlaylists = { nav.navigate("playlists") },
+                        onLibrary = { nav.tab("library") },
                     )
                 }
-                composable("library") {
+                composable("library", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
                     LibraryScreen(
                         vm, onOpenNowPlaying = { nav.navigate("now") }, onSettings = { nav.navigate("settings") },
                         onFolders = { nav.navigate("folders") }, onSort = { nav.navigate("sort") }, onOpenAlbum = ::openAlbum,
                     )
                 }
-                composable("stats") { StatsScreen(vm, onMenu = openMenu, onSettings = { nav.navigate("settings") }) }
-                composable("search") {
+                composable("stats", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) { StatsScreen(vm, onMenu = openMenu, onSettings = { nav.navigate("settings") }) }
+                composable("search", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
                     SearchScreen(vm, onMenu = openMenu, onOpenCollection = ::openCollection, onOpenNowPlaying = { nav.navigate("now") })
                 }
-                composable("now") {
+                composable("now", enterTransition = sheetEnter, popExitTransition = sheetExit) {
                     NowPlayingScreen(
                         vm, onBack = { nav.popBackStack() }, onLyrics = { nav.navigate("lyrics") }, onQueue = { nav.navigate("queue") },
                         onEqualizer = { nav.navigate("eq") }, onSleep = { nav.navigate("sleep") }, onAlbum = ::openAlbum,
                     )
                 }
-                composable("lyrics") { LyricsScreen(vm, onBack = { nav.popBackStack() }) }
-                composable("queue") {
+                composable("lyrics", enterTransition = sheetEnter, popExitTransition = sheetExit) { LyricsScreen(vm, onBack = { nav.popBackStack() }) }
+                composable("queue", enterTransition = sheetEnter, popExitTransition = sheetExit) {
                     QueueScreen(vm, onBack = { nav.popBackStack() }, onSaveAsPlaylist = { nav.navigate("newplaylist?fromQueue=true") })
                 }
-                composable("eq") { EqualizerScreen(vm, onBack = { nav.popBackStack() }) }
-                composable("sleep") { SleepTimerScreen(vm, onBack = { nav.popBackStack() }) }
-                composable("sort") { SortScreen(vm, onBack = { nav.popBackStack() }) }
+                composable("eq", enterTransition = sheetEnter, popExitTransition = sheetExit) { EqualizerScreen(vm, onBack = { nav.popBackStack() }) }
+                composable("sleep", enterTransition = sheetEnter, popExitTransition = sheetExit) { SleepTimerScreen(vm, onBack = { nav.popBackStack() }) }
+                composable("sort", enterTransition = sheetEnter, popExitTransition = sheetExit) { SortScreen(vm, onBack = { nav.popBackStack() }) }
                 composable("playlists") {
                     PlaylistsScreen(vm, onBack = { nav.popBackStack() }, onNew = { nav.navigate("newplaylist?fromQueue=false") }, onOpenCollection = ::openCollection)
                 }
@@ -142,13 +182,13 @@ private fun PlayerRoot(vm: MainViewModel = viewModel()) {
                 composable("folders") { FoldersScreen(vm, onBack = { nav.popBackStack() }) }
             }
 
-            if (route in TABS) {
-                Dock(
-                    route = route,
-                    onTab = { nav.tab(it) },
-                    onNow = { nav.navigate("now") },
-                    modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp),
-                )
+            AnimatedVisibility(
+                route in TABS,
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp),
+                enter = slideInVertically(tween(320, easing = FastOutSlowInEasing)) { it } + fadeIn(),
+                exit = slideOutVertically(tween(220)) { it } + fadeOut(),
+            ) {
+                Dock(route = route, onTab = { nav.tab(it) }, onNow = { nav.navigate("now") })
             }
 
             AnimatedVisibility(menuOpen, enter = fadeIn() + slideInHorizontally { -it / 3 }, exit = fadeOut() + slideOutHorizontally { -it / 3 }) {

@@ -49,6 +49,7 @@ fun HomeScreen(
     onOpenCollection: (String) -> Unit,
     onOpenNowPlaying: () -> Unit,
     onPlaylists: () -> Unit,
+    onLibrary: () -> Unit,
 ) {
     val c = P.colors
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -77,7 +78,7 @@ fun HomeScreen(
                 style = T.h1.copy(fontSize = 32.sp, lineHeight = 37.sp, letterSpacing = (-0.6).sp), color = c.text,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Pill("Songs  ${songs.size}", {}, selected = true)
+                Pill("Songs  ${songs.size}", onLibrary, selected = true)
                 Pill("Playlists  ${playlists.size}", onPlaylists)
             }
 

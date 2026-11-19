@@ -86,7 +86,7 @@ fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> U
                             Text(cur?.title ?: "Nothing playing", style = T.h2, color = c.onAccent, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(cur?.artist ?: "", style = T.small, color = c.onAccent)
                         }
-                        Text("${formatTime(now.positionMs)} / ${formatTime(now.durationMs)}", style = T.small.copy(fontWeight = FontWeight.Bold), color = c.onAccent)
+                        LiveTime(vm, now.durationMs, c.onAccent)
                     }
                     PillMeter(
                         filled = if (now.queueSize == 0) 0 else ((now.queueIndex + 1) * 12 / now.queueSize).coerceIn(1, 12),
@@ -109,11 +109,14 @@ fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> U
                 }
             }
             item { Pill("Save as playlist", onSaveAsPlaylist, icon = Ic.PlaylistAdd, modifier = Modifier.fillMaxWidth()) }
-            itemsIndexed(now.queue, key = { i, id -> "$i-$id" }) { i, id ->
+            // Key by song id + occurrence so moved rows animate to their new place.
+            val seen = HashMap<Long, Int>()
+            val keys = now.queue.map { id -> val n = seen.merge(id, 1, Int::plus)!!; "$id#$n" }
+            itemsIndexed(now.queue, key = { i, _ -> keys[i] }) { i, id ->
                 val s = vm.song(id)
                 val playing = i == now.queueIndex
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(if (playing) c.accent else c.card.copy(alpha = 0.75f))
+                    Modifier.animateItem().fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(if (playing) c.accent else c.card.copy(alpha = 0.75f))
                         .clickable(role = Role.Button, onClickLabel = "Play") { vm.playQueueItem(i) }.padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {

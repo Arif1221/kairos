@@ -24,7 +24,6 @@ import kotlinx.coroutines.launch
 data class NowPlaying(
     val songId: Long? = null,
     val isPlaying: Boolean = false,
-    val positionMs: Long = 0,
     val durationMs: Long = 0,
     val queueIndex: Int = 0,
     val queueSize: Int = 0,
@@ -42,6 +41,13 @@ data class NowPlaying(
 class PlayerConnection(private val context: Context, private val appScope: CoroutineScope) {
     private val _state = MutableStateFlow(NowPlaying())
     val state: StateFlow<NowPlaying> = _state.asStateFlow()
+
+    /**
+     * Position is its own flow: it changes 5 times a second while playing, and only the screens
+     * that show it (seek bar, lyrics) should redraw that often.
+     */
+    private val _position = MutableStateFlow(0L)
+    val position: StateFlow<Long> = _position.asStateFlow()
 
     private var controller: MediaController? = null
     private var ticker: Job? = null
@@ -110,10 +116,10 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
 
     private fun publish() {
         val c = controller ?: return
-        _state.value = NowPlaying(
+        _position.value = c.currentPosition
+        val next = NowPlaying(
             songId = c.currentMediaItem?.mediaId?.toLongOrNull(),
             isPlaying = c.isPlaying,
-            positionMs = c.currentPosition,
             durationMs = c.duration.takeIf { it > 0 } ?: 0,
             queueIndex = c.currentMediaItemIndex,
             queueSize = c.mediaItemCount,
@@ -124,11 +130,12 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
             usbConnected = extras.getBoolean(PlaybackService.EXTRA_USB),
             outputNeedsRestart = extras.getBoolean(PlaybackService.EXTRA_NEEDS_RESTART),
         )
+        if (next != _state.value) _state.value = next
         // Position only changes on its own while playing, so only tick then.
         if (c.isPlaying && ticker?.isActive != true) {
             ticker = appScope.launch(Dispatchers.Main) {
                 while (isActive && controller?.isPlaying == true) {
-                    _state.value = _state.value.copy(positionMs = controller?.currentPosition ?: 0)
+                    _position.value = controller?.currentPosition ?: 0
                     delay(200)
                 }
             }

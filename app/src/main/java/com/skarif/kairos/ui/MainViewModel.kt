@@ -75,6 +75,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val settings: StateFlow<Settings> = ct.settings.settings
     val now: StateFlow<NowPlaying> = ct.player.state
+    val position: StateFlow<Long> = ct.player.position
     val sleep: StateFlow<SleepState> = ct.sleep.state
     val songs: StateFlow<List<SongEntity>> = ct.db.songs().observeAll().state(emptyList())
     private val events: StateFlow<List<PlayEventEntity>> = ct.db.playEvents().observeAll().state(emptyList())
@@ -83,8 +84,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val songById: StateFlow<Map<Long, SongEntity>> = songs.map { l -> l.associateBy { it.id } }.state(emptyMap())
     private val playCounts: StateFlow<Map<Long, Int>> = events.map { e -> e.groupingBy { it.songId }.eachCount() }.state(emptyMap())
 
-    val sortedSongs: StateFlow<List<SongEntity>> = combine(songs, settings, playCounts) { list, s, counts ->
-        val sorted = when (s.songSort) {
+    private val sortKey = settings.map { it.songSort to it.sortDescending }.distinctUntilChanged()
+    val sortedSongs: StateFlow<List<SongEntity>> = combine(songs, sortKey, playCounts) { list, (sort, desc), counts ->
+        val sorted = when (sort) {
             SongSort.TITLE -> list.sortedBy { it.title.lowercase() }
             SongSort.ARTIST -> list.sortedBy { it.artist.lowercase() }
             SongSort.ALBUM -> list.sortedWith(compareBy({ it.album.lowercase() }, { it.track }))
@@ -92,8 +94,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             SongSort.LENGTH -> list.sortedBy { it.durationMs }
             SongSort.MOST_PLAYED -> list.sortedBy { counts[it.id] ?: 0 }
         }
-        val naturallyDesc = s.songSort == SongSort.DATE_ADDED || s.songSort == SongSort.MOST_PLAYED
-        if (s.sortDescending != naturallyDesc) sorted.asReversed() else sorted
+        val naturallyDesc = sort == SongSort.DATE_ADDED || sort == SongSort.MOST_PLAYED
+        if (desc != naturallyDesc) sorted.asReversed() else sorted
     }.state(emptyList())
 
     val currentSong: StateFlow<SongEntity?> = now.map { it.songId }.distinctUntilChanged()

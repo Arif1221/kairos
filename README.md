@@ -64,4 +64,4 @@ PlayerApp      AppContainer: hand-written dependency wiring
 
 ## Getting the APK from GitHub
 Every push runs `.github/workflows/build.yml`. Open the repo's **Actions** tab, select the latest
-run, and download **kairos-debug-apk** under Artifacts. It is a zip containing `app-debug.apk`.
+run, and download **kairos-apk** under Artifacts. It is a zip containing `app-release.apk` (optimised with R8, signed with the debug key).

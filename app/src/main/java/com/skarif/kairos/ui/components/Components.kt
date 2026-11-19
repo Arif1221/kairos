@@ -1,6 +1,20 @@
 package com.skarif.kairos.ui.components
 
 import android.graphics.Bitmap
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.ripple
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
 import android.os.Build
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -75,6 +89,14 @@ fun formatTime(ms: Long): String {
     return "${s / 60}:${(s % 60).toString().padStart(2, '0')}"
 }
 
+/** Shrinks slightly while pressed: the tactile feedback every tappable element uses. */
+@Composable
+fun Modifier.pressScale(interaction: MutableInteractionSource, pressed: Float = 0.93f): Modifier {
+    val isPressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (isPressed) pressed else 1f, spring(stiffness = Spring.StiffnessMediumLow), label = "press")
+    return this.graphicsLayer { scaleX = scale; scaleY = scale }
+}
+
 @Composable
 fun CircleButton(
     icon: ImageVector,
@@ -86,15 +108,21 @@ fun CircleButton(
     content: Color = P.colors.text,
     iconSize: Dp = 20.dp,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val bg by animateColorAsState(container, tween(250), label = "circleBg")
+    val fg by animateColorAsState(content, tween(250), label = "circleFg")
     Box(
         modifier
             .size(size)
+            .pressScale(interaction)
             .clip(CircleShape)
-            .background(container)
-            .clickable(role = Role.Button, onClick = onClick),
+            .background(bg)
+            .clickable(interactionSource = interaction, indication = ripple(), role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription, tint = content, modifier = Modifier.size(iconSize))
+        Crossfade(icon, animationSpec = tween(180), label = "icon") { ic ->
+            Icon(ic, contentDescription, tint = fg, modifier = Modifier.size(iconSize))
+        }
     }
 }
 
@@ -119,18 +147,22 @@ fun Pill(
         selected -> c.inkFg
         else -> c.text
     }
+    val interaction = remember { MutableInteractionSource() }
+    val bgA by animateColorAsState(bg, tween(250), label = "pillBg")
+    val fgA by animateColorAsState(fg, tween(250), label = "pillFg")
     Row(
         modifier
             .height(if (big) 60.dp else 46.dp)
+            .pressScale(interaction, 0.96f)
             .clip(RoundedCornerShape(50))
-            .background(bg)
-            .clickable(role = Role.Button, onClick = onClick)
+            .background(bgA)
+            .clickable(interactionSource = interaction, indication = ripple(), role = Role.Button, onClick = onClick)
             .padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
     ) {
-        if (icon != null) Icon(icon, null, tint = fg, modifier = Modifier.size(18.dp))
-        Text(text, color = fg, style = if (big) T.title.copy(fontSize = 17.sp) else T.label)
+        if (icon != null) Icon(icon, null, tint = fgA, modifier = Modifier.size(18.dp))
+        Text(text, color = fgA, style = if (big) T.title.copy(fontSize = 17.sp) else T.label, maxLines = 1)
     }
 }
 
@@ -157,33 +189,36 @@ fun ScreenBackground(art: Bitmap?, blur: Boolean, modifier: Modifier = Modifier,
     val c = P.colors
     Box(modifier.fillMaxSize().background(c.bg)) {
         if (blur && art != null) {
-            if (Build.VERSION.SDK_INT >= 31) {
-                val img = remember(art) { art.asImageBitmap() }
+            // A 48 px copy, stretched and lightly blurred, looks the same as blurring the full image
+            // at a fraction of the GPU cost. Crossfades when the song changes.
+            Crossfade(art, animationSpec = tween(700), label = "bg") { bmp ->
+                val tiny = remember(bmp) { Bitmap.createScaledBitmap(bmp, 48, 48, true).asImageBitmap() }
                 Image(
-                    img, null,
-                    Modifier.fillMaxSize().scale(1.3f).blur(60.dp, BlurredEdgeTreatment.Unbounded),
-                    contentScale = ContentScale.Crop,
+                    tiny, null,
+                    Modifier.fillMaxSize().scale(1.2f).then(if (Build.VERSION.SDK_INT >= 31) Modifier.blur(24.dp, BlurredEdgeTreatment.Unbounded) else Modifier),
+                    contentScale = ContentScale.Crop, filterQuality = FilterQuality.High,
                 )
-            } else {
-                val tiny = remember(art) { Bitmap.createScaledBitmap(art, 12, 12, true).asImageBitmap() }
-                Image(tiny, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = FilterQuality.High)
             }
             Box(Modifier.fillMaxSize().background(c.veil))
         }
-        Canvas(Modifier.fillMaxSize()) {
-            val step = 20.dp.toPx()
-            val r = 1.1.dp.toPx()
-            val dot = Color(0x337F7F7F)
-            var y = step / 2
-            while (y < size.height) {
-                var x = step / 2
-                while (x < size.width) {
-                    drawCircle(dot, r, Offset(x, y))
-                    x += step
+        Spacer(
+            Modifier.fillMaxSize().drawWithCache {
+                // Build the dot grid once per size, not on every frame.
+                val step = 20.dp.toPx()
+                val r = 1.1.dp.toPx()
+                val dots = Path()
+                var y = step / 2
+                while (y < size.height) {
+                    var x = step / 2
+                    while (x < size.width) {
+                        dots.addOval(Rect(x - r, y - r, x + r, y + r))
+                        x += step
+                    }
+                    y += step
                 }
-                y += step
-            }
-        }
+                onDrawBehind { drawPath(dots, Color(0x337F7F7F)) }
+            },
+        )
         content()
     }
 }
@@ -205,7 +240,9 @@ fun WaveformSeek(
 ) {
     val c = P.colors
     val heights = remember(seed, bars) { val r = Random(seed); List(bars) { 0.3f + r.nextFloat() * 0.7f } }
-    val frac = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    val target = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    // Position arrives every 200 ms; animate between updates so the bar glides instead of ticking.
+    val frac by animateFloatAsState(target, tween(220, easing = LinearEasing), label = "seek")
     var widthPx by remember { mutableIntStateOf(0) }
     var tipW by remember { mutableIntStateOf(0) }
     fun seekAt(x: Float) {
@@ -325,11 +362,11 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
                     .weight(1f)
                     .height(42.dp)
                     .clip(RoundedCornerShape(21.dp))
-                    .background(if (on) c.ink else Color.Transparent)
+                    .background(animateColorAsState(if (on) c.ink else Color.Transparent, tween(250), label = "seg").value)
                     .selectable(selected = on, role = Role.RadioButton) { onSelect(i) },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, style = T.label.copy(fontSize = 14.sp), color = if (on) c.inkFg else c.text)
+                Text(label, style = T.label.copy(fontSize = 14.sp), color = animateColorAsState(if (on) c.inkFg else c.text, tween(250), label = "segT").value, maxLines = 1)
             }
         }
     }

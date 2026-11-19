@@ -1,5 +1,12 @@
 package com.skarif.kairos.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -30,6 +37,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -42,7 +50,6 @@ import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.ScreenBackground
-import com.skarif.kairos.ui.components.WaveformSeek
 import com.skarif.kairos.ui.components.formatTime
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
@@ -66,6 +73,8 @@ fun NowPlayingScreen(
     val settings by vm.settings.collectAsStateWithLifecycle()
     val sleep by vm.sleep.collectAsStateWithLifecycle()
     val s = song
+    // Hero scales with the screen: big on tall phones, never crowding the controls on short ones.
+    val heroHeight = (LocalConfiguration.current.screenHeightDp * 0.47f).coerceIn(300f, 440f).dp
 
     ScreenBackground(art, settings.blurBackground) {
         if (s == null) {
@@ -80,18 +89,19 @@ fun NowPlayingScreen(
         }
         val liked = s.id in favs
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding()) {
-            Box(Modifier.fillMaxWidth().height(458.dp)) {
+            Box(Modifier.fillMaxWidth().height(heroHeight + 38.dp)) {
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .height(420.dp)
+                        .height(heroHeight)
                         .clip(RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp))
                         .background(c.accent),
                 ) {
-                    val bmp = art
-                    if (bmp != null) {
-                        val img = remember(bmp) { bmp.asImageBitmap() }
-                        Image(img, "${s.album} cover", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    Crossfade(art, animationSpec = tween(450), label = "cover") { bmp ->
+                        if (bmp != null) {
+                            val img = remember(bmp) { bmp.asImageBitmap() }
+                            Image(img, "${s.album} cover", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        }
                     }
                     Box(
                         Modifier.fillMaxWidth().height(220.dp).align(Alignment.BottomCenter)
@@ -154,7 +164,7 @@ fun NowPlayingScreen(
                     InfoChip(Ic.Clock, formatTime(s.durationMs))
                     if (now.queueSize > 0) InfoChip(Ic.Queue, "${now.queueIndex + 1} of ${now.queueSize}", onQueue)
                 }
-                WaveformSeek(now.positionMs, now.durationMs.takeIf { it > 0 } ?: s.durationMs, s.id, vm::seekTo)
+                LiveWaveformSeek(vm, now.durationMs.takeIf { it > 0 } ?: s.durationMs, s.id)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     CircleButton(Ic.Prev, "Previous song", vm::previous, size = 64.dp, iconSize = 22.dp)
                     Row(
@@ -167,8 +177,16 @@ fun NowPlayingScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
                     ) {
-                        Icon(if (now.isPlaying) Ic.Pause else Ic.Play, null, tint = c.inkFg, modifier = Modifier.size(20.dp))
-                        Text(if (now.isPlaying) "Pause" else "Play", color = c.inkFg, style = T.title.copy(fontSize = 17.sp))
+                        AnimatedContent(
+                            now.isPlaying,
+                            transitionSpec = { (fadeIn(tween(160)) + scaleIn(tween(200), 0.7f)) togetherWith fadeOut(tween(120)) },
+                            label = "playPause",
+                        ) { playing ->
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Icon(if (playing) Ic.Pause else Ic.Play, null, tint = c.inkFg, modifier = Modifier.size(20.dp))
+                                Text(if (playing) "Pause" else "Play", color = c.inkFg, style = T.title.copy(fontSize = 17.sp))
+                            }
+                        }
                     }
                     CircleButton(Ic.Next, "Next song", vm::next, size = 64.dp, iconSize = 22.dp)
                 }

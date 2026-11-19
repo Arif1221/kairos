@@ -1,5 +1,8 @@
 package com.skarif.kairos.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,12 +27,18 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -45,7 +54,6 @@ import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.ScreenBackground
-import com.skarif.kairos.ui.components.WaveformSeek
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 import kotlin.math.abs
@@ -94,7 +102,7 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit) {
                         "No lyrics for this song yet. Add them to the file's tags, or put a .lrc file with the " +
                             "same name next to the song and allow that folder in Settings.",
                     )
-                    is LyricsState.Ready -> LyricsList(st.lyrics, now.positionMs, offset) { t -> vm.seekTo(t) }
+                    is LyricsState.Ready -> LyricsList(vm, st.lyrics, offset) { t -> vm.seekTo(t) }
                 }
             }
 
@@ -108,7 +116,7 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit) {
             ) {
                 val s = song
                 if (s != null) {
-                    WaveformSeek(now.positionMs, now.durationMs.takeIf { it > 0 } ?: s.durationMs, s.id, vm::seekTo, barsHeight = 34.dp, bars = 28)
+                    LiveWaveformSeek(vm, now.durationMs.takeIf { it > 0 } ?: s.durationMs, s.id, barsHeight = 34.dp, bars = 28)
                 }
                 val synced = (state as? LyricsState.Ready)?.lyrics?.synced == true
                 if (synced) {
@@ -139,17 +147,24 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit) {
 
 /** Synced: highlights and centres the current line; tap a line to jump there. Plain: just text. */
 @Composable
-private fun LyricsList(lyrics: Lyrics, positionMs: Long, offsetMs: Long, onSeek: (Long) -> Unit) {
+private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, onSeek: (Long) -> Unit) {
     val c = P.colors
     val list = rememberLazyListState()
+    val position = vm.position.collectAsStateWithLifecycle()
+    // Only the line index matters to the list; derivedStateOf stops 5-per-second recompositions.
     // Positive offset means the lyrics should show later, so compare against an earlier position.
-    val current = if (lyrics.synced) lyrics.indexAt(positionMs - offsetMs) else -1
+    val current by remember(lyrics, offsetMs) {
+        derivedStateOf { if (lyrics.synced) lyrics.indexAt(position.value - offsetMs) else -1 }
+    }
+    var viewport by remember { mutableIntStateOf(0) }
     LaunchedEffect(current) {
-        if (current >= 0) list.animateScrollToItem((current - 2).coerceAtLeast(0))
+        // Keep the current line about a third of the way down, so upcoming lines stay visible.
+        if (current >= 0) list.animateScrollToItem(current, scrollOffset = -(viewport / 3))
     }
     LazyColumn(
         state = list,
-        contentPadding = PaddingValues(horizontal = 22.dp, vertical = 24.dp),
+        modifier = Modifier.fillMaxSize().onSizeChanged { viewport = it.height },
+        contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 24.dp, bottom = 160.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         if (!lyrics.synced) {
@@ -157,28 +172,29 @@ private fun LyricsList(lyrics: Lyrics, positionMs: Long, offsetMs: Long, onSeek:
         }
         itemsIndexed(lyrics.lines) { i, line ->
             val isCur = i == current
-            val color = when {
-                !lyrics.synced -> c.text
-                isCur -> c.text
-                i < current -> c.text.copy(alpha = 0.38f)
-                else -> c.text.copy(alpha = 0.62f)
-            }
             val text = line.text.ifEmpty { "♪" }
-            val style = if (lyrics.synced) {
-                T.h1.copy(
-                    fontSize = if (isCur) 34.sp else 28.sp,
-                    lineHeight = if (isCur) 39.sp else 32.sp,
-                    fontWeight = if (isCur) FontWeight.ExtraBold else FontWeight.Medium,
+            if (!lyrics.synced) {
+                Text(text, Modifier.fillMaxWidth(), style = T.body.copy(fontSize = 20.sp, lineHeight = 28.sp), color = c.text)
+            } else {
+                val alpha by animateFloatAsState(
+                    when { isCur -> 1f; i < current -> 0.38f; else -> 0.62f }, tween(350), label = "lineAlpha",
                 )
-            } else {
-                T.body.copy(fontSize = 20.sp, lineHeight = 28.sp)
+                val scale by animateFloatAsState(if (isCur) 1f else 0.86f, spring(dampingRatio = 0.75f, stiffness = 300f), label = "lineScale")
+                Text(
+                    text,
+                    Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            scaleX = scale; scaleY = scale
+                            transformOrigin = TransformOrigin(0f, 0.5f)
+                            this.alpha = alpha
+                        }
+                        .clickable(role = Role.Button, onClickLabel = "Play from this line") { onSeek(line.timeMs + offsetMs) }
+                        .then(if (isCur) Modifier.semantics { heading() } else Modifier),
+                    style = T.h1.copy(fontSize = 34.sp, lineHeight = 39.sp, fontWeight = if (isCur) FontWeight.ExtraBold else FontWeight.SemiBold),
+                    color = c.text,
+                )
             }
-            val mod = if (lyrics.synced) {
-                Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Play from this line") { onSeek(line.timeMs + offsetMs) }
-            } else {
-                Modifier.fillMaxWidth()
-            }
-            Text(text, mod.then(if (isCur) Modifier.semantics { heading() } else Modifier), style = style, color = color)
         }
     }
 }
