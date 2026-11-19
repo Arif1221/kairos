@@ -109,18 +109,26 @@ fun HomeScreen(
             val song = cur
             if (album != null && song != null) {
                 val idx = album.songs.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
-                Row(
+                Column(
                     Modifier.padding(horizontal = 18.dp).fillMaxWidth().cardClick("Open player", onOpenNowPlaying)
-                        .clip(RoundedCornerShape(30.dp)).background(c.tint).padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        .clip(RoundedCornerShape(34.dp)).background(c.tint).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    SongArt(vm, song, 64.dp, corner = 20.dp)
-                    Column(Modifier.weight(1f)) {
-                        Text("Continue", style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.muted)
-                        Text(album.title, style = T.title.copy(fontSize = 18.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("Song ${idx + 1} of ${album.songs.size}", style = T.small, color = c.muted)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        SongArt(vm, song, 96.dp, corner = 26.dp)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("Continue listening", style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.muted)
+                            Text(song.title, style = T.h2, color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(song.artist, style = T.body, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
-                    CircleButton(Ic.Play, "Resume", onOpenNowPlaying, container = c.accent, content = c.onAccent)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("${album.title}, song ${idx + 1} of ${album.songs.size}", style = T.small, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            PillMeter(idx + 1, album.songs.size.coerceIn(1, 12), c.accent, height = 18.dp)
+                        }
+                        Pill("Resume", onOpenNowPlaying, accent = true, icon = Ic.Play)
+                    }
                 }
             }
 
@@ -135,11 +143,11 @@ fun HomeScreen(
                     items(recent.size, key = { recent[it].id }) { i ->
                         val s2 = recent[i]
                         Column(
-                            Modifier.width(140.dp).cardClick("Play ${s2.title}") { vm.play(recent, i); onOpenNowPlaying() },
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            Modifier.width(168.dp).cardClick("Play ${s2.title}") { vm.play(recent, i); onOpenNowPlaying() },
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            SongArt(vm, s2, 140.dp, corner = 26.dp)
-                            Text(s2.title, style = T.title.copy(fontSize = 15.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            SongArt(vm, s2, 168.dp, corner = 30.dp)
+                            Text(s2.title, style = T.title.copy(fontSize = 16.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(s2.artist, style = T.small, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
@@ -156,7 +164,7 @@ fun HomeScreen(
                 ) {
                     items(more.size, key = { more[it].key }) { i ->
                         val m = more[i]
-                        MixCard(vm, m, Modifier.width(300.dp), onOpen = { onOpenCollection(m.key) }, onPlay = { vm.play(m.songs, 0); onOpenNowPlaying() })
+                        MixCard(vm, m, Modifier.width(320.dp), onOpen = { onOpenCollection(m.key) }, onPlay = { vm.play(m.songs, 0); onOpenNowPlaying() })
                     }
                 }
             } else {
@@ -174,11 +182,11 @@ fun HomeScreen(
                     items(fresh.size, key = { "fa" + fresh[it].albumId }) { i ->
                         val s2 = fresh[i]
                         Column(
-                            Modifier.width(120.dp).cardClick("Open ${s2.album}") { onOpenCollection("album:${s2.albumId}") },
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            Modifier.width(150.dp).cardClick("Open ${s2.album}") { onOpenCollection("album:${s2.albumId}") },
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            SongArt(vm, s2, 120.dp, corner = 60.dp)
-                            Text(s2.album, style = T.title.copy(fontSize = 14.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            SongArt(vm, s2, 150.dp, corner = 75.dp)
+                            Text(s2.album, style = T.title.copy(fontSize = 15.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(s2.artist, style = T.small.copy(fontSize = 12.sp), color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
@@ -199,17 +207,17 @@ private fun QuickPick(vm: MainViewModel, m: Collection, modifier: Modifier, onOp
     val c = P.colors
     val accent = artColor(vm, m.songs.firstOrNull())
     Row(
-        modifier.height(64.dp).cardClick("Open ${m.title}", onOpen)
-            .clip(RoundedCornerShape(20.dp)).background(tintOf(c.card, accent, c.dark)).padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier.height(84.dp).cardClick("Open ${m.title}", onOpen)
+            .clip(RoundedCornerShape(26.dp)).background(tintOf(c.card, accent, c.dark)).padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (m.songs.isNotEmpty()) SongArt(vm, m.songs.first(), 48.dp, corner = 14.dp)
-        else Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(c.tint), contentAlignment = Alignment.Center) {
-            androidx.compose.material3.Icon(Ic.Music, null, tint = c.muted, modifier = Modifier.size(18.dp))
+        if (m.songs.isNotEmpty()) SongArt(vm, m.songs.first(), 64.dp, corner = 18.dp)
+        else Box(Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)).background(c.tint), contentAlignment = Alignment.Center) {
+            androidx.compose.material3.Icon(Ic.Music, null, tint = c.muted, modifier = Modifier.size(22.dp))
         }
         Column(Modifier.weight(1f)) {
-            Text(m.title, style = T.title.copy(fontSize = 14.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("${m.songs.size} songs", style = T.small.copy(fontSize = 12.sp), color = c.muted, maxLines = 1)
+            Text(m.title, style = T.title.copy(fontSize = 16.sp, lineHeight = 19.sp), color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("${m.songs.size} songs", style = T.small, color = c.muted, maxLines = 1)
         }
     }
 }
