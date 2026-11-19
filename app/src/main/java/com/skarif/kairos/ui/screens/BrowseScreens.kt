@@ -174,7 +174,7 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
     val mixes by vm.mixes.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
-    var smart by remember { mutableStateOf(false) }
+    var smart by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     data class Tile(val key: String, val name: String, val sub: String, val songs: List<SongEntity>)
     val tiles = if (smart) mixes.map { Tile(it.key, it.title, "Smart, ${it.songs.size} songs", it.songs) }
     else playlists.map { Tile("playlist:${it.id}", it.name, "${it.songs.size} songs", it.songs) }

@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -98,7 +99,7 @@ class MainActivity : ComponentActivity() {
 private val TABS = listOf("home", "library", "stats", "search")
 
 /** Screens whose top edge is dark in every theme. */
-private val DARK_TOP = setOf("library", "stats", "now", "lyrics", "collection/{key}")
+private val DARK_TOP = setOf("library", "stats", "now", "collection/{key}")
 
 /** Player screens and sheets rise from the bottom, like the design's sheets. */
 private val sheetEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
@@ -132,7 +133,7 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
         val view = LocalView.current
         val darkUi = P.colors.dark
         val darkTop = darkUi || route in DARK_TOP
-        val darkBottom = darkUi || route == "stats" || route == "lyrics"
+        val darkBottom = darkUi || route == "stats"
         if (!view.isInEditMode) {
             SideEffect {
                 val window = (view.context as Activity).window
@@ -211,7 +212,23 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 exit = slideOutVertically(tween(220)) { it / 2 } + fadeOut(),
             ) {
                 ProvideNavScope(this) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Soft fade behind the mini player and dock, so cards scrolling under them
+                    // recede instead of clashing with the controls.
+                    val bg = P.colors.bg
+                    Column(
+                        Modifier.drawBehind {
+                            val extra = 140.dp.toPx()
+                            drawRect(
+                                androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    0f to bg.copy(alpha = 0f), 0.35f to bg.copy(alpha = 0.82f), 1f to bg.copy(alpha = 0.96f),
+                                    startY = -60.dp.toPx(), endY = size.height + extra,
+                                ),
+                                topLeft = androidx.compose.ui.geometry.Offset(-size.width, -60.dp.toPx()),
+                                size = androidx.compose.ui.geometry.Size(size.width * 3, size.height + 60.dp.toPx() + extra),
+                            )
+                        },
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                         MiniPlayer(vm, onOpen = { nav.navigate("now") })
                         Dock(route = route, onTab = { nav.tab(it) }, onNow = { nav.navigate("now") })
                     }

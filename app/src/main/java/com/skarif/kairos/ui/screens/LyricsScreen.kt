@@ -74,9 +74,10 @@ import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 import kotlin.math.abs
 
-private val Veil = Color(0xB8000000)
-private val Glass = Color(0x33FFFFFF)
-private val Dim = Color(0x73FFFFFF)
+// Follow the theme: light glass and dark text in the light theme, the reverse in the dark one.
+private val Glass: Color @Composable get() = if (P.colors.dark) Color(0x33FFFFFF) else Color(0x1F000000)
+private val Dim: Color @Composable get() = P.colors.muted
+private val Fg: Color @Composable get() = P.colors.text
 
 /**
  * Immersive lyrics: the cover blurred behind a dark veil, white text, and a karaoke fill that
@@ -93,27 +94,21 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val offset by vm.lyricsOffset.collectAsStateWithLifecycle()
     var options by rememberSaveable { mutableStateOf(false) }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
-        art?.let { bmp ->
-            val img = remember(bmp) { bmp.asImageBitmap() }
-            Image(img, null, Modifier.fillMaxSize().blur(60.dp), contentScale = ContentScale.Crop)
-        }
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Veil, Color(0xD9000000), Color(0xF2000000)))))
-
+    com.skarif.kairos.ui.components.ScreenBackground(art, true) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                CircleButton(Ic.Down, "Back to now playing", onBack, size = 44.dp, container = Glass, content = Color.White)
+                CircleButton(Ic.Down, "Back to now playing", onBack, size = 44.dp, container = Glass, content = Fg)
                 art?.let { bmp ->
                     val img = remember(bmp) { bmp.asImageBitmap() }
                     Image(img, null, Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
                 }
                 Column(Modifier.weight(1f)) {
                     Text(
-                        song?.title ?: "", style = T.title.copy(fontSize = 16.sp), color = Color.White, maxLines = 1,
+                        song?.title ?: "", style = T.title.copy(fontSize = 16.sp), color = Fg, maxLines = 1,
                         modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2000),
                     )
                     Text(song?.artist ?: "", style = T.small.copy(fontSize = 12.sp), color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -122,7 +117,7 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 if (synced) {
                     CircleButton(
                         if (options) Ic.Close else Ic.Sliders, if (options) "Hide timing" else "Lyrics timing", { options = !options },
-                        size = 44.dp, container = if (options) Color.White else Glass, content = if (options) Color.Black else Color.White,
+                        size = 44.dp, container = if (options) c.ink else Glass, content = if (options) c.inkFg else Fg,
                     )
                 }
             }
@@ -136,7 +131,7 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 ) {
                     Text(
                         if (offset == 0L) "In sync" else (if (offset > 0) "Later by " else "Earlier by ") + "%.1f s".format(abs(offset) / 1000f),
-                        Modifier.weight(1f), style = T.title.copy(fontSize = 14.sp), color = Color.White,
+                        Modifier.weight(1f), style = T.title.copy(fontSize = 14.sp), color = Fg,
                     )
                     SmallPill("−0.1 s", "Show lyrics earlier") { vm.nudgeLyrics(-100) }
                     SmallPill("+0.1 s", "Show lyrics later") { vm.nudgeLyrics(100) }
@@ -178,12 +173,12 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit) {
                     }
                     Text(source ?: "", Modifier.weight(1f), style = T.small.copy(fontWeight = FontWeight.SemiBold), color = Dim)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircleButton(Ic.Prev, "Previous song", vm::previous, size = 46.dp, container = Glass, content = Color.White)
+                        CircleButton(Ic.Prev, "Previous song", vm::previous, size = 46.dp, container = Glass, content = Fg)
                         CircleButton(
                             if (now.isPlaying) Ic.Pause else Ic.Play, if (now.isPlaying) "Pause" else "Play", vm::toggle,
-                            size = 56.dp, container = Color.White, content = Color.Black,
+                            size = 56.dp, container = c.ink, content = c.inkFg,
                         )
-                        CircleButton(Ic.Next, "Next song", vm::next, size = 46.dp, container = Glass, content = Color.White)
+                        CircleButton(Ic.Next, "Next song", vm::next, size = 46.dp, container = Glass, content = Fg)
                     }
                 }
             }
@@ -216,7 +211,7 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
         itemsIndexed(lyrics.lines) { i, line ->
             val text = line.text.ifEmpty { "♪" }
             if (!lyrics.synced) {
-                Text(text, Modifier.fillMaxWidth(), style = T.body.copy(fontSize = 21.sp, lineHeight = 30.sp), color = Color.White)
+                Text(text, Modifier.fillMaxWidth(), style = T.body.copy(fontSize = 21.sp, lineHeight = 30.sp), color = Fg)
                 return@itemsIndexed
             }
             val isCur = i == current
@@ -232,13 +227,13 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
                         scaleX = scale; scaleY = scale
                         transformOrigin = TransformOrigin(0f, 0.5f)
                         this.alpha = alpha
-                        compositingStrategy = CompositingStrategy.Offscreen
+                        if (isCur) compositingStrategy = CompositingStrategy.Offscreen
                     }
                     .then(if (isCur) Modifier.karaoke(position, start, end) else Modifier)
                     .clickable(role = Role.Button, onClickLabel = "Play from this line") { onSeek(start) }
                     .then(if (isCur) Modifier.semantics { heading() } else Modifier),
                 style = T.h1.copy(fontSize = 32.sp, lineHeight = 38.sp, fontWeight = if (isCur) FontWeight.ExtraBold else FontWeight.Bold),
-                color = if (isCur) Color.White else Color.White.copy(alpha = 0.9f),
+                color = Fg,
             )
         }
     }
@@ -277,6 +272,6 @@ private fun SmallPill(text: String, description: String, onClick: () -> Unit) {
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = T.small.copy(fontWeight = FontWeight.Bold), color = Color.White)
+        Text(text, style = T.small.copy(fontWeight = FontWeight.Bold), color = Fg)
     }
 }
