@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -81,19 +82,24 @@ import com.skarif.kairos.ui.screens.StatsScreen
 import com.skarif.kairos.ui.screens.hasAudioPermission
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.PlayerTheme
+import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { PlayerRoot() }
+        // A first run (or a restore without the music permission) starts on the welcome screen.
+        // Read the stored flag before the first frame so a returning user never sees it flash.
+        val onboarded = runBlocking { (application as PlayerApp).container.settings.load().onboarded }
+        val start = if (onboarded && hasAudioPermission(this)) "home" else "onboarding"
+        setContent { PlayerRoot(start) }
     }
 }
 
 private val TABS = listOf("home", "library", "stats", "search")
 
 /** Screens whose top edge is dark in every theme. */
-private val DARK_TOP = setOf("library", "stats", "now", "lyrics", "collection/{key}")
+private val DARK_TOP = setOf("library", "now", "collection/{key}")
 
 /** Player screens and sheets rise from the bottom, like the design's sheets. */
 private val sheetEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
@@ -105,13 +111,12 @@ private val sheetExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> E
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun PlayerRoot(vm: MainViewModel = viewModel()) {
+private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val album by vm.albumColors.collectAsStateWithLifecycle()
     PlayerTheme(settings, album) {
         val context = LocalContext.current
         val nav = rememberNavController()
-        val start = remember { if (hasAudioPermission(context)) "home" else "onboarding" }
         var menuOpen by remember { mutableStateOf(false) }
         // MediaStore may have changed since last time; a rescan is cheap.
         LaunchedEffect(Unit) { if (hasAudioPermission(context)) vm.scanNow() }
@@ -128,7 +133,7 @@ private fun PlayerRoot(vm: MainViewModel = viewModel()) {
         val view = LocalView.current
         val darkUi = P.colors.dark
         val darkTop = darkUi || route in DARK_TOP
-        val darkBottom = darkUi || route == "stats" || route == "lyrics"
+        val darkBottom = darkUi
         if (!view.isInEditMode) {
             SideEffect {
                 val window = (view.context as Activity).window
@@ -177,7 +182,7 @@ private fun PlayerRoot(vm: MainViewModel = viewModel()) {
                 }
                 screen("lyrics", enterTransition = sheetEnter, popExitTransition = sheetExit) { LyricsScreen(vm, onBack = { nav.popBackStack() }) }
                 screen("queue", enterTransition = sheetEnter, popExitTransition = sheetExit) {
-                    QueueScreen(vm, onBack = { nav.popBackStack() }, onSaveAsPlaylist = { nav.navigate("newplaylist?fromQueue=true") })
+                    QueueScreen(vm, onBack = { nav.popBackStack() }, onSaveAsPlaylist = { nav.navigate("newplaylist?fromQueue=true") }, onOpenAlbum = ::openAlbum)
                 }
                 screen("eq", enterTransition = sheetEnter, popExitTransition = sheetExit) { EqualizerScreen(vm, onBack = { nav.popBackStack() }) }
                 screen("sleep", enterTransition = sheetEnter, popExitTransition = sheetExit) { SleepTimerScreen(vm, onBack = { nav.popBackStack() }) }
@@ -207,7 +212,23 @@ private fun PlayerRoot(vm: MainViewModel = viewModel()) {
                 exit = slideOutVertically(tween(220)) { it / 2 } + fadeOut(),
             ) {
                 ProvideNavScope(this) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Soft fade behind the mini player and dock, so cards scrolling under them
+                    // recede instead of clashing with the controls.
+                    val bg = P.colors.bg
+                    Column(
+                        Modifier.drawBehind {
+                            val extra = 140.dp.toPx()
+                            drawRect(
+                                androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    0f to bg.copy(alpha = 0f), 0.35f to bg.copy(alpha = 0.82f), 1f to bg.copy(alpha = 0.96f),
+                                    startY = -60.dp.toPx(), endY = size.height + extra,
+                                ),
+                                topLeft = androidx.compose.ui.geometry.Offset(-size.width, -60.dp.toPx()),
+                                size = androidx.compose.ui.geometry.Size(size.width * 3, size.height + 60.dp.toPx() + extra),
+                            )
+                        },
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                         MiniPlayer(vm, onOpen = { nav.navigate("now") })
                         Dock(route = route, onTab = { nav.tab(it) }, onNow = { nav.navigate("now") })
                     }

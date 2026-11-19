@@ -109,10 +109,10 @@ fun HomeScreen(
                 }
             }
 
-            mixes.filter { it.songs.isNotEmpty() }.forEach { m ->
+            mixes.take(4).filter { it.songs.isNotEmpty() }.forEach { m ->
                 MixCard(vm, m, onOpen = { onOpenCollection(m.key) }, onPlay = { vm.play(m.songs, 0); onOpenNowPlaying() })
             }
-            if (mixes.all { it.songs.isEmpty() }) {
+            if (mixes.take(4).all { it.songs.isEmpty() }) {
                 Text("Play a few songs and your mixes will appear here.", style = T.body, color = c.muted)
             }
         }

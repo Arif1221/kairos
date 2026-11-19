@@ -139,9 +139,12 @@ private fun SongRowContent(song: SongEntity, playing: Boolean, vm: MainViewModel
     }
 }
 
-/** Long-press menu: play next, add to a playlist, favourite. */
+/**
+ * Long-press menu: play next, add to a playlist, favourite. With [queueIndex] it acts on that
+ * queue entry instead: play it now, move it up next, or remove it.
+ */
 @Composable
-fun SongActionsDialog(vm: MainViewModel, song: SongEntity, onOpenAlbum: (Long) -> Unit, onDismiss: () -> Unit) {
+fun SongActionsDialog(vm: MainViewModel, song: SongEntity, onOpenAlbum: (Long) -> Unit, queueIndex: Int? = null, onDismiss: () -> Unit) {
     val c = P.colors
     val playlists by vm.playlists.collectAsStateWithLifecycle()
     val favs by vm.favorites.collectAsStateWithLifecycle()
@@ -151,7 +154,17 @@ fun SongActionsDialog(vm: MainViewModel, song: SongEntity, onOpenAlbum: (Long) -
         title = { Text(song.title, style = T.h2, color = c.text, maxLines = 2) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                DialogItem("Play next") { vm.playNext(listOf(song)); onDismiss() }
+                if (queueIndex != null) {
+                    DialogItem("Play now") { vm.playQueueItem(queueIndex); onDismiss() }
+                    // Reordering follows the unshuffled order, so it is only offered with shuffle off.
+                    if (!vm.now.value.shuffle) {
+                        DialogItem("Play next") { vm.moveToNext(queueIndex); onDismiss() }
+                        DialogItem("Move to end of queue") { vm.moveToEnd(queueIndex); onDismiss() }
+                    }
+                    DialogItem("Remove from queue") { vm.removeQueueItem(queueIndex); onDismiss() }
+                } else {
+                    DialogItem("Play next") { vm.playNext(listOf(song)); onDismiss() }
+                }
                 DialogItem(if (song.id in favs) "Remove from favourites" else "Add to favourites") { vm.toggleFavorite(song.id); onDismiss() }
                 DialogItem("Go to album") { onOpenAlbum(song.albumId); onDismiss() }
                 if (playlists.isNotEmpty()) Text("Add to playlist", Modifier.padding(top = 10.dp, bottom = 4.dp), style = T.small, color = c.muted)
@@ -199,6 +212,7 @@ fun SwipeActions(
 ) {
     val c = P.colors
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
     val state = androidx.compose.material3.rememberSwipeToDismissBoxState(
         confirmValueChange = { v ->
             when (v) {
@@ -208,7 +222,8 @@ fun SwipeActions(
             }
             false // never stay dismissed; the action ran, the row returns
         },
-        positionalThreshold = { it * 0.3f },
+        // Short swipe: a fifth of the row, at most 72 dp, is enough to act.
+        positionalThreshold = { total -> minOf(total * 0.2f, 72f * density.density) },
     )
     // A tick under the finger the moment the swipe passes the point where it will act.
     androidx.compose.runtime.LaunchedEffect(state.targetValue) {

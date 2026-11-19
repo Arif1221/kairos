@@ -13,6 +13,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
@@ -88,6 +89,9 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
     val settings: StateFlow<Settings> = ds.data
         .map(::read)
         .stateIn(scope, SharingStarted.Eagerly, Settings())
+
+    /** Reads the stored settings directly, for decisions that must not see the defaults. */
+    suspend fun load(): Settings = read(ds.data.first())
 
     suspend fun update(change: (Settings) -> Settings) {
         ds.edit { p -> write(p, change(read(p))) }

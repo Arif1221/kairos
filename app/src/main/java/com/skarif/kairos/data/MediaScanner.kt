@@ -36,7 +36,10 @@ class MediaScanner(private val context: Context, private val songDao: SongDao) {
         } else {
             @Suppress("DEPRECATION") add(MediaStore.Audio.Media.DATA)
         }
-        if (Build.VERSION.SDK_INT >= 30) add(MediaStore.Audio.Media.BITRATE)
+        if (Build.VERSION.SDK_INT >= 30) {
+            add(MediaStore.Audio.Media.BITRATE)
+            add(MediaStore.Audio.Media.GENRE)
+        }
     }.toTypedArray()
 
     /** Every audio file MediaStore knows about, before any of our filters. */
@@ -64,6 +67,9 @@ class MediaScanner(private val context: Context, private val songDao: SongDao) {
             val iVol = col("volume_name")
             val iData = col("_data")
             val iBitrate = col("bitrate")
+            val iGenre = col("genre")
+            // Android 9-10 has no genre column; read the Genres table once instead.
+            val legacyGenres = if (iGenre < 0) legacyGenreMap() else emptyMap()
 
             while (c.moveToNext()) {
                 val name = c.getString(iName) ?: continue
@@ -88,7 +94,29 @@ class MediaScanner(private val context: Context, private val songDao: SongDao) {
                     sizeBytes = c.getLong(iSize),
                     dateAddedSec = c.getLong(iAdded),
                     bitrate = if (iBitrate >= 0) c.getInt(iBitrate) else 0,
+                    genre = cleanGenre(if (iGenre >= 0) c.getString(iGenre) else legacyGenres[c.getLong(iId)]),
                 )
+            }
+        }
+        return out
+    }
+
+    @Suppress("DEPRECATION")
+    private fun legacyGenreMap(): Map<Long, String> {
+        val out = HashMap<Long, String>()
+        runCatching {
+            context.contentResolver.query(
+                MediaStore.Audio.Genres.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Audio.Genres._ID, MediaStore.Audio.Genres.NAME), null, null, null,
+            )?.use { g ->
+                while (g.moveToNext()) {
+                    val gid = g.getLong(0)
+                    val name = g.getString(1) ?: continue
+                    context.contentResolver.query(
+                        MediaStore.Audio.Genres.Members.getContentUri("external", gid),
+                        arrayOf(MediaStore.Audio.Genres.Members.AUDIO_ID), null, null, null,
+                    )?.use { m -> while (m.moveToNext()) out.putIfAbsent(m.getLong(0), name) }
+                }
             }
         }
         return out
@@ -114,6 +142,22 @@ class MediaScanner(private val context: Context, private val songDao: SongDao) {
     }
 
     companion object {
+        /** ID3v1 numeric genres, the ones that actually show up in libraries. */
+        private val ID3 = mapOf(
+            0 to "Blues", 1 to "Classic Rock", 2 to "Country", 3 to "Dance", 4 to "Disco", 5 to "Funk", 6 to "Grunge",
+            7 to "Hip-Hop", 8 to "Jazz", 9 to "Metal", 10 to "New Age", 11 to "Oldies", 12 to "Other", 13 to "Pop",
+            14 to "R&B", 15 to "Rap", 16 to "Reggae", 17 to "Rock", 18 to "Techno", 19 to "Industrial", 20 to "Alternative",
+            24 to "Soundtrack", 26 to "Ambient", 32 to "Classical", 35 to "House", 52 to "Electronic", 98 to "Easy Listening",
+        )
+
+        /** "(13)" or "13" becomes "Pop"; blanks and "<unknown>" become "". */
+        fun cleanGenre(raw: String?): String {
+            val t = raw?.trim().orEmpty()
+            if (t.isEmpty() || t.equals("<unknown>", true) || t.equals("unknown", true)) return ""
+            Regex("""^\(?(\d{1,3})\)?$""").find(t)?.let { return ID3[it.groupValues[1].toInt()] ?: "" }
+            return t.replaceFirstChar { it.uppercaseChar() }
+        }
+
         /**
          * Groups files by top-level folder ("Music/"), except under "Android/", where apps such as
          * WhatsApp keep audio deep down. There the last two folders are used instead.

@@ -28,6 +28,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -57,6 +60,7 @@ fun OnboardingScreen(vm: MainViewModel, onDone: () -> Unit) {
     val scan by vm.scan.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     var denied by remember { mutableStateOf(false) }
+    var step by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         if (result[audioPermission] == true || hasAudioPermission(context)) {
             denied = false
@@ -71,7 +75,22 @@ fun OnboardingScreen(vm: MainViewModel, onDone: () -> Unit) {
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 30.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            if (scan == ScanState.Idle) {
+            if (scan == ScanState.Idle && step == 0) {
+                // Welcome: what the app does, before asking for anything.
+                Spacer(Modifier.weight(0.4f))
+                Box(Modifier.size(84.dp).clip(RoundedCornerShape(28.dp)).background(c.accent), contentAlignment = Alignment.Center) {
+                    Icon(Ic.Music, null, tint = c.onAccent, modifier = Modifier.size(34.dp))
+                }
+                Text(mixedHeadline("Welcome to " to false, "Kairos" to true), style = T.h1.copy(fontSize = 44.sp, lineHeight = 47.sp), color = c.text)
+                Text("An offline player for the music already on your phone.", style = T.body.copy(fontSize = 17.sp, lineHeight = 24.sp), color = c.muted)
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    WelcomeRow(Ic.Lyrics, "Synced lyrics", "Read from your files' tags or .lrc files")
+                    WelcomeRow(Ic.Sliders, "Hi-res and bit-perfect output", "With a 10-band equalizer")
+                    WelcomeRow(Ic.Shuffle, "Mixes that build themselves", "From what you play and what you've added")
+                }
+                Spacer(Modifier.weight(1f))
+                Pill("Get started", { step = 1 }, selected = true, big = true, modifier = Modifier.fillMaxWidth())
+            } else if (scan == ScanState.Idle) {
                 Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = Alignment.Center) {
                     Box(Modifier.size(230.dp).border(2.dp, c.line, CircleShape))
                     Box(Modifier.size(160.dp).border(2.dp, c.line, CircleShape))
@@ -120,6 +139,24 @@ fun OnboardingScreen(vm: MainViewModel, onDone: () -> Unit) {
                     }, selected = true, big = true, modifier = Modifier.fillMaxWidth())
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun WelcomeRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, sub: String) {
+    val c = P.colors
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.card).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(Modifier.size(44.dp).clip(CircleShape).background(c.tint), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = c.text, modifier = Modifier.size(20.dp))
+        }
+        Column {
+            Text(title, style = T.title, color = c.text)
+            Text(sub, style = T.small, color = c.muted)
         }
     }
 }

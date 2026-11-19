@@ -103,9 +103,8 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
     val albums = remember(songs) {
         songs.groupBy { it.albumId }.values.sortedByDescending { it.size }.take(60).map { it.first() }
     }
-    val artists = remember(songs) {
-        songs.groupBy { it.artist }.entries.sortedByDescending { it.value.size }.take(60).map { it.value.first() }
-    }
+    val artistList by vm.artists.collectAsStateWithLifecycle()
+    val artists = remember(artistList) { artistList.sortedByDescending { it.songs.size }.take(60) }
 
     ScreenBackground(art, settings.blurBackground) {
         LazyVerticalGrid(
@@ -156,14 +155,11 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                     }
                 }
             } else {
-                val list = if (tab == 0) albums else artists
-                items(list, key = { (if (tab == 0) "a" else "r") + it.id }) { s ->
-                    val k = if (tab == 0) "album:${s.albumId}" else "artist:${s.artist}"
-                    CoverTile(
-                        vm, s, key = k,
-                        kicker = if (tab == 0) s.artist else "Artist",
-                        title = if (tab == 0) s.album else s.artist,
-                    ) { onOpenCollection(k) }
+                // (cover song, collection key, kicker, title)
+                val list = if (tab == 0) albums.map { Quad(it, "album:${it.albumId}", it.artist, it.album) }
+                else artists.map { Quad(it.songs.first(), "artist:${it.name}", "${it.songs.size} songs", it.name) }
+                items(list, key = { it.key }) { t ->
+                    CoverTile(vm, t.song, key = t.key, kicker = t.kicker, title = t.title) { onOpenCollection(t.key) }
                 }
             }
         }
@@ -197,7 +193,7 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
     val mixes by vm.mixes.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
-    var smart by remember { mutableStateOf(false) }
+    var smart by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     data class Tile(val key: String, val name: String, val sub: String, val songs: List<SongEntity>)
     val tiles = if (smart) mixes.map { Tile(it.key, it.title, "Smart, ${it.songs.size} songs", it.songs) }
     else playlists.map { Tile("playlist:${it.id}", it.name, "${it.songs.size} songs", it.songs) }
@@ -409,3 +405,5 @@ fun CollectionScreen(vm: MainViewModel, key: String, onBack: () -> Unit, onOpenN
         }
     }
 }
+
+private data class Quad(val song: SongEntity, val key: String, val kicker: String, val title: String)

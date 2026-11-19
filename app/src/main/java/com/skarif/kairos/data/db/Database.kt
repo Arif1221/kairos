@@ -4,6 +4,7 @@ import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -41,6 +42,8 @@ data class SongEntity(
     val sizeBytes: Long,
     val dateAddedSec: Long,
     val bitrate: Int,
+    /** Genre tag as MediaStore reports it; empty when the file has none. */
+    @ColumnInfo(defaultValue = "") val genre: String = "",
     /** Cover image URL, for online songs only (local ones read art from the file). */
     val artUrl: String? = null,
 )
@@ -167,7 +170,10 @@ abstract class PlaylistDao {
 @Dao
 interface PlayEventDao {
     @Insert
-    suspend fun insert(e: PlayEventEntity)
+    suspend fun insert(e: PlayEventEntity): Long
+
+    @androidx.room.Update
+    suspend fun update(e: PlayEventEntity)
 
     @Query("SELECT * FROM play_events ORDER BY startedAt")
     fun observeAll(): Flow<List<PlayEventEntity>>
@@ -187,7 +193,7 @@ interface LyricsOffsetDao {
         SongEntity::class, FavoriteEntity::class, PlaylistEntity::class,
         PlaylistSongEntity::class, PlayEventEntity::class, LyricsOffsetEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class PlayerDatabase : RoomDatabase() {
@@ -200,11 +206,18 @@ abstract class PlayerDatabase : RoomDatabase() {
     companion object {
         fun create(context: Context): PlayerDatabase =
             Room.databaseBuilder(context, PlayerDatabase::class.java, "player.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
 
-        /** v2: songs.artUrl, for online songs. */
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
+        /** 0.6.0 adds genres. The next scan fills the column in. */
+        private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE songs ADD COLUMN genre TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** v3: songs.artUrl, for online songs (online flavor). */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE songs ADD COLUMN artUrl TEXT")
             }

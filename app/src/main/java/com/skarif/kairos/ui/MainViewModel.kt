@@ -1,5 +1,8 @@
 package com.skarif.kairos.ui
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
+import com.skarif.kairos.data.splitArtists
 import android.app.Application
 import android.content.Intent
 import android.graphics.Bitmap
@@ -68,6 +71,11 @@ sealed interface OnlineSearch {
 /** A list of songs shown with the album-style screen: albums, playlists and mixes. */
 data class Collection(val key: String, val title: String, val subtitle: String, val songs: List<SongEntity>, val playlistId: Long? = null)
 
+/** One artist, after splitting "A feat. B" tags, with every song they appear on. */
+data class ArtistUi(val name: String, val songs: List<SongEntity>)
+
+data class GenreUi(val name: String, val songs: List<SongEntity>)
+
 data class PlaylistUi(val id: Long, val name: String, val songs: List<SongEntity>)
 
 enum class StatsRange(val label: String) { WEEK("W"), MONTH("M"), YEAR("Y"), ALL("All") }
@@ -80,6 +88,12 @@ data class StatsUi(
     val bars: List<StatBar> = emptyList(),
     val top: List<TopSong> = emptyList(),
     val streakDays: Int = 0,
+    val uniqueSongs: Int = 0,
+    val avgPerDayMs: Long = 0,
+    val completedPct: Int = 0,
+    /** e.g. "9 PM", the hour you most often start listening. */
+    val peakHour: String = "",
+    val topArtists: List<Pair<String, Long>> = emptyList(),
 )
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -161,22 +175,56 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         lists.map { p -> PlaylistUi(p.id, p.name, grouped[p.id].orEmpty().sortedBy { it.position }.mapNotNull { byId[it.songId] }) }
     }.state(emptyList())
 
-    /** Home screen mixes, built from listening history. */
-    val mixes: StateFlow<List<Collection>> = combine(songs, events, favorites, songById) { all, ev, favs, byId ->
+    /** Artists from split tags, most songs first. Computed off the main thread. */
+    val artists: StateFlow<List<ArtistUi>> = songs.map { all ->
+        val acc = LinkedHashMap<String, Pair<String, MutableList<SongEntity>>>()
+        for (song in all) for (a in splitArtists(song.artist)) {
+            acc.getOrPut(a.lowercase()) { a to ArrayList() }.second += song
+        }
+        acc.values.map { (name, l) -> ArtistUi(name, l.sortedBy { it.title.lowercase() }) }.sortedBy { it.name.lowercase() }
+    }.flowOn(Dispatchers.Default).state(emptyList())
+
+    val genres: StateFlow<List<GenreUi>> = songs.map { all ->
+        all.filter { it.genre.isNotEmpty() }.groupBy { it.genre.lowercase() }
+            .map { (_, l) -> GenreUi(l.first().genre, l.sortedBy { it.title.lowercase() }) }
+            .sortedByDescending { it.songs.size }
+    }.flowOn(Dispatchers.Default).state(emptyList())
+
+    /**
+     * Auto playlists, rebuilt whenever the library or listening history changes. The first four
+     * show on Home; all of them are under Playlists, Smart.
+     */
+    val mixes: StateFlow<List<Collection>> = combine(songs, events, favorites, songById, genres) { all, ev, favs, byId, gens ->
         val counts = ev.groupingBy { it.songId }.eachCount()
-        val monthAgo = System.currentTimeMillis() - 30L * 24 * 3600 * 1000
+        val now = System.currentTimeMillis()
+        val monthAgo = now - 30L * 24 * 3600 * 1000
         val recentIds = ev.filter { it.startedAt >= monthAgo }.mapTo(HashSet()) { it.songId }
+        val daily = java.util.Random(LocalDate.now().toEpochDay())
         val mostPlayed = counts.entries.sortedByDescending { it.value }.take(50).mapNotNull { byId[it.key] }
         val recent = all.sortedByDescending { it.dateAddedSec }.take(50)
         val favourites = byId.values.filter { it.id in favs }
         val forgotten = counts.filter { it.value >= 2 && it.key !in recentIds }.keys.mapNotNull { byId[it] }
-            .ifEmpty { all.filter { it.id !in counts }.shuffled(java.util.Random(LocalDate.now().toEpochDay())).take(40) }
+            .ifEmpty { all.filter { it.id !in counts }.shuffled(daily).take(40) }
+        val onRepeat = ev.filter { it.startedAt >= monthAgo }.groupingBy { it.songId }.eachCount()
+            .filter { it.value >= 3 }.entries.sortedByDescending { it.value }.take(40).mapNotNull { byId[it.key] }
+        val lastPlayed = ev.sortedByDescending { it.startedAt }.map { it.songId }.distinct().take(50).mapNotNull { byId[it] }
+        val neverPlayed = all.filter { it.id !in counts }.shuffled(daily).take(60)
+        val quick = all.filter { it.durationMs in 60_000..180_000 }.shuffled(daily).take(40)
+        val longOnes = all.filter { it.durationMs >= 6 * 60_000 }.sortedByDescending { it.durationMs }.take(40)
+        val genreMixes = gens.take(6).map { g ->
+            Collection("mix-genre:${g.name}", "${g.name} mix", "${minOf(g.songs.size, 50)} songs, new every day", g.songs.shuffled(daily).take(50))
+        }
         listOf(
             Collection("most", "Most played", "${mostPlayed.size} songs", mostPlayed),
             Collection("recent", "Recently added", "${recent.size} songs", recent),
             Collection("favourites", "Favourites", "${favourites.size} songs", favourites),
             Collection("forgotten", "Forgotten gems", "Not played lately", forgotten),
-        )
+            Collection("onrepeat", "On repeat", "Played 3+ times this month", onRepeat),
+            Collection("lastplayed", "Recently played", "${lastPlayed.size} songs", lastPlayed),
+            Collection("never", "Never played", "Something new from your library", neverPlayed),
+            Collection("quick", "Quick hits", "Under 3 minutes", quick),
+            Collection("long", "Long listens", "6 minutes or more", longOnes),
+        ) + genreMixes
     }.state(emptyList())
 
     /** Songs from the album you were last listening to, for the "Continue" card. */
@@ -264,7 +312,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             playlists.value.firstOrNull { it.id == id }?.let { p -> Collection(key, p.name, "${p.songs.size} songs", p.songs, p.id) }
         }
         key.startsWith("artist:") -> key.removePrefix("artist:").let { name ->
-            val l = songs.value.filter { it.artist == name }.sortedBy { it.title.lowercase() }
+            val l = artists.value.firstOrNull { it.name.equals(name, true) }?.songs
+                ?: songs.value.filter { s -> splitArtists(s.artist).any { it.equals(name, true) } }.sortedBy { it.title.lowercase() }
+            Collection(key, name, "${l.size} songs, ${l.distinctBy { it.albumId }.size} albums", l)
+        }
+        key.startsWith("genre:") -> key.removePrefix("genre:").let { name ->
+            val l = genres.value.firstOrNull { it.name.equals(name, true) }?.songs.orEmpty()
             Collection(key, name, "${l.size} songs", l)
         }
         else -> mixes.value.firstOrNull { it.key == key }
@@ -321,7 +374,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         var streak = 0
         var d = if (today in days) today else today.minusDays(1)
         while (d in days) { streak++; d = d.minusDays(1) }
-        return StatsUi(total, inRange.size, change, bars, top, streak)
+        val spanDays = when (range) {
+            StatsRange.ALL -> (days.minOrNull()?.let { java.time.temporal.ChronoUnit.DAYS.between(it, today) + 1 } ?: 1L)
+            else -> java.time.temporal.ChronoUnit.DAYS.between(from, today) + 1
+        }.coerceAtLeast(1L)
+        val peak = inRange.groupingBy { Instant.ofEpochMilli(it.startedAt).atZone(zone).hour }.eachCount().maxByOrNull { it.value }?.key
+        val peakHour = peak?.let { h -> java.time.LocalTime.of(h, 0).format(java.time.format.DateTimeFormatter.ofPattern("h a", loc)) } ?: ""
+        val artistTime = HashMap<String, Pair<String, Long>>()
+        inRange.forEach { e ->
+            byId[e.songId]?.let { s ->
+                splitArtists(s.artist).forEach { a ->
+                    val k = a.lowercase()
+                    artistTime[k] = a to ((artistTime[k]?.second ?: 0L) + e.listenedMs)
+                }
+            }
+        }
+        return StatsUi(
+            total, inRange.size, change, bars, top, streak,
+            uniqueSongs = inRange.mapTo(HashSet()) { it.songId }.size,
+            avgPerDayMs = total / spanDays,
+            completedPct = if (inRange.isEmpty()) 0 else inRange.count { it.completed } * 100 / inRange.size,
+            peakHour = peakHour,
+            topArtists = artistTime.values.sortedByDescending { it.second }.take(5),
+        )
     }
 
     fun setStatsRange(r: StatsRange) { _statsRange.value = r; _selectedBar.value = -1 }
@@ -355,6 +430,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun playQueueItem(i: Int) { ct.player.playQueueItem(i) }
     fun moveQueueItem(from: Int, to: Int) { ct.player.moveQueueItem(from, to) }
     fun removeQueueItem(i: Int) { ct.player.removeQueueItem(i) }
+    fun moveToNext(i: Int) { ct.player.moveToNext(i) }
+    fun moveToEnd(i: Int) { ct.player.moveToEnd(i) }
+    fun clearUpcoming() { ct.player.clearUpcoming() }
+    fun clearPlayed() { ct.player.clearPlayed() }
     fun toggleShuffle() { ct.player.toggleShuffle() }
     fun cycleRepeat() { ct.player.cycleRepeat() }
     fun song(id: Long): SongEntity? = songById.value[id]

@@ -13,8 +13,19 @@ android {
         applicationId = "com.skarif.kairos"
         minSdk = 28 // DynamicsProcessing (10-band EQ) needs Android 9
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.5.0"
+        versionCode = 13
+        versionName = "0.6.3"
+    }
+
+    signingConfigs {
+        // One fixed key, so every CI build installs over the previous one. A fresh debug key
+        // per CI run made Android refuse updates. Sideload-only; use a private upload key for Play.
+        create("kairos") {
+            storeFile = file("kairos-release.jks")
+            storePassword = "REMOVED"
+            keyAlias = "kairos"
+            keyPassword = "REMOVED"
+        }
     }
 
     // "play": offline-only build for the Play Store (no internet permission, no YouTube code).
@@ -33,9 +44,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            // Signed with the debug key so the optimised build installs directly.
-            // Before publishing on the Play Store, replace this with a real upload key.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("kairos")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
