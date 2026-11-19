@@ -84,6 +84,9 @@ class MainActivity : ComponentActivity() {
 
 private val TABS = listOf("home", "library", "stats", "search")
 
+/** Screens whose top edge is dark in every theme. */
+private val DARK_TOP = setOf("library", "stats", "now", "collection/{key}")
+
 /** Player screens and sheets rise from the bottom, like the design's sheets. */
 private val sheetEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
     slideInVertically(tween(380, easing = FastOutSlowInEasing)) { it / 4 } + fadeIn(tween(260))
@@ -103,22 +106,26 @@ private fun PlayerRoot(vm: MainViewModel = viewModel()) {
         var menuOpen by remember { mutableStateOf(false) }
         // MediaStore may have changed since last time; a rescan is cheap.
         LaunchedEffect(Unit) { if (hasAudioPermission(context)) vm.scanNow() }
-        val entry by nav.currentBackStackEntryAsState()
-        val route = entry?.destination?.route
-
         fun openCollection(key: String) = nav.navigate("collection/" + Uri.encode(key))
         fun openAlbum(id: Long) = openCollection("album:$id")
         val openMenu = { menuOpen = true }
 
-        // Status and navigation bar icons follow the app's theme, not the phone's.
+        val entry by nav.currentBackStackEntryAsState()
+        val route = entry?.destination?.route
+
+        // Bar icons must contrast with what is drawn behind them, which differs per screen:
+        // Library's header, the Now Playing and album covers, and Stats are dark at the top
+        // even in the light theme, so they get white icons.
         val view = LocalView.current
         val darkUi = P.colors.dark
+        val darkTop = darkUi || route in DARK_TOP
+        val darkBottom = darkUi || route == "stats"
         if (!view.isInEditMode) {
             SideEffect {
                 val window = (view.context as Activity).window
                 WindowCompat.getInsetsController(window, view).apply {
-                    isAppearanceLightStatusBars = !darkUi
-                    isAppearanceLightNavigationBars = !darkUi
+                    isAppearanceLightStatusBars = !darkTop
+                    isAppearanceLightNavigationBars = !darkBottom
                 }
             }
         }
