@@ -38,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.LaunchedEffect
@@ -117,35 +118,39 @@ fun NowPlayingScreen(
                         .clip(RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp))
                         .background(c.accent),
                 ) {
-                    // Swipe the cover: left/right for next/previous, down to close. It follows your finger.
+                    // Swipe the cover like a pager: the previous and next covers sit either side and
+                    // slide in with your finger. A short swipe or a flick is enough.
                     val dragX = remember { Animatable(0f) }
                     val dragY = remember { Animatable(0f) }
                     val scope = rememberCoroutineScope()
                     val haptics = LocalHapticFeedback.current
                     var widthPx by remember { mutableFloatStateOf(1f) }
-                    // Which side the next cover enters from: +1 right, -1 left, 0 no skip pending.
-                    var enterFrom by remember { mutableIntStateOf(0) }
-                    val currentId by rememberUpdatedState(s.id)
-                    // Every song change settles the cover, however the previous animation ended, so it
-                    // can never be left stuck halfway off screen.
-                    LaunchedEffect(s.id) {
-                        val from = enterFrom
-                        enterFrom = 0
-                        if (from != 0) dragX.snapTo(from * widthPx * 0.9f)
-                        dragX.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = 320f))
-                    }
-                    fun skip(dir: Int) = scope.launch {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        val before = currentId
-                        enterFrom = -dir
-                        try {
-                            dragX.animateTo(dir * widthPx * 1.4f, tween(170))
-                        } finally {
-                            if (dir < 0) vm.next() else vm.previous()
+                    val prevSong = now.queue.getOrNull(now.queuePosition - 1)?.let { vm.song(it.songId) }
+                    val nextSong = now.queue.getOrNull(now.queuePosition + 1)?.let { vm.song(it.songId) }
+                    val curImg = rememberCoverNow(vm, s)
+                    val prevImg = rememberCoverNow(vm, prevSong)
+                    val nextImg = rememberCoverNow(vm, nextSong)
+                    // When the song changes the neighbour that slid in is now the current cover, so
+                    // snapping back to 0 shows the same picture: no jump.
+                    LaunchedEffect(s.id) { dragX.snapTo(0f) }
+                    val tracker = remember { androidx.compose.ui.input.pointer.util.VelocityTracker() }
+                    fun settle(vx: Float) = scope.launch {
+                        val w = widthPx
+                        val goNext = nextSong != null && (dragX.value < -w * 0.18f || (vx < -900f && dragX.value < 0f))
+                        val goPrev = prevSong != null && (dragX.value > w * 0.18f || (vx > 900f && dragX.value > 0f))
+                        when {
+                            goNext -> {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                dragX.animateTo(-w, tween(200, easing = FastOutSlowInEasing))
+                                vm.next()
+                            }
+                            goPrev -> {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                dragX.animateTo(w, tween(200, easing = FastOutSlowInEasing))
+                                vm.previousTrack()
+                            }
+                            else -> dragX.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 400f))
                         }
-                        // No next/previous song (end of queue): bring this cover back.
-                        kotlinx.coroutines.delay(400)
-                        if (currentId == before) { enterFrom = 0; dragX.animateTo(0f, spring(dampingRatio = 0.8f)) }
                     }
                     Box(
                         Modifier
@@ -153,17 +158,12 @@ fun NowPlayingScreen(
                             .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
                             .pointerInput(s.id) {
                                 detectDragGestures(
+                                    onDragStart = { tracker.resetTracking() },
                                     onDragEnd = {
-                                        val w = size.width.toFloat()
+                                        val vx = tracker.calculateVelocity().x
+                                        if (dragY.value > size.height * 0.2f && kotlin.math.abs(dragX.value) < size.width * 0.1f) onBack()
                                         scope.launch { dragY.animateTo(0f, spring(dampingRatio = 0.7f)) }
-                                        when {
-                                            dragX.value < -w * 0.22f -> skip(-1)
-                                            dragX.value > w * 0.22f -> skip(1)
-                                            else -> {
-                                                if (dragY.value > size.height * 0.2f) onBack()
-                                                scope.launch { dragX.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 300f)) }
-                                            }
-                                        }
+                                        settle(vx)
                                     },
                                     onDragCancel = {
                                         scope.launch { dragX.animateTo(0f) }
@@ -171,23 +171,32 @@ fun NowPlayingScreen(
                                     },
                                 ) { change, amount ->
                                     change.consume()
-                                    scope.launch { dragX.snapTo(dragX.value + amount.x) }
+                                    tracker.addPosition(change.uptimeMillis, change.position)
+                                    // Resist at the ends of the queue.
+                                    val nx = dragX.value + amount.x
+                                    val resisted = if ((nx > 0 && prevSong == null) || (nx < 0 && nextSong == null)) dragX.value + amount.x * 0.3f else nx
+                                    scope.launch { dragX.snapTo(resisted) }
                                     scope.launch { dragY.snapTo((dragY.value + amount.y).coerceAtLeast(0f)) }
                                 }
                             }
-                            .graphicsLayer {
-                                translationX = dragX.value
-                                translationY = dragY.value * 0.4f
-                                val shrink = 1f - (kotlin.math.abs(dragX.value) + dragY.value) / (size.width * 6f)
-                                scaleX = shrink.coerceIn(0.9f, 1f); scaleY = shrink.coerceIn(0.9f, 1f)
-                            },
+                            .graphicsLayer { translationY = dragY.value * 0.4f },
                     ) {
-                        Crossfade(art, animationSpec = tween(450), label = "cover") { bmp ->
-                            if (bmp != null) {
-                                val img = remember(bmp) { bmp.asImageBitmap() }
-                                Image(img, "${s.album} cover", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        @Composable
+                        fun cover(img: androidx.compose.ui.graphics.ImageBitmap?, offset: Int, desc: String?) {
+                            Box(
+                                Modifier.fillMaxSize().graphicsLayer {
+                                    translationX = dragX.value + offset * size.width
+                                    // Neighbours sit slightly darker and come up to full as they arrive.
+                                    val t = (1f - kotlin.math.abs(translationX) / size.width).coerceIn(0f, 1f)
+                                    alpha = 0.55f + 0.45f * t
+                                }.background(c.accent),
+                            ) {
+                                if (img != null) Image(img, desc, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                             }
                         }
+                        if (prevSong != null) cover(prevImg, -1, null)
+                        if (nextSong != null) cover(nextImg, 1, null)
+                        cover(curImg ?: art?.asImageBitmap(), 0, "${s.album} cover")
                     }
                     // Scrims keep the buttons and the title readable on any cover, light or dark.
                     Box(

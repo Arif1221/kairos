@@ -102,6 +102,7 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
     fun pause() = controller?.pause()
     fun next() = controller?.seekToNextMediaItem()
     fun previous() = controller?.seekToPrevious()
+    fun previousTrack() = controller?.seekToPreviousMediaItem()
     fun seekTo(ms: Long) = controller?.seekTo(ms.coerceAtLeast(0))
     fun playQueueItem(index: Int) = controller?.run { seekToDefaultPosition(index); play() }
     fun moveQueueItem(from: Int, to: Int) = controller?.moveMediaItem(from, to)

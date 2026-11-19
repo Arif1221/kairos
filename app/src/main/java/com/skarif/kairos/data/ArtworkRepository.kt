@@ -27,6 +27,10 @@ class ArtworkRepository(private val context: Context) {
     }
     private val colors = LruCache<String, AlbumColors>(400)
 
+    /** The cached bitmap, if already decoded; never touches the disk. */
+    fun peek(song: SongEntity, sizePx: Int = 720): Bitmap? =
+        bitmaps.get("${if (song.albumId > 0) "a${song.albumId}" else "s${song.id}"}@$sizePx")
+
     suspend fun load(song: SongEntity, sizePx: Int = 720): Bitmap? = withContext(Dispatchers.IO) {
         // Songs on one album share art, so cache per album: far fewer decodes in long lists.
         val key = "${if (song.albumId > 0) "a${song.albumId}" else "s${song.id}"}@$sizePx"
