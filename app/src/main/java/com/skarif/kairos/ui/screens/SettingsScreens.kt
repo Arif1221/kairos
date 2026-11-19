@@ -72,7 +72,7 @@ private fun Header(title: String, onBack: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit) {
+fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit, onEqualizer: () -> Unit) {
     val c = P.colors
     val s by vm.settings.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
@@ -175,6 +175,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit)
             }
 
             Pill("Music folders", onFolders, icon = Ic.Folder, big = true, modifier = Modifier.fillMaxWidth())
+            Pill("Equalizer", onEqualizer, icon = Ic.Sliders, big = true, modifier = Modifier.fillMaxWidth())
         }
     }
 }

@@ -23,7 +23,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,9 +52,10 @@ import com.skarif.kairos.ui.theme.T
 
 /** Design reference: the finance "history" screen. Dark panel with a big number, list below. */
 @Composable
-fun LibraryScreen(vm: MainViewModel, onOpenNowPlaying: () -> Unit, onSettings: () -> Unit, onFolders: () -> Unit) {
+fun LibraryScreen(vm: MainViewModel, onOpenNowPlaying: () -> Unit, onSettings: () -> Unit, onFolders: () -> Unit, onSort: () -> Unit, onOpenAlbum: (Long) -> Unit) {
     val c = P.colors
-    val songs by vm.songs.collectAsStateWithLifecycle()
+    val songs by vm.sortedSongs.collectAsStateWithLifecycle()
+    var actionsFor by remember { mutableStateOf<SongEntity?>(null) }
     val now by vm.now.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -64,6 +66,7 @@ fun LibraryScreen(vm: MainViewModel, onOpenNowPlaying: () -> Unit, onSettings: (
             String.format("%.1f", gb) + " GB on this phone"
     }
 
+    actionsFor?.let { s -> SongActionsDialog(vm, s, onOpenAlbum) { actionsFor = null } }
     ScreenBackground(art, settings.blurBackground) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 140.dp)) {
             item {
@@ -101,6 +104,8 @@ fun LibraryScreen(vm: MainViewModel, onOpenNowPlaying: () -> Unit, onSettings: (
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("All songs", Modifier.weight(1f), style = T.h2.copy(fontSize = 24.sp, fontWeight = FontWeight.SemiBold), color = c.text)
+                    CircleButton(Ic.Sort, "Sort songs", onSort, container = c.card)
+                    Spacer(Modifier.width(8.dp))
                     CircleButton(Ic.Folder, "Music folders", onFolders, container = c.ink, content = c.inkFg)
                 }
             }
@@ -117,43 +122,11 @@ fun LibraryScreen(vm: MainViewModel, onOpenNowPlaying: () -> Unit, onSettings: (
                 }
             }
             itemsIndexed(songs, key = { _, s -> s.id }) { i, s ->
-                SongRow(s, playing = s.id == now.songId, vm) {
+                SongRow(s, playing = s.id == now.songId, vm, onLongClick = { actionsFor = s }) {
                     vm.play(songs, i)
                     onOpenNowPlaying()
                 }
             }
         }
-    }
-}
-
-@Composable
-fun SongRow(song: SongEntity, playing: Boolean, vm: MainViewModel, onClick: () -> Unit) {
-    val c = P.colors
-    val thumb by produceState<Bitmap?>(null, song.id) { value = vm.thumbnail(song) }
-    val fg = if (playing) c.onAccent else c.text
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .background(if (playing) c.accent else Color.Transparent)
-            .clickable(role = Role.Button, onClickLabel = "Play", onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        val img = thumb
-        if (img != null) {
-            Image(img.asImageBitmap(), null, Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
-        } else {
-            Box(Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(c.tint), contentAlignment = Alignment.Center) {
-                Icon(Ic.Music, null, tint = c.muted, modifier = Modifier.size(20.dp))
-            }
-        }
-        Column(Modifier.weight(1f)) {
-            Text(song.title, style = T.title, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(song.artist, style = T.small, color = if (playing) fg.copy(alpha = 0.8f) else c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        Text(formatTime(song.durationMs), style = T.title.copy(fontSize = 15.sp), color = fg)
     }
 }

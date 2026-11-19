@@ -1,9 +1,16 @@
 package com.skarif.kairos
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,7 +22,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,12 +41,23 @@ import androidx.navigation.compose.rememberNavController
 import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
+import com.skarif.kairos.ui.screens.CollectionScreen
+import com.skarif.kairos.ui.screens.EqualizerScreen
 import com.skarif.kairos.ui.screens.FoldersScreen
+import com.skarif.kairos.ui.screens.HomeScreen
 import com.skarif.kairos.ui.screens.LibraryScreen
 import com.skarif.kairos.ui.screens.LyricsScreen
+import com.skarif.kairos.ui.screens.MenuDrawer
+import com.skarif.kairos.ui.screens.NewPlaylistScreen
 import com.skarif.kairos.ui.screens.NowPlayingScreen
 import com.skarif.kairos.ui.screens.OnboardingScreen
+import com.skarif.kairos.ui.screens.PlaylistsScreen
+import com.skarif.kairos.ui.screens.QueueScreen
+import com.skarif.kairos.ui.screens.SearchScreen
 import com.skarif.kairos.ui.screens.SettingsScreen
+import com.skarif.kairos.ui.screens.SleepTimerScreen
+import com.skarif.kairos.ui.screens.SortScreen
+import com.skarif.kairos.ui.screens.StatsScreen
 import com.skarif.kairos.ui.screens.hasAudioPermission
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.PlayerTheme
@@ -50,14 +70,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private object R0 {
-    const val ONBOARDING = "onboarding"
-    const val LIBRARY = "library"
-    const val NOW = "now"
-    const val LYRICS = "lyrics"
-    const val SETTINGS = "settings"
-    const val FOLDERS = "folders"
-}
+private val TABS = listOf("home", "library", "stats", "search")
 
 @Composable
 private fun PlayerRoot(vm: MainViewModel = viewModel()) {
@@ -66,47 +79,99 @@ private fun PlayerRoot(vm: MainViewModel = viewModel()) {
     PlayerTheme(settings, album) {
         val context = LocalContext.current
         val nav = rememberNavController()
-        val start = remember { if (hasAudioPermission(context)) R0.LIBRARY else R0.ONBOARDING }
+        val start = remember { if (hasAudioPermission(context)) "home" else "onboarding" }
+        var menuOpen by remember { mutableStateOf(false) }
         // MediaStore may have changed since last time; a rescan is cheap.
         LaunchedEffect(Unit) { if (hasAudioPermission(context)) vm.scanNow() }
         val entry by nav.currentBackStackEntryAsState()
         val route = entry?.destination?.route
 
+        fun openCollection(key: String) = nav.navigate("collection/" + Uri.encode(key))
+        fun openAlbum(id: Long) = openCollection("album:$id")
+        val openMenu = { menuOpen = true }
+
         Box(Modifier.fillMaxSize()) {
             NavHost(nav, startDestination = start) {
-                composable(R0.ONBOARDING) {
-                    OnboardingScreen(vm) { nav.navigate(R0.LIBRARY) { popUpTo(R0.ONBOARDING) { inclusive = true } } }
+                composable("onboarding") {
+                    OnboardingScreen(vm) { nav.navigate("home") { popUpTo("onboarding") { inclusive = true } } }
                 }
-                composable(R0.LIBRARY) {
-                    LibraryScreen(vm, onOpenNowPlaying = { nav.navigate(R0.NOW) }, onSettings = { nav.go(R0.SETTINGS) }, onFolders = { nav.navigate(R0.FOLDERS) })
+                composable("home") {
+                    HomeScreen(
+                        vm, onMenu = openMenu, onSearch = { nav.tab("search") }, onOpenCollection = ::openCollection,
+                        onOpenNowPlaying = { nav.navigate("now") }, onPlaylists = { nav.navigate("playlists") },
+                    )
                 }
-                composable(R0.NOW) { NowPlayingScreen(vm, onBack = { nav.popBackStack() }, onLyrics = { nav.navigate(R0.LYRICS) }) }
-                composable(R0.LYRICS) { LyricsScreen(vm, onBack = { nav.popBackStack() }) }
-                composable(R0.SETTINGS) { SettingsScreen(vm, onBack = { nav.popBackStack() }, onFolders = { nav.navigate(R0.FOLDERS) }) }
-                composable(R0.FOLDERS) { FoldersScreen(vm, onBack = { nav.popBackStack() }) }
+                composable("library") {
+                    LibraryScreen(
+                        vm, onOpenNowPlaying = { nav.navigate("now") }, onSettings = { nav.navigate("settings") },
+                        onFolders = { nav.navigate("folders") }, onSort = { nav.navigate("sort") }, onOpenAlbum = ::openAlbum,
+                    )
+                }
+                composable("stats") { StatsScreen(vm, onMenu = openMenu, onSettings = { nav.navigate("settings") }) }
+                composable("search") {
+                    SearchScreen(vm, onMenu = openMenu, onOpenCollection = ::openCollection, onOpenNowPlaying = { nav.navigate("now") })
+                }
+                composable("now") {
+                    NowPlayingScreen(
+                        vm, onBack = { nav.popBackStack() }, onLyrics = { nav.navigate("lyrics") }, onQueue = { nav.navigate("queue") },
+                        onEqualizer = { nav.navigate("eq") }, onSleep = { nav.navigate("sleep") }, onAlbum = ::openAlbum,
+                    )
+                }
+                composable("lyrics") { LyricsScreen(vm, onBack = { nav.popBackStack() }) }
+                composable("queue") {
+                    QueueScreen(vm, onBack = { nav.popBackStack() }, onSaveAsPlaylist = { nav.navigate("newplaylist?fromQueue=true") })
+                }
+                composable("eq") { EqualizerScreen(vm, onBack = { nav.popBackStack() }) }
+                composable("sleep") { SleepTimerScreen(vm, onBack = { nav.popBackStack() }) }
+                composable("sort") { SortScreen(vm, onBack = { nav.popBackStack() }) }
+                composable("playlists") {
+                    PlaylistsScreen(vm, onBack = { nav.popBackStack() }, onNew = { nav.navigate("newplaylist?fromQueue=false") }, onOpenCollection = ::openCollection)
+                }
+                composable("newplaylist?fromQueue={fromQueue}") { e ->
+                    val fromQueue = e.arguments?.getString("fromQueue") == "true"
+                    val initial = remember { if (fromQueue) vm.now.value.queue.filter { it >= 0 } else emptyList() }
+                    NewPlaylistScreen(vm, onDone = { nav.popBackStack() }, initialSongs = initial)
+                }
+                composable("collection/{key}") { e ->
+                    val key = Uri.decode(e.arguments?.getString("key") ?: "")
+                    CollectionScreen(vm, key, onBack = { nav.popBackStack() }, onOpenNowPlaying = { nav.navigate("now") }, onOpenAlbum = ::openAlbum)
+                }
+                composable("settings") {
+                    SettingsScreen(vm, onBack = { nav.popBackStack() }, onFolders = { nav.navigate("folders") }, onEqualizer = { nav.navigate("eq") })
+                }
+                composable("folders") { FoldersScreen(vm, onBack = { nav.popBackStack() }) }
             }
-            if (route == R0.LIBRARY || route == R0.SETTINGS) {
+
+            if (route in TABS) {
                 Dock(
                     route = route,
-                    onLibrary = { nav.go(R0.LIBRARY) },
-                    onNow = { nav.navigate(R0.NOW) },
-                    onSettings = { nav.go(R0.SETTINGS) },
+                    onTab = { nav.tab(it) },
+                    onNow = { nav.navigate("now") },
                     modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp),
                 )
             }
+
+            AnimatedVisibility(menuOpen, enter = fadeIn() + slideInHorizontally { -it / 3 }, exit = fadeOut() + slideOutHorizontally { -it / 3 }) {
+                MenuDrawer(vm, onClose = { menuOpen = false }) { r ->
+                    menuOpen = false
+                    if (r in TABS) nav.tab(r) else nav.navigate(r.let { if (it == "newplaylist") "newplaylist?fromQueue=false" else it })
+                }
+            }
+            BackHandler(enabled = menuOpen) { menuOpen = false }
         }
     }
 }
 
-/** Tab-style navigation: one copy of each tab, Library at the bottom of the stack. */
-private fun NavHostController.go(route: String) = navigate(route) {
-    popUpTo(R0.LIBRARY)
+/** Tab-style navigation: one copy of each tab, Home at the bottom of the stack. */
+private fun NavHostController.tab(route: String) = navigate(route) {
+    popUpTo("home") { saveState = true }
     launchSingleTop = true
+    restoreState = true
 }
 
 /** Design reference: the frosted circle dock with the coloured centre button. */
 @Composable
-private fun Dock(route: String?, onLibrary: () -> Unit, onNow: () -> Unit, onSettings: () -> Unit, modifier: Modifier = Modifier) {
+private fun Dock(route: String?, onTab: (String) -> Unit, onNow: () -> Unit, modifier: Modifier = Modifier) {
     val c = P.colors
     val idle = if (c.dark) Color(0x1FFFFFFF) else Color(0xB3FFFFFF)
     val dockBg = if (c.dark) Color(0xD93C3C3A) else Color(0xCCC4C7BE)
@@ -115,10 +180,19 @@ private fun Dock(route: String?, onLibrary: () -> Unit, onNow: () -> Unit, onSet
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val libOn = route == R0.LIBRARY
-        CircleButton(Ic.Home, "Library", onLibrary, container = if (libOn) Color.White else idle, content = Color(0xFF151515).takeIf { libOn || !c.dark } ?: c.text)
+        @Composable
+        fun tab(r: String, icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
+            val on = route == r
+            CircleButton(
+                icon, label, { onTab(r) },
+                container = if (on) Color.White else idle,
+                content = if (on || !c.dark) Color(0xFF151515) else c.text,
+            )
+        }
+        tab("home", Ic.Home, "Home")
+        tab("library", Ic.Library, "Library")
         CircleButton(Ic.Play, "Now playing", onNow, size = 60.dp, container = c.accent, content = c.onAccent, iconSize = 22.dp)
-        val setOn = route == R0.SETTINGS
-        CircleButton(Ic.Settings, "Settings", onSettings, container = if (setOn) Color.White else idle, content = Color(0xFF151515).takeIf { setOn || !c.dark } ?: c.text)
+        tab("stats", Ic.Stats, "Statistics")
+        tab("search", Ic.Search, "Search")
     }
 }

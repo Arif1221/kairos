@@ -126,6 +126,21 @@ abstract class PlaylistDao {
     @Insert
     abstract suspend fun insertSongs(items: List<PlaylistSongEntity>)
 
+    @Query("SELECT * FROM playlist_songs ORDER BY playlistId, position")
+    abstract fun observeAllItems(): Flow<List<PlaylistSongEntity>>
+
+    @Query("SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_songs WHERE playlistId = :playlistId")
+    abstract suspend fun nextPosition(playlistId: Long): Int
+
+    @Query("DELETE FROM playlists WHERE id = :playlistId")
+    abstract suspend fun delete(playlistId: Long)
+
+    @Transaction
+    open suspend fun append(playlistId: Long, songIds: List<Long>) {
+        val start = nextPosition(playlistId)
+        insertSongs(songIds.mapIndexed { i, s -> PlaylistSongEntity(playlistId, start + i, s) })
+    }
+
     @Transaction
     open suspend fun create(name: String, songIds: List<Long>): Long {
         val id = insert(PlaylistEntity(name = name, createdAt = System.currentTimeMillis()))
@@ -138,6 +153,9 @@ abstract class PlaylistDao {
 interface PlayEventDao {
     @Insert
     suspend fun insert(e: PlayEventEntity)
+
+    @Query("SELECT * FROM play_events ORDER BY startedAt")
+    fun observeAll(): Flow<List<PlayEventEntity>>
 }
 
 @Dao

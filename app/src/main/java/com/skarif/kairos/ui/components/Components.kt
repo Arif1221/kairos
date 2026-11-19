@@ -361,3 +361,92 @@ fun RadioCard(title: String, description: String, selected: Boolean, onClick: ()
         }
     }
 }
+
+/** Back button, centred title, optional action on the right (52 dp each side). */
+@Composable
+fun ScreenHeader(title: String, onBack: () -> Unit, modifier: Modifier = Modifier, action: (@Composable () -> Unit)? = null) {
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        CircleButton(Ic.Back, "Back", onBack)
+        Text(title, Modifier.weight(1f), style = T.title, color = P.colors.text, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        if (action != null) action() else Box(Modifier.size(52.dp))
+    }
+}
+
+/** Row of filled and dashed pills, the design's progress meter. */
+@Composable
+fun PillMeter(filled: Int, total: Int, color: Color, modifier: Modifier = Modifier, height: Dp = 30.dp) {
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        repeat(total) { i ->
+            val shape = RoundedCornerShape(11.dp)
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(height)
+                    .then(
+                        if (i < filled) Modifier.clip(shape).background(color)
+                        else Modifier.border(1.5.dp, color.copy(alpha = 0.45f), shape),
+                    ),
+            )
+        }
+    }
+}
+
+/** Bars with hatched fill; the selected bar is solid black with a tooltip (finance reference). */
+@Composable
+fun HatchedBars(
+    values: List<Float>,
+    labels: List<String>,
+    selected: Int,
+    tooltip: String?,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    chartHeight: Dp = 150.dp,
+) {
+    val c = P.colors
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().height(chartHeight), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+            values.forEachIndexed { i, v ->
+                val on = i == selected
+                Box(
+                    Modifier.weight(1f).fillMaxSize().selectable(selected = on, role = Role.Tab) { onSelect(i) }
+                        .semantics { contentDescription = labels.getOrElse(i) { "" } },
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    Canvas(Modifier.fillMaxWidth().fillMaxSize()) {
+                        val h = (size.height * v.coerceIn(0.04f, 1f))
+                        val top = size.height - h
+                        val r = CornerRadius(10.dp.toPx())
+                        if (on) {
+                            drawRoundRect(Color(0xFF151515), Offset(0f, top), Size(size.width, h), r)
+                        } else {
+                            val path = Path().apply { addRoundRect(RoundRect(0f, top, size.width, size.height, r)) }
+                            clipPath(path) {
+                                var x = -h
+                                while (x < size.width) {
+                                    drawLine(c.onAccent.copy(alpha = 0.42f), Offset(x, size.height), Offset(x + h, top), strokeWidth = 2.dp.toPx())
+                                    x += 6.dp.toPx()
+                                }
+                            }
+                        }
+                    }
+                    if (on && tooltip != null) {
+                        Text(
+                            tooltip, style = T.small.copy(fontWeight = FontWeight.Bold), color = Color(0xFF151515),
+                            modifier = Modifier.align(Alignment.TopCenter).clip(RoundedCornerShape(50)).background(Color.White)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            labels.forEachIndexed { i, l ->
+                Text(
+                    l, Modifier.weight(1f), style = T.small.copy(fontWeight = if (i == selected) FontWeight.ExtraBold else FontWeight.Medium),
+                    color = c.onAccent, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1,
+                )
+            }
+        }
+    }
+}

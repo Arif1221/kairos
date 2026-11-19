@@ -58,6 +58,12 @@ class ArtworkRepository(private val context: Context) {
         private const val INK = 0xFF151515.toInt()
         private const val WHITE = 0xFFFFFFFF.toInt()
 
+        /** The Palette accent of any bitmap (used to tint cards by their cover). */
+        suspend fun paletteAccent(bitmap: Bitmap): Int = withContext(Dispatchers.Default) {
+            val p = Palette.from(bitmap).maximumColorCount(12).generate()
+            (p.vibrantSwatch ?: p.darkVibrantSwatch ?: p.lightVibrantSwatch ?: p.dominantSwatch)?.rgb ?: DEFAULT_ACCENT
+        }
+
         /** Black or white text, whichever reads better on [accent]. */
         fun onColorFor(accent: Int): Int {
             val solid = ColorUtils.setAlphaComponent(accent, 255)

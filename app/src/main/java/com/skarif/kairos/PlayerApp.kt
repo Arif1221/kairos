@@ -7,6 +7,7 @@ import com.skarif.kairos.data.MediaScanner
 import com.skarif.kairos.data.SettingsStore
 import com.skarif.kairos.data.db.PlayerDatabase
 import com.skarif.kairos.playback.PlayerConnection
+import com.skarif.kairos.playback.SleepTimer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,4 +34,5 @@ class AppContainer(app: Application) {
     val lyrics = LyricsRepository(app, db.lyricsOffsets())
     val artwork = ArtworkRepository(app)
     val player = PlayerConnection(app, scope)
+    val sleep = SleepTimer(player, scope)
 }

@@ -49,13 +49,22 @@ import com.skarif.kairos.ui.theme.T
 
 /** Design reference: the hotel screen (photo hero) plus the finance chart card as the seek bar. */
 @Composable
-fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit, onLyrics: () -> Unit) {
+fun NowPlayingScreen(
+    vm: MainViewModel,
+    onBack: () -> Unit,
+    onLyrics: () -> Unit,
+    onQueue: () -> Unit,
+    onEqualizer: () -> Unit,
+    onSleep: () -> Unit,
+    onAlbum: (Long) -> Unit,
+) {
     val c = P.colors
     val song by vm.currentSong.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
     val favs by vm.favorites.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val sleep by vm.sleep.collectAsStateWithLifecycle()
     val s = song
 
     ScreenBackground(art, settings.blurBackground) {
@@ -94,6 +103,11 @@ fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit, onLyrics: () -> Unit
                     ) {
                         CircleButton(Ic.Down, "Close now playing", onBack, container = Color(0xE0FFFFFF), content = Color(0xFF151515))
                         Box(Modifier.weight(1f))
+                        CircleButton(
+                            Ic.Clock, if (sleep.active) "Sleep timer, on" else "Sleep timer", onSleep,
+                            container = if (sleep.active) c.accent else Color(0x38FFFFFF), content = if (sleep.active) c.onAccent else Color.White,
+                        )
+                        CircleButton(Ic.Sliders, "Equalizer", onEqualizer, container = Color(0x38FFFFFF), content = Color.White)
                         CircleButton(Ic.Lyrics, "Lyrics", onLyrics, container = Color(0x38FFFFFF), content = Color.White)
                     }
                     Column(
@@ -104,7 +118,14 @@ fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit, onLyrics: () -> Unit
                             Icon(Ic.Music, null, tint = Color.White, modifier = Modifier.size(16.dp))
                             Text(if (s.year > 0) "${s.year}" else "Album", color = Color.White, style = T.small.copy(fontWeight = FontWeight.SemiBold))
                         }
-                        Text(s.album, color = Color.White, style = T.big.copy(fontSize = 38.sp, lineHeight = 40.sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            s.album, color = Color.White, style = T.big.copy(fontSize = 38.sp, lineHeight = 40.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Open album") { onAlbum(s.albumId) },
+                        )
+                        Text(
+                            "Open album", color = Color.White, style = T.small.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+                            modifier = Modifier.clickable(role = Role.Button) { onAlbum(s.albumId) },
+                        )
                     }
                 }
                 CircleButton(
@@ -131,10 +152,10 @@ fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit, onLyrics: () -> Unit
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     InfoChip(Ic.Wave, now.output?.let { "${s.formatLabel()} $it" } ?: s.formatLabel())
                     InfoChip(Ic.Clock, formatTime(s.durationMs))
-                    if (now.queueSize > 0) InfoChip(Ic.Queue, "${now.queueIndex + 1} of ${now.queueSize}")
+                    if (now.queueSize > 0) InfoChip(Ic.Queue, "${now.queueIndex + 1} of ${now.queueSize}", onQueue)
                 }
                 WaveformSeek(now.positionMs, now.durationMs.takeIf { it > 0 } ?: s.durationMs, s.id, vm::seekTo)
-                Row(Modifier.fillMaxWidth().padding(bottom = 24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     CircleButton(Ic.Prev, "Previous song", vm::previous, size = 64.dp, iconSize = 22.dp)
                     Row(
                         Modifier
@@ -151,16 +172,29 @@ fun NowPlayingScreen(vm: MainViewModel, onBack: () -> Unit, onLyrics: () -> Unit
                     }
                     CircleButton(Ic.Next, "Next song", vm::next, size = 64.dp, iconSize = 22.dp)
                 }
+                Row(Modifier.padding(bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircleButton(Ic.Shuffle, if (now.shuffle) "Shuffle, on" else "Shuffle, off", vm::toggleShuffle,
+                        container = if (now.shuffle) c.ink else c.card, content = if (now.shuffle) c.inkFg else c.text)
+                    CircleButton(
+                        if (now.repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE) Ic.RepeatOne else Ic.Repeat,
+                        "Repeat", vm::cycleRepeat,
+                        container = if (now.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF) c.ink else c.card,
+                        content = if (now.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF) c.inkFg else c.text,
+                    )
+                    CircleButton(Ic.Queue, "Queue", onQueue)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun InfoChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
+private fun InfoChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, onClick: (() -> Unit)? = null) {
     val c = P.colors
     Row(
-        Modifier.height(44.dp).clip(RoundedCornerShape(22.dp)).background(c.card).padding(horizontal = 14.dp),
+        Modifier.height(44.dp).clip(RoundedCornerShape(22.dp)).background(c.card)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

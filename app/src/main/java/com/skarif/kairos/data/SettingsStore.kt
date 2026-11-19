@@ -26,6 +26,9 @@ enum class ThemeMode { LIGHT, DARK, SYSTEM }
 enum class OutputMode { STANDARD, HI_RES, BIT_PERFECT }
 enum class LyricsPreference { EMBEDDED, LRC_FILE }
 enum class ReplayGainMode { OFF, TRACK, ALBUM }
+enum class SongSort(val label: String) {
+    TITLE("Title"), ARTIST("Artist"), ALBUM("Album"), DATE_ADDED("Date added"), LENGTH("Length"), MOST_PLAYED("Most played")
+}
 
 data class Settings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -48,6 +51,8 @@ data class Settings(
     val bassBoost: Int = 0,
     val virtualizer: Int = 0,
     val onboarded: Boolean = false,
+    val songSort: SongSort = SongSort.TITLE,
+    val sortDescending: Boolean = false,
 ) {
     val minDurationMs: Long get() = if (skipShortFiles) 30_000L else 0L
 }
@@ -76,6 +81,8 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
         val bass = intPreferencesKey("bass_boost")
         val virt = intPreferencesKey("virtualizer")
         val onboarded = booleanPreferencesKey("onboarded")
+        val sort = stringPreferencesKey("song_sort")
+        val sortDesc = booleanPreferencesKey("sort_desc")
     }
 
     val settings: StateFlow<Settings> = ds.data
@@ -107,6 +114,8 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
             bassBoost = p[K.bass] ?: d.bassBoost,
             virtualizer = p[K.virt] ?: d.virtualizer,
             onboarded = p[K.onboarded] ?: d.onboarded,
+            songSort = enumOr(p[K.sort], d.songSort),
+            sortDescending = p[K.sortDesc] ?: d.sortDescending,
         )
     }
 
@@ -129,6 +138,8 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
         p[K.bass] = s.bassBoost
         p[K.virt] = s.virtualizer
         p[K.onboarded] = s.onboarded
+        p[K.sort] = s.songSort.name
+        p[K.sortDesc] = s.sortDescending
     }
 
     private inline fun <reified E : Enum<E>> enumOr(name: String?, default: E): E =

@@ -28,6 +28,11 @@ data class NowPlaying(
     val durationMs: Long = 0,
     val queueIndex: Int = 0,
     val queueSize: Int = 0,
+    /** Song ids in queue order. */
+    val queue: List<Long> = emptyList(),
+    val shuffle: Boolean = false,
+    /** Player.REPEAT_MODE_OFF / ONE / ALL. */
+    val repeatMode: Int = Player.REPEAT_MODE_OFF,
     val output: String? = null,
     val usbConnected: Boolean = false,
     val outputNeedsRestart: Boolean = false,
@@ -41,6 +46,7 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
     private var controller: MediaController? = null
     private var ticker: Job? = null
     private var extras: Bundle = Bundle.EMPTY
+    private val transitionListeners = mutableListOf<() -> Unit>()
 
     fun connect() {
         if (controller != null) return
@@ -58,22 +64,49 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
             controller = c
             c.addListener(object : Player.Listener {
                 override fun onEvents(player: Player, events: Player.Events) = publish()
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) transitionListeners.toList().forEach { it() }
+                }
             })
             publish()
         }
     }
 
-    fun play(songs: List<SongEntity>, startIndex: Int) {
+    /** Called when a song ends and the next one starts on its own (used by the sleep timer). */
+    fun onAutoTransition(listener: () -> Unit) { transitionListeners += listener }
+    fun removeAutoTransition(listener: () -> Unit) { transitionListeners -= listener }
+
+    fun play(songs: List<SongEntity>, startIndex: Int, shuffle: Boolean = false) {
         val c = controller ?: return
-        c.setMediaItems(songs.map { it.toMediaItem() }, startIndex, 0L)
+        c.shuffleModeEnabled = shuffle
+        c.setMediaItems(songs.map { it.toMediaItem() }, if (shuffle) (songs.indices).random() else startIndex, 0L)
         c.prepare()
         c.play()
     }
 
     fun toggle() = controller?.run { if (isPlaying) pause() else { if (playbackState == Player.STATE_IDLE) prepare(); play() } }
+    fun pause() = controller?.pause()
     fun next() = controller?.seekToNextMediaItem()
     fun previous() = controller?.seekToPrevious()
     fun seekTo(ms: Long) = controller?.seekTo(ms.coerceAtLeast(0))
+    fun playQueueItem(index: Int) = controller?.run { seekToDefaultPosition(index); play() }
+    fun moveQueueItem(from: Int, to: Int) = controller?.moveMediaItem(from, to)
+    fun removeQueueItem(index: Int) = controller?.removeMediaItem(index)
+    fun toggleShuffle() = controller?.run { shuffleModeEnabled = !shuffleModeEnabled }
+    fun cycleRepeat() = controller?.run {
+        repeatMode = when (repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+    }
+    fun setVolume(v: Float) = controller?.run { volume = v.coerceIn(0f, 1f) }
+    val volume: Float get() = controller?.volume ?: 1f
+
+    /** Adds songs right after the current one. */
+    fun playNext(songs: List<SongEntity>) = controller?.run {
+        addMediaItems((currentMediaItemIndex + 1).coerceAtMost(mediaItemCount), songs.map { it.toMediaItem() })
+    }
 
     private fun publish() {
         val c = controller ?: return
@@ -84,6 +117,9 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
             durationMs = c.duration.takeIf { it > 0 } ?: 0,
             queueIndex = c.currentMediaItemIndex,
             queueSize = c.mediaItemCount,
+            queue = List(c.mediaItemCount) { i -> c.getMediaItemAt(i).mediaId.toLongOrNull() ?: -1L },
+            shuffle = c.shuffleModeEnabled,
+            repeatMode = c.repeatMode,
             output = extras.getString(PlaybackService.EXTRA_OUTPUT),
             usbConnected = extras.getBoolean(PlaybackService.EXTRA_USB),
             outputNeedsRestart = extras.getBoolean(PlaybackService.EXTRA_NEEDS_RESTART),
