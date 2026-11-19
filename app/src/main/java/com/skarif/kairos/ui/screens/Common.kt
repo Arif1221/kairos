@@ -200,7 +200,7 @@ fun rememberLivePosition(vm: MainViewModel): androidx.compose.runtime.State<Long
     val reported = vm.position.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
     // When the player last reported, in the frame clock's time base (System.nanoTime).
-    val reportedAt = remember { longArrayOf(System.nanoTime()) }
+    val reportedAt = androidx.compose.runtime.remember { longArrayOf(System.nanoTime()) }
     LaunchedEffect(reported.value) { reportedAt[0] = System.nanoTime() }
     return produceState(reported.value, now.isPlaying) {
         if (!now.isPlaying) {
@@ -210,9 +210,9 @@ fun rememberLivePosition(vm: MainViewModel): androidx.compose.runtime.State<Long
         // A steady clock that runs at real speed and is nudged gently towards the player's
         // reports, so it never stalls or jumps between them. Big gaps (a seek) snap.
         var shown = value.toDouble()
-        var last = androidx.compose.runtime.withFrameNanos { it }
+        var last: Long = androidx.compose.runtime.withFrameNanos { it }
         while (true) {
-            androidx.compose.runtime.withFrameNanos { t ->
+            androidx.compose.runtime.withFrameNanos { t: Long ->
                 shown += (t - last) / 1_000_000.0
                 last = t
                 val truth = reported.value + (t - reportedAt[0]) / 1_000_000.0
