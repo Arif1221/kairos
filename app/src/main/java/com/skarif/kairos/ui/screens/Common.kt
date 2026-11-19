@@ -82,7 +82,7 @@ fun tintOf(card: Color, accent: Color, dark: Boolean): Color = lerp(card, accent
 fun rememberCoverNow(vm: MainViewModel, song: SongEntity?): ImageBitmap? {
     val loaded by produceState<Pair<Long, Bitmap?>?>(null, song?.id) { value = song?.let { it.id to vm.cover(it) } }
     val bmp = song?.let { vm.cachedCover(it) ?: loaded?.takeIf { l -> l.first == it.id }?.second }
-    return remember(bmp) { bmp?.asImageBitmap() }
+    return androidx.compose.runtime.remember(bmp) { bmp?.asImageBitmap() }
 }
 
 /** Large cover image used by heroes. */
