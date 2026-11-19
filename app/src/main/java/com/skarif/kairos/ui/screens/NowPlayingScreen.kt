@@ -1,6 +1,9 @@
 package com.skarif.kairos.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -30,12 +33,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
@@ -46,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.db.formatLabel
+import kotlinx.coroutines.launch
 import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
@@ -97,28 +106,71 @@ fun NowPlayingScreen(
                         .clip(RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp))
                         .background(c.accent),
                 ) {
-                    Crossfade(art, animationSpec = tween(450), label = "cover") { bmp ->
-                        if (bmp != null) {
-                            val img = remember(bmp) { bmp.asImageBitmap() }
-                            Image(img, "${s.album} cover", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    // Swipe the cover: left/right for next/previous, down to close. It follows your finger.
+                    val dragX = remember { Animatable(0f) }
+                    val dragY = remember { Animatable(0f) }
+                    val scope = rememberCoroutineScope()
+                    val haptics = LocalHapticFeedback.current
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .pointerInput(s.id) {
+                                detectDragGestures(
+                                    onDragEnd = {
+                                        val w = size.width
+                                        when {
+                                            dragX.value < -w * 0.22f -> { haptics.performHapticFeedback(HapticFeedbackType.LongPress); vm.next() }
+                                            dragX.value > w * 0.22f -> { haptics.performHapticFeedback(HapticFeedbackType.LongPress); vm.previous() }
+                                            dragY.value > size.height * 0.2f -> onBack()
+                                        }
+                                        scope.launch { dragX.animateTo(0f, spring(dampingRatio = 0.7f)) }
+                                        scope.launch { dragY.animateTo(0f, spring(dampingRatio = 0.7f)) }
+                                    },
+                                    onDragCancel = {
+                                        scope.launch { dragX.animateTo(0f) }
+                                        scope.launch { dragY.animateTo(0f) }
+                                    },
+                                ) { change, amount ->
+                                    change.consume()
+                                    scope.launch { dragX.snapTo(dragX.value + amount.x) }
+                                    scope.launch { dragY.snapTo((dragY.value + amount.y).coerceAtLeast(0f)) }
+                                }
+                            }
+                            .graphicsLayer {
+                                translationX = dragX.value * 0.6f
+                                translationY = dragY.value * 0.4f
+                                val shrink = 1f - (kotlin.math.abs(dragX.value) + dragY.value) / (size.width * 6f)
+                                scaleX = shrink.coerceIn(0.9f, 1f); scaleY = shrink.coerceIn(0.9f, 1f)
+                            },
+                    ) {
+                        Crossfade(art, animationSpec = tween(450), label = "cover") { bmp ->
+                            if (bmp != null) {
+                                val img = remember(bmp) { bmp.asImageBitmap() }
+                                Image(img, "${s.album} cover", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                            }
                         }
                     }
+                    // Scrims keep the buttons and the title readable on any cover, light or dark.
                     Box(
-                        Modifier.fillMaxWidth().height(220.dp).align(Alignment.BottomCenter)
-                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x9E000000)))),
+                        Modifier.fillMaxWidth().height(150.dp).align(Alignment.TopCenter)
+                            .background(Brush.verticalGradient(listOf(Color(0x80000000), Color.Transparent))),
+                    )
+                    Box(
+                        Modifier.fillMaxWidth().height(240.dp).align(Alignment.BottomCenter)
+                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x66000000), Color(0xC7000000)))),
                     )
                     Row(
                         Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        CircleButton(Ic.Down, "Close now playing", onBack, container = Color(0xE0FFFFFF), content = Color(0xFF151515))
+                        CircleButton(Ic.Down, "Close now playing", onBack, container = Color(0x59000000), content = Color.White)
                         Box(Modifier.weight(1f))
                         CircleButton(
                             Ic.Clock, if (sleep.active) "Sleep timer, on" else "Sleep timer", onSleep,
-                            container = if (sleep.active) c.accent else Color(0x38FFFFFF), content = if (sleep.active) c.onAccent else Color.White,
+                            container = if (sleep.active) c.accent else Color(0x59000000), content = if (sleep.active) c.onAccent else Color.White,
                         )
-                        CircleButton(Ic.Sliders, "Equalizer", onEqualizer, container = Color(0x38FFFFFF), content = Color.White)
-                        CircleButton(Ic.Lyrics, "Lyrics", onLyrics, container = Color(0x38FFFFFF), content = Color.White)
+                        CircleButton(Ic.Sliders, "Equalizer", onEqualizer, container = Color(0x59000000), content = Color.White)
+                        CircleButton(Ic.Lyrics, "Lyrics", onLyrics, container = Color(0x59000000), content = Color.White)
                     }
                     Column(
                         Modifier.align(Alignment.BottomStart).padding(start = 22.dp, bottom = 34.dp, end = 110.dp),
@@ -162,7 +214,7 @@ fun NowPlayingScreen(
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     InfoChip(Ic.Wave, now.output?.let { "${s.formatLabel()} $it" } ?: s.formatLabel())
                     InfoChip(Ic.Clock, formatTime(s.durationMs))
-                    if (now.queueSize > 0) InfoChip(Ic.Queue, "${now.queueIndex + 1} of ${now.queueSize}", onQueue)
+                    if (now.queueSize > 0) InfoChip(Ic.Queue, "${now.queuePosition + 1} of ${now.queueSize}", onQueue)
                 }
                 LiveWaveformSeek(vm, now.durationMs.takeIf { it > 0 } ?: s.durationMs, s.id)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {

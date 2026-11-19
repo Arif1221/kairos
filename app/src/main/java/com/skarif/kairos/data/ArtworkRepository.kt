@@ -71,20 +71,21 @@ class ArtworkRepository(private val context: Context) {
             val colourful = p.swatches.filter { ColorUtils.colorToHSL(it.rgb, hsl); hsl[1] >= 0.22f && hsl[2] in 0.12f..0.88f }
             val best = colourful.maxByOrNull { sw ->
                 ColorUtils.colorToHSL(sw.rgb, hsl)
-                sw.population * (0.35f + hsl[1]) * (1f - kotlin.math.abs(hsl[2] - 0.5f))
+                sw.population * hsl[1] * hsl[1] * (1f - kotlin.math.abs(hsl[2] - 0.5f))
             }
             return (best ?: p.vibrantSwatch ?: p.dominantSwatch)?.rgb ?: DEFAULT_ACCENT
         }
 
         /**
-         * Keeps an accent readable: lightness 0.36-0.56 on light backgrounds, 0.46-0.68 on dark ones,
+         * Keeps an accent readable: lightness 0.32-0.58 on light backgrounds, 0.45-0.70 on dark ones,
          * and a little saturation so grey covers still give a usable tint.
          */
         fun tuneAccent(argb: Int, dark: Boolean): Int {
             val hsl = FloatArray(3)
             ColorUtils.colorToHSL(argb, hsl)
-            hsl[2] = if (dark) hsl[2].coerceIn(0.46f, 0.68f) else hsl[2].coerceIn(0.36f, 0.56f)
-            if (hsl[1] > 0.08f) hsl[1] = hsl[1].coerceIn(0.35f, 0.9f)
+            hsl[2] = if (dark) hsl[2].coerceIn(0.45f, 0.70f) else hsl[2].coerceIn(0.32f, 0.58f)
+            // Lift washed-out colours, but never dull a vivid one.
+            if (hsl[1] > 0.08f) hsl[1] = hsl[1].coerceAtLeast(0.35f)
             return ColorUtils.HSLToColor(hsl)
         }
 

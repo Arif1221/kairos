@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -72,10 +73,23 @@ fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> U
     val cur by vm.currentSong.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val left = (now.queueSize - now.queueIndex - 1).coerceAtLeast(0)
+    val left = (now.queue.size - now.queuePosition - 1).coerceAtLeast(0)
+    val list = rememberLazyListState()
+    val header = 5 // items before the queue rows
+    // Open on the current song, and follow it as songs change.
+    LaunchedEffect(Unit) { list.scrollToItem((header + now.queuePosition - 1).coerceAtLeast(0)) }
+    LaunchedEffect(now.queuePosition) {
+        val target = header + now.queuePosition
+        val visible = list.layoutInfo.visibleItemsInfo.any { it.index == target }
+        if (!visible) list.animateScrollToItem((target - 1).coerceAtLeast(0))
+    }
 
     ScreenBackground(art, settings.blurBackground) {
-        LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        LazyColumn(
+            Modifier.fillMaxSize().statusBarsPadding(), state = list,
+            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             item { ScreenHeader("Queue", onBack) }
             item { Text(mixedHeadline("Up " to false, "next" to true, ", $left songs to " to false, "go" to true), style = T.h1, color = c.text) }
             item {
@@ -89,10 +103,10 @@ fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> U
                         LiveTime(vm, now.durationMs, c.onAccent)
                     }
                     PillMeter(
-                        filled = if (now.queueSize == 0) 0 else ((now.queueIndex + 1) * 12 / now.queueSize).coerceIn(1, 12),
+                        filled = if (now.queue.isEmpty()) 0 else ((now.queuePosition + 1) * 12 / now.queue.size).coerceIn(1, 12),
                         total = 12, color = c.onAccent,
                     )
-                    Text("Song ${now.queueIndex + 1} of ${now.queueSize}", style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.onAccent)
+                    Text("Song ${now.queuePosition + 1} of ${now.queue.size}", style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.onAccent)
                 }
             }
             item {
@@ -108,26 +122,39 @@ fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> U
                     )
                 }
             }
-            item { Pill("Save as playlist", onSaveAsPlaylist, icon = Ic.PlaylistAdd, modifier = Modifier.fillMaxWidth()) }
-            // Key by song id + occurrence so moved rows animate to their new place.
-            val seen = HashMap<Long, Int>()
-            val keys = now.queue.map { id -> val n = seen.merge(id, 1, Int::plus)!!; "$id#$n" }
-            itemsIndexed(now.queue, key = { i, _ -> keys[i] }) { i, id ->
-                val s = vm.song(id)
-                val playing = i == now.queueIndex
-                Row(
-                    Modifier.animateItem().fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(if (playing) c.accent else c.card.copy(alpha = 0.75f))
-                        .clickable(role = Role.Button, onClickLabel = "Play") { vm.playQueueItem(i) }.padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    SongArt(vm, s, 46.dp, corner = 14.dp)
-                    Column(Modifier.weight(1f)) {
-                        Text(s?.title ?: "Unknown", style = T.title, color = if (playing) c.onAccent else c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(s?.artist ?: "", style = T.small, color = if (playing) c.onAccent else c.muted, maxLines = 1)
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Pill("Save as playlist", onSaveAsPlaylist, icon = Ic.PlaylistAdd, modifier = Modifier.fillMaxWidth())
+                    Text(
+                        if (now.shuffle) "Swipe left to remove. Turn shuffle off to reorder." else "Swipe left to remove. Use the arrows to reorder.",
+                        style = T.small, color = c.muted,
+                    )
+                }
+            }
+            itemsIndexed(now.queue, key = { _, e -> e.index }) { pos, e ->
+                val s = vm.song(e.songId)
+                val playing = pos == now.queuePosition
+                val played = pos < now.queuePosition
+                Box(Modifier.animateItem()) {
+                    SwipeActions(null, null, null, "Remove", Ic.Close, if (playing) null else ({ vm.removeQueueItem(e.index) })) {
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
+                                .background(if (playing) c.accent else c.card.copy(alpha = if (played) 0.45f else 0.85f))
+                                .clickable(role = Role.Button, onClickLabel = "Play") { vm.playQueueItem(e.index) }.padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            SongArt(vm, s, 46.dp, corner = 14.dp)
+                            Column(Modifier.weight(1f)) {
+                                Text(s?.title ?: "Unknown", style = T.title, color = if (playing) c.onAccent else c.text.copy(alpha = if (played) 0.55f else 1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(s?.artist ?: "", style = T.small, color = if (playing) c.onAccent else c.muted, maxLines = 1)
+                            }
+                            if (!now.shuffle) {
+                                val tint = if (playing) c.onAccent else c.text
+                                if (e.index > 0) CircleButton(Ic.Up, "Move ${s?.title} up", { vm.moveQueueItem(e.index, e.index - 1) }, size = 40.dp, container = Color.Transparent, content = tint, iconSize = 18.dp)
+                                if (e.index < now.queue.size - 1) CircleButton(Ic.DownArrow, "Move ${s?.title} down", { vm.moveQueueItem(e.index, e.index + 1) }, size = 40.dp, container = Color.Transparent, content = tint, iconSize = 18.dp)
+                            }
+                        }
                     }
-                    if (i > 0) CircleButton(Ic.Up, "Move ${s?.title} up", { vm.moveQueueItem(i, i - 1) }, size = 40.dp, container = Color.Transparent, content = if (playing) c.onAccent else c.text, iconSize = 18.dp)
-                    if (i < now.queue.size - 1) CircleButton(Ic.DownArrow, "Move ${s?.title} down", { vm.moveQueueItem(i, i + 1) }, size = 40.dp, container = Color.Transparent, content = if (playing) c.onAccent else c.text, iconSize = 18.dp)
-                    if (!playing) CircleButton(Ic.Close, "Remove ${s?.title}", { vm.removeQueueItem(i) }, size = 40.dp, container = Color.Transparent, content = c.muted, iconSize = 18.dp)
                 }
             }
         }

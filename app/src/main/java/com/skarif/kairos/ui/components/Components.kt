@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -47,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -64,6 +68,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -225,8 +230,9 @@ fun ScreenBackground(art: Bitmap?, blur: Boolean, modifier: Modifier = Modifier,
 
 /**
  * The seek bar as a bar chart of the song (design reference: the finance chart card).
- * Played bars are solid, the rest hatched, the current bar black with a time tooltip.
- * Bar heights are a stable pattern per song for now; a real waveform needs decoding the file.
+ * The played part fills continuously across the bars, a black playhead marks the position,
+ * and while playing the bars near the playhead gently pulse.
+ * Bar heights are a stable pattern per song; a real waveform needs decoding the file.
  */
 @Composable
 fun WaveformSeek(
@@ -237,14 +243,25 @@ fun WaveformSeek(
     modifier: Modifier = Modifier,
     barsHeight: Dp = 66.dp,
     bars: Int = 26,
+    playing: Boolean = false,
 ) {
     val c = P.colors
     val heights = remember(seed, bars) { val r = Random(seed); List(bars) { 0.3f + r.nextFloat() * 0.7f } }
     val target = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-    // Position arrives every 200 ms; animate between updates so the bar glides instead of ticking.
+    // Position arrives every 200 ms; animate between updates so the fill glides instead of ticking.
     val frac by animateFloatAsState(target, tween(220, easing = LinearEasing), label = "seek")
+    // The pulse only runs while playing, so a paused screen does not redraw 60 times a second.
+    val phase = if (playing) {
+        rememberInfiniteTransition(label = "pulse")
+            .animateFloat(0f, (2 * Math.PI).toFloat(), infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "phase")
+    } else {
+        null
+    }
+    val motion = if (playing) 1f else 0f
     var widthPx by remember { mutableIntStateOf(0) }
     var tipW by remember { mutableIntStateOf(0) }
+    var dragging by remember { mutableStateOf(false) }
+    val tipScale by animateFloatAsState(if (dragging) 1.15f else 1f, spring(stiffness = Spring.StiffnessMedium), label = "tip")
     fun seekAt(x: Float) {
         if (durationMs > 0 && widthPx > 0) onSeek(((x / widthPx).coerceIn(0f, 1f) * durationMs).toLong())
     }
@@ -253,7 +270,7 @@ fun WaveformSeek(
             .fillMaxWidth()
             .clip(RoundedCornerShape(30.dp))
             .background(c.accent)
-            .padding(start = 16.dp, end = 16.dp, top = 22.dp, bottom = 12.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
@@ -262,39 +279,55 @@ fun WaveformSeek(
                 .height(barsHeight)
                 .onSizeChanged { widthPx = it.width }
                 .pointerInput(durationMs) { detectTapGestures { seekAt(it.x) } }
-                .pointerInput(durationMs) { detectHorizontalDragGestures { change, _ -> seekAt(change.position.x) } }
+                .pointerInput(durationMs) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragging = true; seekAt(it.x) },
+                        onDragEnd = { dragging = false },
+                        onDragCancel = { dragging = false },
+                    ) { change, _ -> seekAt(change.position.x) }
+                }
                 .semantics {
                     contentDescription = "Seek bar"
-                    progressBarRangeInfo = ProgressBarRangeInfo(frac, 0f..1f)
+                    progressBarRangeInfo = ProgressBarRangeInfo(target, 0f..1f)
                     setProgress { v -> onSeek((v * durationMs).toLong()); true }
                 },
         ) {
             Canvas(Modifier.fillMaxSize()) {
                 val gap = 4.dp.toPx()
                 val w = (size.width - gap * (bars - 1)) / bars
-                val cur = (frac * bars).toInt().coerceAtMost(bars - 1)
+                val playX = frac * size.width
+                val radius = CornerRadius(minOf(w / 2, 8.dp.toPx()))
                 val hatch = c.onAccent.copy(alpha = 0.42f)
-                heights.forEachIndexed { i, h ->
-                    val bh = size.height * h
+                val solid = c.onAccent.copy(alpha = 0.92f)
+                val step = 6.dp.toPx()
+                val rects = heights.mapIndexed { i, h ->
                     val left = i * (w + gap)
-                    val top = size.height - bh
-                    val radius = CornerRadius(minOf(w / 2, 8.dp.toPx()))
-                    when {
-                        i == cur -> drawRoundRect(Color(0xFF151515), Offset(left, top), Size(w, bh), radius)
-                        i < cur -> drawRoundRect(c.onAccent.copy(alpha = 0.9f), Offset(left, top), Size(w, bh), radius)
-                        else -> {
-                            val path = Path().apply { addRoundRect(RoundRect(left, top, left + w, size.height, radius)) }
-                            clipPath(path) {
-                                val step = 6.dp.toPx()
-                                var x = left - bh
-                                while (x < left + w) {
-                                    drawLine(hatch, Offset(x, size.height), Offset(x + bh, top), strokeWidth = 2.dp.toPx())
-                                    x += step
-                                }
-                            }
+                    // Bars within ~3 of the playhead breathe while music plays.
+                    val near = (1f - kotlin.math.abs((left + w / 2) - playX) / (w * 3.5f)).coerceIn(0f, 1f)
+                    val wobble = 1f + 0.14f * motion * near * kotlin.math.sin((phase?.value ?: 0f) + i * 0.9f)
+                    val bh = (size.height * h * wobble).coerceAtMost(size.height)
+                    RoundRect(left, size.height - bh, left + w, size.height, radius)
+                }
+                // Unplayed: hatched.
+                rects.forEach { r ->
+                    clipPath(Path().apply { addRoundRect(r) }) {
+                        var x = r.left - r.height
+                        while (x < r.right) {
+                            drawLine(hatch, Offset(x, size.height), Offset(x + r.height, r.top), strokeWidth = 2.dp.toPx())
+                            x += step
                         }
                     }
                 }
+                // Played: solid, clipped at the exact position so it fills smoothly through a bar.
+                clipRect(right = playX) {
+                    rects.forEach { r -> drawPath(Path().apply { addRoundRect(r) }, solid) }
+                }
+                // Playhead.
+                val ph = 4.dp.toPx()
+                drawRoundRect(
+                    Color(0xFF151515), Offset((playX - ph / 2).coerceIn(0f, size.width - ph), 0f),
+                    Size(ph, size.height), CornerRadius(ph / 2),
+                )
             }
             if (widthPx > 0) {
                 val tipX = ((frac * widthPx) - tipW / 2f).roundToInt().coerceIn(0, (widthPx - tipW).coerceAtLeast(0))
@@ -304,7 +337,8 @@ fun WaveformSeek(
                     color = Color(0xFF151515),
                     modifier = Modifier
                         .onSizeChanged { tipW = it.width }
-                        .offset { IntOffset(tipX, (-18).dp.roundToPx()) }
+                        .offset { IntOffset(tipX, (-22).dp.roundToPx()) }
+                        .graphicsLayer { scaleX = tipScale; scaleY = tipScale }
                         .clip(RoundedCornerShape(50))
                         .background(Color.White)
                         .padding(horizontal = 10.dp, vertical = 4.dp),
@@ -313,7 +347,7 @@ fun WaveformSeek(
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(formatTime(positionMs), style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.onAccent)
-            Text(formatTime(durationMs), style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.onAccent)
+            Text("−" + formatTime((durationMs - positionMs).coerceAtLeast(0)), style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.onAccent)
         }
     }
 }

@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -29,6 +32,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -86,8 +91,24 @@ fun SongRow(
     vm: MainViewModel,
     number: Int? = null,
     onLongClick: (() -> Unit)? = null,
+    swipe: Boolean = true,
     onClick: () -> Unit,
 ) {
+    if (swipe) {
+        val favs by vm.favorites.collectAsStateWithLifecycle()
+        val fav = song.id in favs
+        SwipeActions(
+            "Play next", Ic.Queue, { vm.playNext(listOf(song)) },
+            if (fav) "Unfavourite" else "Favourite", if (fav) Ic.Heart else Ic.HeartFilled, { vm.toggleFavorite(song.id) },
+        ) { SongRowContent(song, playing, vm, number, onLongClick, onClick) }
+    } else {
+        SongRowContent(song, playing, vm, number, onLongClick, onClick)
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SongRowContent(song: SongEntity, playing: Boolean, vm: MainViewModel, number: Int?, onLongClick: (() -> Unit)?, onClick: () -> Unit) {
     val c = P.colors
     val fg = if (playing) c.onAccent else c.text
     Row(
@@ -151,11 +172,74 @@ private fun DialogItem(text: String, onClick: () -> Unit) {
 @Composable
 fun LiveWaveformSeek(vm: MainViewModel, durationMs: Long, seed: Long, modifier: Modifier = Modifier, barsHeight: Dp = 66.dp, bars: Int = 26) {
     val pos by vm.position.collectAsStateWithLifecycle()
-    com.skarif.kairos.ui.components.WaveformSeek(pos, durationMs, seed, vm::seekTo, modifier, barsHeight, bars)
+    val now by vm.now.collectAsStateWithLifecycle()
+    com.skarif.kairos.ui.components.WaveformSeek(pos, durationMs, seed, vm::seekTo, modifier, barsHeight, bars, playing = now.isPlaying)
 }
 
 @Composable
 fun LiveTime(vm: MainViewModel, durationMs: Long, color: Color) {
     val pos by vm.position.collectAsStateWithLifecycle()
     Text("${formatTime(pos)} / ${formatTime(durationMs)}", style = T.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = color)
+}
+
+/**
+ * Swipe a row right or left to run an action; the row springs back afterwards.
+ * Also exposed as accessibility actions, since a swipe can't be done with TalkBack.
+ */
+@Composable
+fun SwipeActions(
+    rightLabel: String?,
+    rightIcon: androidx.compose.ui.graphics.vector.ImageVector?,
+    onRight: (() -> Unit)?,
+    leftLabel: String?,
+    leftIcon: androidx.compose.ui.graphics.vector.ImageVector?,
+    onLeft: (() -> Unit)?,
+    content: @Composable () -> Unit,
+) {
+    val c = P.colors
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val state = androidx.compose.material3.rememberSwipeToDismissBoxState(
+        confirmValueChange = { v ->
+            when (v) {
+                androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd -> onRight?.let { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); it() }
+                androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> onLeft?.let { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); it() }
+                else -> Unit
+            }
+            false // never stay dismissed; the action ran, the row returns
+        },
+        positionalThreshold = { it * 0.3f },
+    )
+    androidx.compose.material3.SwipeToDismissBox(
+        state = state,
+        enableDismissFromStartToEnd = onRight != null,
+        enableDismissFromEndToStart = onLeft != null,
+        modifier = Modifier.semantics {
+            customActions = listOfNotNull(
+                if (onRight != null && rightLabel != null) androidx.compose.ui.semantics.CustomAccessibilityAction(rightLabel) { onRight(); true } else null,
+                if (onLeft != null && leftLabel != null) androidx.compose.ui.semantics.CustomAccessibilityAction(leftLabel) { onLeft(); true } else null,
+            )
+        },
+        backgroundContent = {
+            val dir = state.dismissDirection
+            val right = dir == androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd
+            val active = dir != androidx.compose.material3.SwipeToDismissBoxValue.Settled
+            // Colour only the strip the row has uncovered, so nothing shows through the row itself.
+            val offsetPx = runCatching { state.requireOffset() }.getOrDefault(0f)
+            val strip = with(androidx.compose.ui.platform.LocalDensity.current) { kotlin.math.abs(offsetPx).toDp() }
+            Box(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 2.dp)) {
+                if (active && strip > 0.dp) {
+                    val icon = if (right) rightIcon else leftIcon
+                    val fg = if (right) c.onAccent else c.inkFg
+                    Box(
+                        Modifier.align(if (right) Alignment.CenterStart else Alignment.CenterEnd)
+                            .width(strip).fillMaxHeight().clip(RoundedCornerShape(24.dp))
+                            .background(if (right) c.accent else c.ink),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (icon != null && strip > 44.dp) Icon(icon, null, tint = fg, modifier = Modifier.size(22.dp))
+                    }
+                }
+            }
+        },
+    ) { content() }
 }

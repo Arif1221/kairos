@@ -169,7 +169,7 @@ private fun PlayerRoot(vm: MainViewModel = viewModel()) {
                 }
                 composable("newplaylist?fromQueue={fromQueue}") { e ->
                     val fromQueue = e.arguments?.getString("fromQueue") == "true"
-                    val initial = remember { if (fromQueue) vm.now.value.queue.filter { it >= 0 } else emptyList() }
+                    val initial = remember { if (fromQueue) vm.now.value.queue.map { it.songId }.filter { it >= 0 } else emptyList() }
                     NewPlaylistScreen(vm, onDone = { nav.popBackStack() }, initialSongs = initial)
                 }
                 composable("collection/{key}") { e ->

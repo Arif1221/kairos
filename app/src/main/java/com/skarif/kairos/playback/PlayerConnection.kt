@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -27,8 +28,10 @@ data class NowPlaying(
     val durationMs: Long = 0,
     val queueIndex: Int = 0,
     val queueSize: Int = 0,
-    /** Song ids in queue order. */
-    val queue: List<Long> = emptyList(),
+    /** The queue in the order it will actually play (shuffle included). */
+    val queue: List<QueueEntry> = emptyList(),
+    /** Where the current song sits in [queue]. */
+    val queuePosition: Int = 0,
     val shuffle: Boolean = false,
     /** Player.REPEAT_MODE_OFF / ONE / ALL. */
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
@@ -36,6 +39,9 @@ data class NowPlaying(
     val usbConnected: Boolean = false,
     val outputNeedsRestart: Boolean = false,
 )
+
+/** [index] is the player's media item index; [songId] the song. */
+data class QueueEntry(val index: Int, val songId: Long)
 
 /** The UI's handle on the playback service, through a MediaController. */
 class PlayerConnection(private val context: Context, private val appScope: CoroutineScope) {
@@ -117,13 +123,25 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
     private fun publish() {
         val c = controller ?: return
         _position.value = c.currentPosition
+        // Walk the timeline in play order, so the queue matches what you hear when shuffle is on.
+        val tl = c.currentTimeline
+        val order = ArrayList<Int>(tl.windowCount)
+        if (!tl.isEmpty) {
+            var i = tl.getFirstWindowIndex(c.shuffleModeEnabled)
+            while (i != C.INDEX_UNSET && order.size < tl.windowCount) {
+                order += i
+                i = tl.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, c.shuffleModeEnabled)
+            }
+        }
+        if (order.size != c.mediaItemCount) { order.clear(); order.addAll(0 until c.mediaItemCount) }
         val next = NowPlaying(
             songId = c.currentMediaItem?.mediaId?.toLongOrNull(),
             isPlaying = c.isPlaying,
             durationMs = c.duration.takeIf { it > 0 } ?: 0,
             queueIndex = c.currentMediaItemIndex,
             queueSize = c.mediaItemCount,
-            queue = List(c.mediaItemCount) { i -> c.getMediaItemAt(i).mediaId.toLongOrNull() ?: -1L },
+            queue = order.map { i -> QueueEntry(i, c.getMediaItemAt(i).mediaId.toLongOrNull() ?: -1L) },
+            queuePosition = order.indexOf(c.currentMediaItemIndex).coerceAtLeast(0),
             shuffle = c.shuffleModeEnabled,
             repeatMode = c.repeatMode,
             output = extras.getString(PlaybackService.EXTRA_OUTPUT),
