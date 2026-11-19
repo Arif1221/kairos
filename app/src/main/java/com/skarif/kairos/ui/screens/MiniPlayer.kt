@@ -90,11 +90,11 @@ fun MiniPlayer(vm: MainViewModel, onOpen: () -> Unit, modifier: Modifier = Modif
                         val w = size.width
                         scope.launch {
                             when {
-                                dragX.value < -w * 0.25f -> {
+                                dragX.value < -w * 0.15f -> {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     dragX.animateTo(-w.toFloat(), tween(160)); vm.next(); dragX.snapTo(w * 0.5f)
                                 }
-                                dragX.value > w * 0.25f -> {
+                                dragX.value > w * 0.15f -> {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     dragX.animateTo(w.toFloat(), tween(160)); vm.previous(); dragX.snapTo(-w * 0.5f)
                                 }

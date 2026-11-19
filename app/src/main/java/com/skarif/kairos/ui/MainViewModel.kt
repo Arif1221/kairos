@@ -371,6 +371,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun toggle() { ct.player.toggle() }
     fun next() { ct.player.next() }
     fun previous() { ct.player.previous() }
+    /** Always the previous song, never a restart of this one. */
+    fun previousTrack() { ct.player.previousTrack() }
     fun seekTo(ms: Long) { ct.player.seekTo(ms) }
     fun playQueueItem(i: Int) { ct.player.playQueueItem(i) }
     fun moveQueueItem(from: Int, to: Int) { ct.player.moveQueueItem(from, to) }
@@ -432,6 +434,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     suspend fun thumbnail(song: SongEntity): Bitmap? = ct.artwork.load(song, 160)
     suspend fun cover(song: SongEntity): Bitmap? = ct.artwork.load(song, 720)
+    fun cachedCover(song: SongEntity): Bitmap? = ct.artwork.peek(song, 720)
 }
 
 /** Days between two instants; used by screens that show "x days ago". */

@@ -68,26 +68,27 @@ import androidx.compose.foundation.combinedClickable
 import java.text.DateFormat
 import java.util.Date
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Unit, onOpenAlbum: (Long) -> Unit) {
     val c = P.colors
-    var menuFor by remember { mutableStateOf<Pair<Int, com.skarif.kairos.data.db.SongEntity>?>(null) }
-    var confirmClear by remember { mutableStateOf(false) }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val now by vm.now.collectAsStateWithLifecycle()
     val cur by vm.currentSong.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
+    var menuFor by remember { mutableStateOf<Pair<Int, com.skarif.kairos.data.db.SongEntity>?>(null) }
+    var confirmClear by remember { mutableStateOf(false) }
+    var overflow by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val left = (now.queue.size - now.queuePosition - 1).coerceAtLeast(0)
     val list = rememberLazyListState()
-    val header = 5 // items before the queue rows
-    // Open on the current song, and follow it as songs change.
-    LaunchedEffect(Unit) { list.scrollToItem((header + now.queuePosition - 1).coerceAtLeast(0)) }
+    // Open on the current song, and follow it as songs change (unless you scrolled away).
+    LaunchedEffect(Unit) { list.scrollToItem((now.queuePosition - 1).coerceAtLeast(0)) }
+    val currentVisible by remember {
+        androidx.compose.runtime.derivedStateOf { list.layoutInfo.visibleItemsInfo.any { it.index == vm.now.value.queuePosition } }
+    }
     LaunchedEffect(now.queuePosition) {
-        val target = header + now.queuePosition
-        val visible = list.layoutInfo.visibleItemsInfo.any { it.index == target }
-        if (!visible) list.animateScrollToItem((target - 1).coerceAtLeast(0))
+        if (!list.isScrollInProgress) list.animateScrollToItem((now.queuePosition - 1).coerceAtLeast(0))
     }
 
     menuFor?.let { (i, song) -> SongActionsDialog(vm, song, onOpenAlbum, queueIndex = i) { menuFor = null } }
@@ -103,96 +104,150 @@ fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> U
     }
 
     ScreenBackground(art, settings.blurBackground) {
-        LazyColumn(
-            Modifier.fillMaxSize().statusBarsPadding(), state = list,
-            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            item { ScreenHeader("Queue", onBack) }
-            item { Text(mixedHeadline("Up " to false, "next" to true, ", $left songs to " to false, "go" to true), style = T.h1, color = c.text) }
-            item {
-                Card(color = c.accent) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SongArt(vm, cur, 64.dp, corner = 20.dp)
-                        Column(Modifier.weight(1f)) {
-                            Text(cur?.title ?: "Nothing playing", style = T.h2, color = c.onAccent, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(cur?.artist ?: "", style = T.small, color = c.onAccent)
-                        }
-                        LiveTime(vm, now.durationMs, c.onAccent)
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            // Top bar: back, title, and the less-used actions in a menu.
+            Row(
+                Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircleButton(Ic.Back, "Back", onBack, size = 48.dp)
+                Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+                    Text("Queue", style = T.h2, color = c.text)
+                    Text("${now.queuePosition + 1} of ${now.queue.size}, $left up next", style = T.small, color = c.muted)
+                }
+                Box {
+                    CircleButton(Ic.Menu, "Queue options", { overflow = true }, size = 48.dp)
+                    androidx.compose.material3.DropdownMenu(
+                        expanded = overflow, onDismissRequest = { overflow = false },
+                        containerColor = c.sheet, shape = RoundedCornerShape(20.dp),
+                    ) {
+                        @Composable
+                        fun item(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, enabled: Boolean = true, action: () -> Unit) =
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(label, style = T.title, color = if (enabled) c.text else c.muted) },
+                                leadingIcon = { androidx.compose.material3.Icon(icon, null, tint = if (enabled) c.text else c.muted, modifier = Modifier.size(20.dp)) },
+                                enabled = enabled, onClick = { overflow = false; action() },
+                            )
+                        item("Save as playlist", Ic.PlaylistAdd) { onSaveAsPlaylist() }
+                        item("Clear up next", Ic.Trash, enabled = left > 0) { confirmClear = true }
+                        item("Clear played", Ic.Close, enabled = now.queuePosition > 0) { vm.clearPlayed() }
                     }
-                    PillMeter(
-                        filled = if (now.queue.isEmpty()) 0 else ((now.queuePosition + 1) * 12 / now.queue.size).coerceIn(1, 12),
-                        total = 12, color = c.onAccent,
-                    )
-                    Text("Song ${now.queuePosition + 1} of ${now.queue.size}", style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.onAccent)
                 }
             }
-            item {
+
+            // Pinned: the current song stays on screen however far you scroll.
+            Column(
+                Modifier.padding(horizontal = 18.dp).fillMaxWidth().clip(RoundedCornerShape(30.dp)).background(c.accent)
+                    .clickable(role = Role.Button, onClickLabel = "Show in queue") {
+                        scope.launch { list.animateScrollToItem((now.queuePosition - 1).coerceAtLeast(0)) }
+                    }
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SongArt(vm, cur, 56.dp, corner = 18.dp)
+                    Column(Modifier.weight(1f)) {
+                        Text(cur?.title ?: "Nothing playing", style = T.title.copy(fontSize = 18.sp), color = c.onAccent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(cur?.artist ?: "", style = T.small, color = c.onAccent.copy(alpha = 0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    CircleButton(
+                        if (now.isPlaying) Ic.Pause else Ic.Play, if (now.isPlaying) "Pause" else "Play", vm::toggle,
+                        size = 48.dp, container = c.onAccent, content = c.accent,
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Up next", Modifier.weight(1f), style = T.h2, color = c.text)
-                    Pill("Shuffle", vm::toggleShuffle, selected = now.shuffle, icon = Ic.Shuffle)
+                    LiveProgressLine(vm, now.durationMs, c.onAccent, Modifier.weight(1f))
+                    val on = c.onAccent
+                    CircleButton(
+                        Ic.Shuffle, if (now.shuffle) "Shuffle, on" else "Shuffle, off", vm::toggleShuffle, size = 40.dp, iconSize = 18.dp,
+                        container = if (now.shuffle) on else on.copy(alpha = 0.14f), content = if (now.shuffle) c.accent else on,
+                    )
                     CircleButton(
                         if (now.repeatMode == Player.REPEAT_MODE_ONE) Ic.RepeatOne else Ic.Repeat,
                         when (now.repeatMode) { Player.REPEAT_MODE_ALL -> "Repeat all, on"; Player.REPEAT_MODE_ONE -> "Repeat one, on"; else -> "Repeat, off" },
-                        vm::cycleRepeat, size = 46.dp,
-                        container = if (now.repeatMode != Player.REPEAT_MODE_OFF) c.ink else c.card,
-                        content = if (now.repeatMode != Player.REPEAT_MODE_OFF) c.inkFg else c.text,
+                        vm::cycleRepeat, size = 40.dp, iconSize = 18.dp,
+                        container = if (now.repeatMode != Player.REPEAT_MODE_OFF) on else on.copy(alpha = 0.14f),
+                        content = if (now.repeatMode != Player.REPEAT_MODE_OFF) c.accent else on,
                     )
                 }
             }
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    androidx.compose.foundation.layout.FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Pill("Save as playlist", onSaveAsPlaylist, icon = Ic.PlaylistAdd)
-                        Pill("Now playing", {
-                            scope.launch { list.animateScrollToItem((header + now.queuePosition - 1).coerceAtLeast(0)) }
-                        }, icon = Ic.Music)
-                        if (left > 0) Pill("Clear up next", { confirmClear = true }, icon = Ic.Trash)
-                        if (now.queuePosition > 0) Pill("Clear played", vm::clearPlayed, icon = Ic.Close)
-                    }
-                    Text(
-                        if (now.shuffle) "Swipe left to remove, hold a song for more. Turn shuffle off to reorder."
-                        else "Swipe right to play next, left to remove. Hold a song for more.",
-                        style = T.small, color = c.muted,
-                    )
-                }
-            }
-            itemsIndexed(now.queue, key = { _, e -> e.index }) { pos, e ->
-                val s = vm.song(e.songId)
-                val playing = pos == now.queuePosition
-                val played = pos < now.queuePosition
-                Box(Modifier.animateItem()) {
-                    SwipeActions(
-                        "Play next", Ic.Next, if (playing || now.shuffle) null else ({ vm.moveToNext(e.index) }),
-                        "Remove", Ic.Close, if (playing) null else ({ vm.removeQueueItem(e.index) }),
-                    ) {
-                        Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
-                                .background(if (playing) c.accent else c.card.copy(alpha = if (played) 0.45f else 0.85f))
-                                .combinedClickable(
-                                    role = Role.Button, onClickLabel = "Play", onLongClickLabel = "More options",
-                                    onLongClick = { if (s != null) menuFor = e.index to s },
-                                ) { vm.playQueueItem(e.index) }
-                                .padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            SongArt(vm, s, 46.dp, corner = 14.dp)
-                            Column(Modifier.weight(1f)) {
-                                Text(s?.title ?: "Unknown", style = T.title, color = if (playing) c.onAccent else c.text.copy(alpha = if (played) 0.55f else 1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(s?.artist ?: "", style = T.small, color = if (playing) c.onAccent else c.muted, maxLines = 1)
-                            }
-                            if (!now.shuffle) {
-                                val tint = if (playing) c.onAccent else c.text
-                                if (e.index > 0) CircleButton(Ic.Up, "Move ${s?.title} up", { vm.moveQueueItem(e.index, e.index - 1) }, size = 40.dp, container = Color.Transparent, content = tint, iconSize = 18.dp)
-                                if (e.index < now.queue.size - 1) CircleButton(Ic.DownArrow, "Move ${s?.title} down", { vm.moveQueueItem(e.index, e.index + 1) }, size = 40.dp, container = Color.Transparent, content = tint, iconSize = 18.dp)
+            Text(
+                if (now.shuffle) "Swipe left to remove. Hold a song for more."
+                else "Swipe right to play next, left to remove. Hold a song for more.",
+                Modifier.padding(horizontal = 22.dp, vertical = 8.dp), style = T.small, color = c.muted,
+            )
+
+            Box(Modifier.weight(1f)) {
+                LazyColumn(
+                    Modifier.fillMaxSize(), state = list,
+                    contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 2.dp, bottom = 120.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    itemsIndexed(now.queue, key = { _, e -> e.index }) { pos, e ->
+                        val song = vm.song(e.songId)
+                        val playing = pos == now.queuePosition
+                        val played = pos < now.queuePosition
+                        Box(Modifier.animateItem()) {
+                            SwipeActions(
+                                "Play next", Ic.Next, if (playing || now.shuffle) null else ({ vm.moveToNext(e.index) }),
+                                "Remove", Ic.Close, if (playing) null else ({ vm.removeQueueItem(e.index) }),
+                            ) {
+                                Row(
+                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
+                                        .background(if (playing) c.tint else c.card.copy(alpha = if (played) 0.4f else 0.8f))
+                                        .combinedClickable(
+                                            role = Role.Button, onClickLabel = "Play", onLongClickLabel = "More options",
+                                            onLongClick = { if (song != null) menuFor = e.index to song },
+                                        ) { vm.playQueueItem(e.index) }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    Text(
+                                        if (playing) "▶" else "${pos + 1}",
+                                        Modifier.width(34.dp), style = T.small.copy(fontWeight = FontWeight.Bold),
+                                        color = if (playing) c.accent else c.muted, maxLines = 1,
+                                    )
+                                    SongArt(vm, song, 44.dp, corner = 12.dp)
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            song?.title ?: "Unknown", style = T.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            color = c.text.copy(alpha = if (played) 0.5f else 1f),
+                                        )
+                                        Text(song?.artist ?: "", style = T.small, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    Text(formatTime(song?.durationMs ?: 0), style = T.small, color = c.muted)
+                                }
                             }
                         }
                     }
                 }
+                // Back to the current song after scrolling away.
+                androidx.compose.animation.AnimatedVisibility(
+                    !currentVisible && now.queue.isNotEmpty(),
+                    modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
+                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.8f),
+                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.8f),
+                ) {
+                    Pill("Go to now playing", {
+                        scope.launch { list.animateScrollToItem((now.queuePosition - 1).coerceAtLeast(0)) }
+                    }, accent = true, icon = Ic.Music)
+                }
             }
         }
+    }
+}
+
+/** Thin live progress line for compact players. */
+@Composable
+private fun LiveProgressLine(vm: MainViewModel, durationMs: Long, color: Color, modifier: Modifier = Modifier) {
+    val pos = vm.position.collectAsStateWithLifecycle()
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(4.dp)) {
+            val p = if (durationMs > 0) (pos.value.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+            drawRoundRect(color.copy(alpha = 0.25f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2))
+            drawRoundRect(color, size = size.copy(width = size.width * p), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2))
+        }
+        LiveTime(vm, durationMs, color)
     }
 }
 
