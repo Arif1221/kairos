@@ -60,6 +60,8 @@ fun MiniPlayer(vm: MainViewModel, onOpen: () -> Unit, modifier: Modifier = Modif
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val shape = RoundedCornerShape(30.dp)
+    // Settle on every song change, whatever happened to the skip animation.
+    androidx.compose.runtime.LaunchedEffect(s.id) { dragX.animateTo(0f, spring(dampingRatio = 0.75f, stiffness = 420f)) }
 
     Row(
         modifier

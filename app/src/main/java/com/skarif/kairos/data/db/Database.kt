@@ -4,6 +4,7 @@ import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -39,6 +40,8 @@ data class SongEntity(
     val sizeBytes: Long,
     val dateAddedSec: Long,
     val bitrate: Int,
+    /** Genre tag as MediaStore reports it; empty when the file has none. */
+    @ColumnInfo(defaultValue = "") val genre: String = "",
 )
 
 fun SongEntity.contentUri(): Uri =
@@ -172,7 +175,7 @@ interface LyricsOffsetDao {
         SongEntity::class, FavoriteEntity::class, PlaylistEntity::class,
         PlaylistSongEntity::class, PlayEventEntity::class, LyricsOffsetEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class PlayerDatabase : RoomDatabase() {
@@ -184,6 +187,15 @@ abstract class PlayerDatabase : RoomDatabase() {
 
     companion object {
         fun create(context: Context): PlayerDatabase =
-            Room.databaseBuilder(context, PlayerDatabase::class.java, "player.db").build()
+            Room.databaseBuilder(context, PlayerDatabase::class.java, "player.db")
+                .addMigrations(MIGRATION_1_2)
+                .build()
+
+        /** 0.6.0 adds genres. The next scan fills the column in. */
+        private val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE songs ADD COLUMN genre TEXT NOT NULL DEFAULT ''")
+            }
+        }
     }
 }

@@ -247,17 +247,30 @@ fun WaveformSeek(
 ) {
     val c = P.colors
     val heights = remember(seed, bars) { val r = Random(seed); List(bars) { 0.3f + r.nextFloat() * 0.7f } }
-    val target = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-    // Position arrives every 200 ms; animate between updates so the fill glides instead of ticking.
-    val frac by animateFloatAsState(target, tween(220, easing = LinearEasing), label = "seek")
-    // The pulse only runs while playing, so a paused screen does not redraw 60 times a second.
-    val phase = if (playing) {
-        rememberInfiniteTransition(label = "pulse")
-            .animateFloat(0f, (2 * Math.PI).toFloat(), infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "phase")
-    } else {
-        null
+    // Position arrives every 200 ms. While playing, extrapolate it from the frame clock so the fill
+    // moves every frame at the real speed of the song, and only snap when a seek moves it far.
+    val live = androidx.compose.runtime.produceState(positionMs, positionMs, playing, durationMs) {
+        val start = if (!playing || kotlin.math.abs(positionMs - value) > 600) positionMs else maxOf(value, positionMs)
+        value = start
+        if (!playing) return@produceState
+        val t0 = androidx.compose.runtime.withFrameMillis { it }
+        while (true) {
+            androidx.compose.runtime.withFrameMillis { t ->
+                val est = positionMs + (t - t0)
+                value = maxOf(start, est).coerceAtMost(if (durationMs > 0) durationMs else est)
+            }
+        }
     }
-    val motion = if (playing) 1f else 0f
+    // Frame clock for the bars' motion; only ticks while playing.
+    val clock = androidx.compose.runtime.produceState(0f, playing) {
+        if (!playing) return@produceState
+        val t0 = androidx.compose.runtime.withFrameMillis { it } - (value * 1000).toLong()
+        while (true) androidx.compose.runtime.withFrameMillis { t -> value = (t - t0) / 1000f }
+    }
+    val motion by animateFloatAsState(if (playing) 1f else 0f, tween(500), label = "motion")
+    val target = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    fun fracNow() = if (durationMs > 0) (live.value.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    val shownSec by remember { androidx.compose.runtime.derivedStateOf { live.value / 1000 } }
     var widthPx by remember { mutableIntStateOf(0) }
     var tipW by remember { mutableIntStateOf(0) }
     var dragging by remember { mutableStateOf(false) }
@@ -295,16 +308,20 @@ fun WaveformSeek(
             Canvas(Modifier.fillMaxSize()) {
                 val gap = 4.dp.toPx()
                 val w = (size.width - gap * (bars - 1)) / bars
-                val playX = frac * size.width
+                val playX = fracNow() * size.width
+                val t = clock.value
                 val radius = CornerRadius(minOf(w / 2, 8.dp.toPx()))
                 val hatch = c.onAccent.copy(alpha = 0.42f)
                 val solid = c.onAccent.copy(alpha = 0.92f)
                 val step = 6.dp.toPx()
                 val rects = heights.mapIndexed { i, h ->
                     val left = i * (w + gap)
-                    // Bars within ~3 of the playhead breathe while music plays.
-                    val near = (1f - kotlin.math.abs((left + w / 2) - playX) / (w * 3.5f)).coerceIn(0f, 1f)
-                    val wobble = 1f + 0.14f * motion * near * kotlin.math.sin((phase?.value ?: 0f) + i * 0.9f)
+                    // Bars around the playhead dance like a level meter while music plays; the rest
+                    // breathe faintly, so the whole bar feels alive without being busy.
+                    val near = (1f - kotlin.math.abs((left + w / 2) - playX) / (w * 4f)).coerceIn(0f, 1f)
+                    val beat = 0.5f + 0.5f * kotlin.math.sin(t * 7.3f + i * 1.7f) * kotlin.math.sin(t * 3.1f + i * 0.6f)
+                    val idle = 0.03f * kotlin.math.sin(t * 1.6f + i * 0.45f)
+                    val wobble = 1f + motion * (near * near * (beat * 0.32f - 0.08f) + idle)
                     val bh = (size.height * h * wobble).coerceAtMost(size.height)
                     RoundRect(left, size.height - bh, left + w, size.height, radius)
                 }
@@ -330,14 +347,17 @@ fun WaveformSeek(
                 )
             }
             if (widthPx > 0) {
-                val tipX = ((frac * widthPx) - tipW / 2f).roundToInt().coerceIn(0, (widthPx - tipW).coerceAtLeast(0))
                 Text(
-                    formatTime(positionMs),
+                    formatTime(shownSec * 1000),
                     style = T.small.copy(fontWeight = FontWeight.Bold),
                     color = Color(0xFF151515),
                     modifier = Modifier
                         .onSizeChanged { tipW = it.width }
-                        .offset { IntOffset(tipX, (-22).dp.roundToPx()) }
+                        .offset {
+                            // Read in the layout phase: the tip follows the playhead without recomposing.
+                            val tipX = ((fracNow() * widthPx) - tipW / 2f).roundToInt().coerceIn(0, (widthPx - tipW).coerceAtLeast(0))
+                            IntOffset(tipX, (-22).dp.roundToPx())
+                        }
                         .graphicsLayer { scaleX = tipScale; scaleY = tipScale }
                         .clip(RoundedCornerShape(50))
                         .background(Color.White)
@@ -346,8 +366,8 @@ fun WaveformSeek(
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(formatTime(positionMs), style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.onAccent)
-            Text("−" + formatTime((durationMs - positionMs).coerceAtLeast(0)), style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.onAccent)
+            Text(formatTime(shownSec * 1000), style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.onAccent)
+            Text("−" + formatTime((durationMs - shownSec * 1000).coerceAtLeast(0)), style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.onAccent)
         }
     }
 }

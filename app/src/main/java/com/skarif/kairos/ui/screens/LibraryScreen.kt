@@ -75,7 +75,7 @@ import com.skarif.kairos.ui.theme.T
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 
-private enum class LibTab(val label: String) { SONGS("Songs"), ALBUMS("Albums"), ARTISTS("Artists") }
+private enum class LibTab(val label: String) { SONGS("Songs"), ALBUMS("Albums"), ARTISTS("Artists"), GENRES("Genres") }
 
 /** Items above the first song/album/artist in the grid. */
 private const val HEADER_ITEMS = 2
@@ -120,11 +120,10 @@ fun LibraryScreen(
     val albums = remember(songs) {
         songs.groupBy { it.albumId }.values.map { it.first() }.sortedBy { it.album.lowercase() }
     }
-    val artists = remember(songs) {
-        songs.groupBy { it.artist }.map { (name, l) -> name to l }.sortedBy { it.first.lowercase() }
-    }
-    val count = when (tab) { LibTab.SONGS -> songs.size; LibTab.ALBUMS -> albums.size; LibTab.ARTISTS -> artists.size }
-    val noun = when (tab) { LibTab.SONGS -> "songs"; LibTab.ALBUMS -> "albums"; LibTab.ARTISTS -> "artists" }
+    val artists by vm.artists.collectAsStateWithLifecycle()
+    val genres by vm.genres.collectAsStateWithLifecycle()
+    val count = when (tab) { LibTab.SONGS -> songs.size; LibTab.ALBUMS -> albums.size; LibTab.ARTISTS -> artists.size; LibTab.GENRES -> genres.size }
+    val noun = when (tab) { LibTab.SONGS -> "songs"; LibTab.ALBUMS -> "albums"; LibTab.ARTISTS -> "artists"; LibTab.GENRES -> "genres" }
     val summary = remember(songs) {
         val gb = songs.sumOf { it.sizeBytes } / 1_000_000_000.0
         val mins = songs.sumOf { it.durationMs } / 60_000
@@ -146,7 +145,7 @@ fun LibraryScreen(
             state = grid,
             contentPadding = PaddingValues(bottom = 230.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(if (tab == LibTab.ALBUMS) 10.dp else 0.dp),
+            verticalArrangement = Arrangement.spacedBy(if (tab == LibTab.ALBUMS || tab == LibTab.GENRES) 10.dp else 0.dp),
         ) {
             item(span = { GridItemSpan(2) }, key = "header") {
                 Column(
@@ -189,7 +188,7 @@ fun LibraryScreen(
                                     },
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(t.label, style = T.label.copy(fontSize = 14.sp), color = if (on) Color(0xFF151515) else Color.White)
+                                Text(t.label, style = T.label.copy(fontSize = 13.sp), maxLines = 1, color = if (on) Color(0xFF151515) else Color.White)
                             }
                         }
                     }
@@ -240,7 +239,9 @@ fun LibraryScreen(
                     }
                 }
                 LibTab.ARTISTS -> {
-                    items(artists, key = { "ar" + it.first }, span = { GridItemSpan(2) }, contentType = { "artist" }) { (name, list) ->
+                    items(artists, key = { "ar" + it.name.lowercase() }, span = { GridItemSpan(2) }, contentType = { "artist" }) { a ->
+                        val name = a.name
+                        val list = a.songs
                         Row(
                             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
                                 .cardClick("Open $name") { onOpenCollection("artist:$name") }
@@ -254,6 +255,23 @@ fun LibraryScreen(
                                 Text("${list.size} songs, ${list.distinctBy { it.albumId }.size} albums", style = T.small, color = c.muted)
                             }
                             CircleButton(Ic.Play, "Play $name", { vm.play(list, 0); onOpenNowPlaying() }, size = 44.dp, container = c.card)
+                        }
+                    }
+                }
+                LibTab.GENRES -> {
+                    if (genres.isEmpty()) {
+                        item(span = { GridItemSpan(2) }) {
+                            Text(
+                                "No genre tags found in your music. Genres come from the files' tags.",
+                                Modifier.padding(18.dp), style = T.body, color = c.muted,
+                            )
+                        }
+                    }
+                    itemsIndexed(genres, key = { _, g -> "ge" + g.name.lowercase() }, contentType = { _, _ -> "genre" }) { i, g ->
+                        Box(Modifier.padding(start = if (i % 2 == 0) 18.dp else 0.dp, end = if (i % 2 == 1) 18.dp else 0.dp)) {
+                            CoverTile(vm, g.songs.first(), key = "genre:${g.name}", kicker = "${g.songs.size} songs", title = g.name) {
+                                onOpenCollection("genre:${g.name}")
+                            }
                         }
                     }
                 }

@@ -38,6 +38,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -116,32 +122,47 @@ fun NowPlayingScreen(
                     val dragY = remember { Animatable(0f) }
                     val scope = rememberCoroutineScope()
                     val haptics = LocalHapticFeedback.current
+                    var widthPx by remember { mutableFloatStateOf(1f) }
+                    // Which side the next cover enters from: +1 right, -1 left, 0 no skip pending.
+                    var enterFrom by remember { mutableIntStateOf(0) }
+                    val currentId by rememberUpdatedState(s.id)
+                    // Every song change settles the cover, however the previous animation ended, so it
+                    // can never be left stuck halfway off screen.
+                    LaunchedEffect(s.id) {
+                        val from = enterFrom
+                        enterFrom = 0
+                        if (from != 0) dragX.snapTo(from * widthPx * 0.9f)
+                        dragX.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = 320f))
+                    }
+                    fun skip(dir: Int) = scope.launch {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        val before = currentId
+                        enterFrom = -dir
+                        try {
+                            dragX.animateTo(dir * widthPx * 1.4f, tween(170))
+                        } finally {
+                            if (dir < 0) vm.next() else vm.previous()
+                        }
+                        // No next/previous song (end of queue): bring this cover back.
+                        kotlinx.coroutines.delay(400)
+                        if (currentId == before) { enterFrom = 0; dragX.animateTo(0f, spring(dampingRatio = 0.8f)) }
+                    }
                     Box(
                         Modifier
                             .fillMaxSize()
+                            .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
                             .pointerInput(s.id) {
                                 detectDragGestures(
                                     onDragEnd = {
                                         val w = size.width.toFloat()
                                         scope.launch { dragY.animateTo(0f, spring(dampingRatio = 0.7f)) }
-                                        scope.launch {
-                                            when {
-                                                dragX.value < -w * 0.22f -> {
-                                                    // Fly out to the left, come back in from the right with the next cover.
-                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    dragX.animateTo(-w * 1.6f, tween(180))
-                                                    vm.next()
-                                                    dragX.snapTo(w * 1.2f)
-                                                }
-                                                dragX.value > w * 0.22f -> {
-                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    dragX.animateTo(w * 1.6f, tween(180))
-                                                    vm.previous()
-                                                    dragX.snapTo(-w * 1.2f)
-                                                }
-                                                dragY.value > size.height * 0.2f -> onBack()
+                                        when {
+                                            dragX.value < -w * 0.22f -> skip(-1)
+                                            dragX.value > w * 0.22f -> skip(1)
+                                            else -> {
+                                                if (dragY.value > size.height * 0.2f) onBack()
+                                                scope.launch { dragX.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 300f)) }
                                             }
-                                            dragX.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 300f))
                                         }
                                     },
                                     onDragCancel = {
@@ -155,7 +176,7 @@ fun NowPlayingScreen(
                                 }
                             }
                             .graphicsLayer {
-                                translationX = dragX.value * 0.6f
+                                translationX = dragX.value
                                 translationY = dragY.value * 0.4f
                                 val shrink = 1f - (kotlin.math.abs(dragX.value) + dragY.value) / (size.width * 6f)
                                 scaleX = shrink.coerceIn(0.9f, 1f); scaleY = shrink.coerceIn(0.9f, 1f)
