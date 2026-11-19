@@ -175,7 +175,7 @@ public final class TagReader {
             if (i + 4 > d.length) break;
             long t = int32(d, i);
             i += 4;
-            r.syncedLines.add(new LyricLine(t, text.replace("\r", "").replace("\n", " ").trim()));
+            r.syncedLines.add(new LyricLine(t, LrcParser.stripVoice(text.replace("\r", "").replace("\n", " ").trim())));
         }
     }
 

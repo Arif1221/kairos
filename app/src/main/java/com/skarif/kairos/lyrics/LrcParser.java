@@ -13,6 +13,13 @@ import java.util.regex.Pattern;
  * Text with no timestamps at all is returned as plain lyrics.
  */
 public final class LrcParser {
+    /** Singer tags some lyric sources put before a line: "v1:", "v2: ". Not part of the words. */
+    private static final java.util.regex.Pattern VOICE = java.util.regex.Pattern.compile("^v\\d{1,2}:\\s*");
+
+    public static String stripVoice(String line) {
+        return VOICE.matcher(line).replaceFirst("");
+    }
+
     private static final Pattern TIME = Pattern.compile("\\[(\\d{1,3}):(\\d{1,2})(?:[.:](\\d{1,3}))?]");
     private static final Pattern WORD_TIME = Pattern.compile("<\\d{1,3}:\\d{1,2}(?:[.:]\\d{1,3})?>");
     private static final Pattern META = Pattern.compile("^\\[([a-zA-Z#]+):(.*)]$");
@@ -47,10 +54,10 @@ public final class LrcParser {
                 end = m.end();
             }
             if (!stamps.isEmpty()) {
-                String lyric = WORD_TIME.matcher(row.substring(end)).replaceAll("").trim();
+                String lyric = VOICE.matcher(WORD_TIME.matcher(row.substring(end)).replaceAll("").trim()).replaceFirst("");
                 for (long t : stamps) timed.add(new LyricLine(t, lyric));
             } else if (!META.matcher(row).matches()) {
-                plain.add(new LyricLine(-1, row));
+                plain.add(new LyricLine(-1, VOICE.matcher(row).replaceFirst("")));
             }
         }
 

@@ -178,30 +178,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * show on Home; all of them are under Playlists, Smart.
      */
     val mixes: StateFlow<List<Collection>> = combine(songs, events, favorites, songById, genres) { all, ev, favs, byId, gens ->
-        val counts = ev.groupingBy { it.songId }.eachCount()
+        // Only real listens count: 30 s, or half of a short song. Skips don't make a song "most played".
+        val plays = ev.filter { e ->
+            val d = byId[e.songId]?.durationMs ?: 0L
+            e.listenedMs >= minOf(30_000L, if (d > 0) d / 2 else 30_000L)
+        }
+        val counts = plays.groupingBy { it.songId }.eachCount()
+        val anyPlay = ev.mapTo(HashSet()) { it.songId }
+        val lastAt = plays.groupBy { it.songId }.mapValues { (_, l) -> l.maxOf { it.startedAt } }
         val now = System.currentTimeMillis()
         val monthAgo = now - 30L * 24 * 3600 * 1000
-        val recentIds = ev.filter { it.startedAt >= monthAgo }.mapTo(HashSet()) { it.songId }
         val daily = java.util.Random(LocalDate.now().toEpochDay())
-        val mostPlayed = counts.entries.sortedByDescending { it.value }.take(50).mapNotNull { byId[it.key] }
+        // Ties broken by listening time, then by how recently it was played.
+        val time = plays.groupBy { it.songId }.mapValues { (_, l) -> l.sumOf { it.listenedMs } }
+        val mostPlayed = counts.entries
+            .sortedWith(compareByDescending<Map.Entry<Long, Int>> { it.value }.thenByDescending { time[it.key] ?: 0L }.thenByDescending { lastAt[it.key] ?: 0L })
+            .take(50).mapNotNull { byId[it.key] }
         val recent = all.sortedByDescending { it.dateAddedSec }.take(50)
         val favourites = all.filter { it.id in favs }
-        val forgotten = counts.filter { it.value >= 2 && it.key !in recentIds }.keys.mapNotNull { byId[it] }
-            .ifEmpty { all.filter { it.id !in counts }.shuffled(daily).take(40) }
-        val onRepeat = ev.filter { it.startedAt >= monthAgo }.groupingBy { it.songId }.eachCount()
+        // Loved once (2+ plays) but not played for a month. Empty until that is true.
+        val forgotten = counts.filter { (id, n) -> n >= 2 && (lastAt[id] ?: 0L) < monthAgo }
+            .keys.sortedByDescending { counts[it] }.take(40).mapNotNull { byId[it] }
+        val onRepeat = plays.filter { it.startedAt >= monthAgo }.groupingBy { it.songId }.eachCount()
             .filter { it.value >= 3 }.entries.sortedByDescending { it.value }.take(40).mapNotNull { byId[it.key] }
-        val lastPlayed = ev.sortedByDescending { it.startedAt }.map { it.songId }.distinct().take(50).mapNotNull { byId[it] }
-        val neverPlayed = all.filter { it.id !in counts }.shuffled(daily).take(60)
+        val lastPlayed = plays.sortedByDescending { it.startedAt }.map { it.songId }.distinct().take(50).mapNotNull { byId[it] }
+        // Never started at all, not even skipped.
+        val neverPlayed = all.filter { it.id !in anyPlay }.shuffled(daily).take(60)
         val quick = all.filter { it.durationMs in 60_000..180_000 }.shuffled(daily).take(40)
         val longOnes = all.filter { it.durationMs >= 6 * 60_000 }.sortedByDescending { it.durationMs }.take(40)
         val genreMixes = gens.take(6).map { g ->
             Collection("mix-genre:${g.name}", "${g.name} mix", "${minOf(g.songs.size, 50)} songs, new every day", g.songs.shuffled(daily).take(50))
         }
         listOf(
-            Collection("most", "Most played", "${mostPlayed.size} songs", mostPlayed),
+            Collection("most", "Most played", "Your most listened songs", mostPlayed),
             Collection("recent", "Recently added", "${recent.size} songs", recent),
             Collection("favourites", "Favourites", "${favourites.size} songs", favourites),
-            Collection("forgotten", "Forgotten gems", "Not played lately", forgotten),
+            Collection("forgotten", "Forgotten gems", "Loved once, not played this month", forgotten),
             Collection("onrepeat", "On repeat", "Played 3+ times this month", onRepeat),
             Collection("lastplayed", "Recently played", "${lastPlayed.size} songs", lastPlayed),
             Collection("never", "Never played", "Something new from your library", neverPlayed),

@@ -133,10 +133,17 @@ fun LibraryScreen(
     val letterSorted = settings.songSort in setOf(SongSort.TITLE, SongSort.ARTIST, SongSort.ALBUM)
     val letters = remember(songs, settings.songSort) {
         if (!letterSorted) emptyList()
+        // A-Z order with # first, each pointing at its first song, whatever the list's quirks.
         else songs.mapIndexed { i, s -> letterOf(s, settings.songSort) to i }.distinctBy { it.first }
+            .sortedBy { if (it.first == '#') ' ' else it.first }
     }
 
     actionsFor?.let { s -> SongActionsDialog(vm, s, onOpenAlbum) { actionsFor = null } }
+    // Header panel follows the theme: frosted light glass by day, dark glass by night.
+    val panel = if (c.dark) Color(0xE6121212) else c.card.copy(alpha = 0.92f)
+    val chip = if (c.dark) Color(0xFF2A2A2A) else c.bg
+    val fg = c.text
+    val soft = c.muted
 
     ScreenBackground(art, settings.blurBackground) {
         LazyVerticalGrid(
@@ -152,43 +159,43 @@ fun LibraryScreen(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
-                        .background(Color(0xE6121212))
+                        .background(panel)
                         .statusBarsPadding()
                         .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 18.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircleButton(Ic.Folder, "Music folders", onFolders, container = Color(0xFF2A2A2A), content = Color.White)
-                        Text("Library", Modifier.weight(1f), color = Color.White, style = T.title, textAlign = TextAlign.Center)
-                        CircleButton(Ic.Settings, "Settings", onSettings, container = Color(0xFF2A2A2A), content = Color.White)
+                        CircleButton(Ic.Folder, "Music folders", onFolders, container = chip, content = fg)
+                        Text("Library", Modifier.weight(1f), color = fg, style = T.title, textAlign = TextAlign.Center)
+                        CircleButton(Ic.Settings, "Settings", onSettings, container = chip, content = fg)
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Your collection", color = Color(0xFFCFCFCB), style = T.body)
+                        Text("Your collection", color = soft, style = T.body)
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("${fmt.format(count)} $noun", Modifier.weight(1f), color = Color.White, style = T.big)
-                            CircleButton(Ic.Refresh, "Scan again", vm::scanNow, size = 44.dp, container = Color.Transparent, content = Color.White)
+                            Text("${fmt.format(count)} $noun", Modifier.weight(1f), color = fg, style = T.big)
+                            CircleButton(Ic.Refresh, "Scan again", vm::scanNow, size = 44.dp, container = Color.Transparent, content = fg)
                         }
                         Text(
                             if (scan == ScanState.Scanning) "Scanning your music folders…" else summary,
-                            color = Color(0xFFCFCFCB), style = T.small,
+                            color = soft, style = T.small,
                         )
                     }
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(Color(0xFF242424)).padding(4.dp),
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(chip).padding(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         LibTab.entries.forEach { t ->
                             val on = t == tab
                             Box(
                                 Modifier.weight(1f).height(42.dp).clip(RoundedCornerShape(21.dp))
-                                    .background(if (on) Color.White else Color.Transparent)
+                                    .background(if (on) c.ink else Color.Transparent)
                                     .selectable(on, role = Role.Tab) {
                                         tab = t
                                         scope.launch { grid.scrollToItem(0) }
                                     },
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(t.label, style = T.label.copy(fontSize = 13.sp), maxLines = 1, color = if (on) Color(0xFF151515) else Color.White)
+                                Text(t.label, style = T.label.copy(fontSize = 13.sp), maxLines = 1, color = if (on) c.inkFg else fg)
                             }
                         }
                     }
@@ -286,16 +293,16 @@ fun LibraryScreen(
             exit = slideOutVertically(tween(200)) { -it } + fadeOut(),
         ) {
             Row(
-                Modifier.fillMaxWidth().background(Color(0xEB121212)).statusBarsPadding().padding(horizontal = 18.dp, vertical = 10.dp),
+                Modifier.fillMaxWidth().background(panel).statusBarsPadding().padding(horizontal = 18.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Library", style = T.title, color = Color.White)
-                    Text("${fmt.format(count)} $noun", style = T.small, color = Color(0xFFCFCFCB))
+                    Text("Library", style = T.title, color = fg)
+                    Text("${fmt.format(count)} $noun", style = T.small, color = soft)
                 }
-                if (tab == LibTab.SONGS) CircleButton(Ic.Sort, "Sort songs", onSort, size = 44.dp, container = Color(0xFF2A2A2A), content = Color.White)
-                CircleButton(Ic.Up, "Back to top", { scope.launch { grid.animateScrollToItem(0) } }, size = 44.dp, container = Color.White, content = Color(0xFF151515))
+                if (tab == LibTab.SONGS) CircleButton(Ic.Sort, "Sort songs", onSort, size = 44.dp, container = chip, content = fg)
+                CircleButton(Ic.Up, "Back to top", { scope.launch { grid.animateScrollToItem(0) } }, size = 44.dp, container = c.ink, content = c.inkFg)
             }
         }
 

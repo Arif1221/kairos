@@ -190,6 +190,23 @@ private fun DialogItem(text: String, onClick: () -> Unit) {
     }
 }
 
+/**
+ * Playback position that moves every frame while playing. The player reports it every 200 ms;
+ * in between it is extrapolated from the frame clock, so anything driven by it glides.
+ */
+@Composable
+fun rememberLivePosition(vm: MainViewModel): androidx.compose.runtime.State<Long> {
+    val reported by vm.position.collectAsStateWithLifecycle()
+    val now by vm.now.collectAsStateWithLifecycle()
+    return produceState(reported, reported, now.isPlaying) {
+        val start = if (!now.isPlaying || kotlin.math.abs(reported - value) > 600) reported else maxOf(value, reported)
+        value = start
+        if (!now.isPlaying) return@produceState
+        val t0 = androidx.compose.runtime.withFrameMillis { it }
+        while (true) androidx.compose.runtime.withFrameMillis { t -> value = maxOf(start, reported + (t - t0)) }
+    }
+}
+
 /** Seek bar that reads the playback position itself, so only it redraws 5 times a second. */
 @Composable
 fun LiveWaveformSeek(vm: MainViewModel, durationMs: Long, seed: Long, modifier: Modifier = Modifier, barsHeight: Dp = 66.dp, bars: Int = 26) {

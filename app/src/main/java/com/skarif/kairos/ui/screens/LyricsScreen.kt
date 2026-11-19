@@ -43,6 +43,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
@@ -85,7 +87,7 @@ private val Fg: Color @Composable get() = P.colors.text
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit) {
     val c = P.colors
     val song by vm.currentSong.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
@@ -129,8 +131,9 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    val source = (state as? LyricsState.Ready)?.lyrics?.let { if (it.source == Lyrics.SOURCE_EMBEDDED) "Embedded" else ".lrc file" }
                     Text(
-                        if (offset == 0L) "In sync" else (if (offset > 0) "Later by " else "Earlier by ") + "%.1f s".format(abs(offset) / 1000f),
+                        (source?.let { "$it, " } ?: "") + if (offset == 0L) "in sync" else (if (offset > 0) "Later by " else "Earlier by ") + "%.1f s".format(abs(offset) / 1000f),
                         Modifier.weight(1f), style = T.title.copy(fontSize = 14.sp), color = Fg,
                     )
                     SmallPill("−0.1 s", "Show lyrics earlier") { vm.nudgeLyrics(-100) }
@@ -168,10 +171,8 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 val s = song
                 if (s != null) LiveWaveformSeek(vm, now.durationMs.takeIf { it > 0 } ?: s.durationMs, s.id, barsHeight = 28.dp, bars = 32)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val source = (state as? LyricsState.Ready)?.lyrics?.let {
-                        (if (it.source == Lyrics.SOURCE_EMBEDDED) "Embedded" else ".lrc file") + if (it.synced) ", synced" else ", not synced"
-                    }
-                    Text(source ?: "", Modifier.weight(1f), style = T.small.copy(fontWeight = FontWeight.SemiBold), color = Dim)
+                    CircleButton(Ic.Queue, "Queue", onQueue, size = 46.dp, container = Glass, content = Fg)
+                    Box(Modifier.weight(1f))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         CircleButton(Ic.Prev, "Previous song", vm::previous, size = 46.dp, container = Glass, content = Fg)
                         CircleButton(
@@ -190,14 +191,18 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit) {
 @Composable
 private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent: Color, onSeek: (Long) -> Unit) {
     val list = rememberLazyListState()
-    val position = vm.position.collectAsStateWithLifecycle()
+    val position = rememberLivePosition(vm)
     // Positive offset means the lyrics should show later, so compare against an earlier position.
     val current by remember(lyrics, offsetMs) {
         derivedStateOf { if (lyrics.synced) lyrics.indexAt(position.value - offsetMs) else -1 }
     }
     var viewport by remember { mutableIntStateOf(0) }
     LaunchedEffect(current) {
-        if (current >= 0) list.animateScrollToItem(current, scrollOffset = -(viewport / 3))
+        if (current < 0) return@LaunchedEffect
+        // Glide to the new line with one eased motion when it is on screen; jump only when it isn't.
+        val info = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == current + if (lyrics.synced) 0 else 1 }
+        if (info != null) list.animateScrollBy((info.offset - viewport / 3).toFloat(), tween(600, easing = FastOutSlowInEasing))
+        else list.animateScrollToItem(current, scrollOffset = -(viewport / 3))
     }
     LazyColumn(
         state = list,
@@ -215,8 +220,9 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
                 return@itemsIndexed
             }
             val isCur = i == current
-            val alpha by animateFloatAsState(when { isCur -> 1f; i < current -> 0.35f; else -> 0.55f }, tween(350), label = "lineAlpha")
-            val scale by animateFloatAsState(if (isCur) 1f else 0.9f, spring(dampingRatio = 0.75f, stiffness = 300f), label = "lineScale")
+            val alpha by animateFloatAsState(when { isCur -> 1f; i < current -> 0.35f; else -> 0.55f }, tween(500, easing = FastOutSlowInEasing), label = "lineAlpha")
+            val scale by animateFloatAsState(if (isCur) 1f else 0.82f, tween(500, easing = FastOutSlowInEasing), label = "lineScale")
+            var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
             val start = line.timeMs + offsetMs
             val end = lyrics.lines.getOrNull(i + 1)?.timeMs?.plus(offsetMs) ?: (start + 4000)
             Text(
@@ -229,11 +235,13 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
                         this.alpha = alpha
                         if (isCur) compositingStrategy = CompositingStrategy.Offscreen
                     }
-                    .then(if (isCur) Modifier.karaoke(position, start, end) else Modifier)
+                    .then(if (isCur) Modifier.karaoke(position, start, end) { layout } else Modifier)
                     .clickable(role = Role.Button, onClickLabel = "Play from this line") { onSeek(start) }
                     .then(if (isCur) Modifier.semantics { heading() } else Modifier),
-                style = T.h1.copy(fontSize = 32.sp, lineHeight = 38.sp, fontWeight = if (isCur) FontWeight.ExtraBold else FontWeight.Bold),
+                // One weight for every line: switching weight re-wraps the text and makes it jump.
+                style = T.h1.copy(fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.ExtraBold),
                 color = Fg,
+                onTextLayout = { layout = it },
             )
         }
     }
@@ -243,17 +251,34 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
  * Sung part stays white, the rest is dimmed. Position is read in the draw phase, so the sweep
  * redraws every tick without recomposing the list.
  */
-private fun Modifier.karaoke(position: State<Long>, startMs: Long, endMs: Long): Modifier = drawWithContent {
+private fun Modifier.karaoke(
+    position: State<Long>, startMs: Long, endMs: Long, layout: () -> androidx.compose.ui.text.TextLayoutResult?,
+): Modifier = drawWithContent {
     drawContent()
+    val l = layout() ?: return@drawWithContent
+    // Fill the wrapped lines one after another, start to finish, like reading.
     val span = (endMs - startMs).coerceAtLeast(1).toFloat()
     val p = ((position.value - startMs) / span).coerceIn(0f, 1f)
-    val x = size.width * p
-    val feather = 28.dp.toPx()
-    drawRect(
-        Brush.horizontalGradient(0f to Color.Transparent, 1f to Color.Black, startX = x - feather, endX = x),
-        topLeft = Offset(x - feather, 0f), size = Size(feather, size.height), blendMode = BlendMode.DstOut, alpha = 0.6f,
-    )
-    drawRect(Color.Black, topLeft = Offset(x, 0f), size = Size(size.width - x, size.height), blendMode = BlendMode.DstOut, alpha = 0.6f)
+    val widths = FloatArray(l.lineCount) { l.getLineRight(it) - l.getLineLeft(it) }
+    var fill = widths.sum() * p
+    val feather = 36.dp.toPx()
+    for (i in 0 until l.lineCount) {
+        val left = l.getLineLeft(i)
+        val right = l.getLineRight(i)
+        val top = l.getLineTop(i)
+        val h = l.getLineBottom(i) - top
+        val covered = fill.coerceIn(0f, widths[i])
+        fill -= widths[i]
+        if (covered >= widths[i]) continue
+        val x = left + covered
+        if (covered > 0f) {
+            drawRect(
+                Brush.horizontalGradient(0f to Color.Transparent, 1f to Color.Black, startX = x - feather, endX = x),
+                topLeft = Offset(x - feather, top), size = Size(feather, h), blendMode = BlendMode.DstOut, alpha = 0.6f,
+            )
+        }
+        drawRect(Color.Black, topLeft = Offset(x, top), size = Size(size.width - x, h), blendMode = BlendMode.DstOut, alpha = 0.6f)
+    }
 }
 
 @Composable
