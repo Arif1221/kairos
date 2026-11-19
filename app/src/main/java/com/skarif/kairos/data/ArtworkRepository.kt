@@ -11,6 +11,9 @@ import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
 import com.skarif.kairos.data.db.SongEntity
 import com.skarif.kairos.data.db.contentUri
+import com.skarif.kairos.data.db.isOnline
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -29,7 +32,9 @@ class ArtworkRepository(private val context: Context) {
         val key = "${if (song.albumId > 0) "a${song.albumId}" else "s${song.id}"}@$sizePx"
         bitmaps.get(key)?.let { return@withContext it }
         val bmp = runCatching {
-            if (Build.VERSION.SDK_INT >= 29) {
+            if (song.isOnline) {
+                song.artUrl?.let { loadRemote(it, sizePx) }
+            } else if (Build.VERSION.SDK_INT >= 29) {
                 context.contentResolver.loadThumbnail(song.contentUri(), Size(sizePx, sizePx), null)
             } else {
                 MediaMetadataRetriever().run {
@@ -43,6 +48,22 @@ class ArtworkRepository(private val context: Context) {
             }
         }.getOrNull()
         bmp?.also { bitmaps.put(key, it) }
+    }
+
+    /** Downloads a cover and crops it to a centred square, like local album art. */
+    private fun loadRemote(url: String, sizePx: Int): Bitmap? {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        val bytes = try {
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 10_000
+            conn.inputStream.use { it.readBytes() }
+        } finally {
+            conn.disconnect()
+        }
+        val src = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+        val side = minOf(src.width, src.height)
+        val square = Bitmap.createBitmap(src, (src.width - side) / 2, (src.height - side) / 2, side, side)
+        return if (side > sizePx) Bitmap.createScaledBitmap(square, sizePx, sizePx, true) else square
     }
 
     /** The accent for a song's cover (cached per album, like the art itself). */

@@ -14,6 +14,11 @@ import com.skarif.kairos.data.SongSort
 import com.skarif.kairos.data.db.FavoriteEntity
 import com.skarif.kairos.data.db.PlayEventEntity
 import com.skarif.kairos.data.db.SongEntity
+import com.skarif.kairos.data.db.isOnline
+import com.skarif.kairos.online.Flavor
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.FlowPreview
+import java.util.concurrent.ConcurrentHashMap
 import com.skarif.kairos.lyrics.Lyrics
 import com.skarif.kairos.playback.NowPlaying
 import com.skarif.kairos.playback.SleepState
@@ -24,6 +29,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -51,6 +57,14 @@ sealed interface ScanState {
     data class Done(val songs: Int) : ScanState
 }
 
+/** Results of searching the online source (online flavor only). */
+sealed interface OnlineSearch {
+    data object Idle : OnlineSearch
+    data object Loading : OnlineSearch
+    data class Ready(val songs: List<SongEntity>) : OnlineSearch
+    data class Failed(val message: String) : OnlineSearch
+}
+
 /** A list of songs shown with the album-style screen: albums, playlists and mixes. */
 data class Collection(val key: String, val title: String, val subtitle: String, val songs: List<SongEntity>, val playlistId: Long? = null)
 
@@ -68,7 +82,7 @@ data class StatsUi(
     val streakDays: Int = 0,
 )
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val ct = (app as PlayerApp).container
     private fun <T> Flow<T>.state(initial: T) = stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), initial)
@@ -77,11 +91,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val now: StateFlow<NowPlaying> = ct.player.state
     val position: StateFlow<Long> = ct.player.position
     val sleep: StateFlow<SleepState> = ct.sleep.state
-    val songs: StateFlow<List<SongEntity>> = ct.db.songs().observeAll().state(emptyList())
+    /** The library: songs on this device. */
+    val songs: StateFlow<List<SongEntity>> = ct.db.songs().observeLocal().state(emptyList())
     private val events: StateFlow<List<PlayEventEntity>> = ct.db.playEvents().observeAll().state(emptyList())
     val favorites: StateFlow<Set<Long>> = ct.db.favorites().observeIds().map { it.toSet() }.state(emptySet())
 
-    private val songById: StateFlow<Map<Long, SongEntity>> = songs.map { l -> l.associateBy { it.id } }.state(emptyMap())
+    /** Local and saved online songs, for favourites, playlists, stats and the queue. */
+    private val songById: StateFlow<Map<Long, SongEntity>> =
+        ct.db.songs().observeAll().map { l -> l.associateBy { it.id } }.state(emptyMap())
     private val playCounts: StateFlow<Map<Long, Int>> = events.map { e -> e.groupingBy { it.songId }.eachCount() }.state(emptyMap())
 
     private val sortKey = settings.map { it.songSort to it.sortDescending }.distinctUntilChanged()
@@ -151,7 +168,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val recentIds = ev.filter { it.startedAt >= monthAgo }.mapTo(HashSet()) { it.songId }
         val mostPlayed = counts.entries.sortedByDescending { it.value }.take(50).mapNotNull { byId[it.key] }
         val recent = all.sortedByDescending { it.dateAddedSec }.take(50)
-        val favourites = all.filter { it.id in favs }
+        val favourites = byId.values.filter { it.id in favs }
         val forgotten = counts.filter { it.value >= 2 && it.key !in recentIds }.keys.mapNotNull { byId[it] }
             .ifEmpty { all.filter { it.id !in counts }.shuffled(java.util.Random(LocalDate.now().toEpochDay())).take(40) }
         listOf(
@@ -182,6 +199,44 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (t.isEmpty()) emptyList()
         else all.filter { it.title.lowercase().contains(t) || it.artist.lowercase().contains(t) || it.album.lowercase().contains(t) }.take(200)
     }.state(emptyList())
+
+    /** True in the online flavor. */
+    val onlineName: String? = Flavor.online?.name
+
+    /** Online search results seen this session, so they can be saved when favourited or added to a playlist. */
+    private val seenOnline = ConcurrentHashMap<Long, SongEntity>()
+
+    val onlineResults: StateFlow<OnlineSearch> = _query.map { it.trim() }.distinctUntilChanged()
+        .debounce(450) // don't hit the network on every keystroke
+        .transformLatest { q ->
+            val source = Flavor.online
+            if (source == null || q.isEmpty()) {
+                emit(OnlineSearch.Idle)
+                return@transformLatest
+            }
+            emit(OnlineSearch.Loading)
+            val result = try {
+                val list = source.search(q)
+                list.forEach { seenOnline[it.id] = it }
+                OnlineSearch.Ready(list)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                OnlineSearch.Failed("Couldn't reach ${source.name}. Check your connection.")
+            }
+            emit(result)
+        }.state(OnlineSearch.Idle)
+
+    /** Online songs only exist in Room once kept; do that before they are played or referenced. */
+    private fun keepOnline(songs: List<SongEntity>) {
+        val online = songs.filter { it.isOnline }
+        if (online.isNotEmpty()) ct.scope.launch { ct.db.songs().upsertAll(online) }
+    }
+
+    private suspend fun keepOnlineIds(ids: Collection<Long>) {
+        val rows = ids.mapNotNull { seenOnline[it] }
+        if (rows.isNotEmpty()) ct.db.songs().upsertAll(rows)
+    }
 
     private val _folders = MutableStateFlow<List<FolderInfo>>(emptyList())
     val folders: StateFlow<List<FolderInfo>> = _folders.asStateFlow()
@@ -290,9 +345,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setQuery(q: String) { _query.value = q }
 
-    fun play(list: List<SongEntity>, index: Int) = ct.player.play(list, index)
-    fun shuffle(list: List<SongEntity>) { if (list.isNotEmpty()) ct.player.play(list, 0, shuffle = true) }
-    fun playNext(list: List<SongEntity>) { ct.player.playNext(list) }
+    fun play(list: List<SongEntity>, index: Int) { keepOnline(list); ct.player.play(list, index) }
+    fun shuffle(list: List<SongEntity>) { if (list.isNotEmpty()) { keepOnline(list); ct.player.play(list, 0, shuffle = true) } }
+    fun playNext(list: List<SongEntity>) { keepOnline(list); ct.player.playNext(list) }
     fun toggle() { ct.player.toggle() }
     fun next() { ct.player.next() }
     fun previous() { ct.player.previous() }
@@ -311,16 +366,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleFavorite(songId: Long) {
         viewModelScope.launch {
             if (songId in favorites.value) ct.db.favorites().remove(songId)
-            else ct.db.favorites().add(FavoriteEntity(songId, System.currentTimeMillis()))
+            else {
+                keepOnlineIds(listOf(songId))
+                ct.db.favorites().add(FavoriteEntity(songId, System.currentTimeMillis()))
+            }
         }
     }
 
     fun createPlaylist(name: String, songIds: List<Long>) {
-        viewModelScope.launch { ct.db.playlists().create(name.ifBlank { "New playlist" }, songIds) }
+        viewModelScope.launch {
+            keepOnlineIds(songIds)
+            ct.db.playlists().create(name.ifBlank { "New playlist" }, songIds)
+        }
     }
 
     fun addToPlaylist(playlistId: Long, songIds: List<Long>) {
-        viewModelScope.launch { ct.db.playlists().append(playlistId, songIds) }
+        viewModelScope.launch {
+            keepOnlineIds(songIds)
+            ct.db.playlists().append(playlistId, songIds)
+        }
     }
 
     fun deletePlaylist(playlistId: Long) {

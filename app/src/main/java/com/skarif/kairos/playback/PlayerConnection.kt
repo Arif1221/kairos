@@ -11,6 +11,8 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.skarif.kairos.data.db.SongEntity
+import com.skarif.kairos.data.db.isOnline
+import com.skarif.kairos.online.Flavor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -162,13 +164,20 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
 
     private fun SongEntity.toMediaItem(): MediaItem = MediaItem.Builder()
         .setMediaId(id.toString())
+        // Online songs carry their stream Uri across to the service; local ones are resolved there from the id.
+        .apply {
+            val online = Flavor.online
+            if (isOnline && online != null) {
+                setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(online.mediaUri(this@toMediaItem)).build())
+            }
+        }
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(title)
                 .setArtist(artist)
                 .setAlbumTitle(album)
                 // Legacy album-art Uri; still served by MediaStore and used for the notification.
-                .setArtworkUri(Uri.parse("content://media/external/audio/albumart/$albumId"))
+                .setArtworkUri(artUrl?.let(Uri::parse) ?: Uri.parse("content://media/external/audio/albumart/$albumId"))
                 .setIsPlayable(true)
                 .build(),
         )

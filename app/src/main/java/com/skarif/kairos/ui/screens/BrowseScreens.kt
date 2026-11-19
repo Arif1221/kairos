@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.db.SongEntity
 import com.skarif.kairos.ui.MainViewModel
+import com.skarif.kairos.ui.OnlineSearch
 import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.Pill
@@ -91,6 +92,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
     val c = P.colors
     val q by vm.query.collectAsStateWithLifecycle()
     val results by vm.searchResults.collectAsStateWithLifecycle()
+    val online by vm.onlineResults.collectAsStateWithLifecycle()
     val songs by vm.songs.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
@@ -115,7 +117,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                 Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     CircleButton(Ic.Menu, "Menu", onMenu, container = c.ink, content = c.inkFg)
                     Text(mixedHeadline("Explore\n" to false, "your music" to true), style = T.h1, color = c.text)
-                    SearchField(q, vm::setQuery, "Songs, artists, albums")
+                    SearchField(q, vm::setQuery, if (vm.onlineName != null) "Your music and ${vm.onlineName}" else "Songs, artists, albums")
                     if (q.isEmpty()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Pill("Albums", { tab = 0 }, selected = tab == 0, icon = Ic.Music)
@@ -132,6 +134,23 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                     SongRow(s, s.id == now.songId, vm) {
                         vm.play(results, results.indexOf(s))
                         onOpenNowPlaying()
+                    }
+                }
+                if (vm.onlineName != null) {
+                    item(span = { GridItemSpan(2) }) {
+                        val status = when (val o = online) {
+                            OnlineSearch.Idle, OnlineSearch.Loading -> "Searching ${vm.onlineName}..."
+                            is OnlineSearch.Failed -> o.message
+                            is OnlineSearch.Ready -> if (o.songs.isEmpty()) "Nothing on ${vm.onlineName}." else "From ${vm.onlineName}"
+                        }
+                        Text(status, style = T.small, color = c.muted, modifier = Modifier.padding(top = 12.dp))
+                    }
+                    val streamed = (online as? OnlineSearch.Ready)?.songs.orEmpty()
+                    items(streamed, key = { "o${it.id}" }, span = { GridItemSpan(2) }) { s ->
+                        SongRow(s, s.id == now.songId, vm) {
+                            vm.play(streamed, streamed.indexOf(s))
+                            onOpenNowPlaying()
+                        }
                     }
                 }
             } else {

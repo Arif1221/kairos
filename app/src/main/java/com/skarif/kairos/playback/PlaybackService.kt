@@ -17,6 +17,7 @@ import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -29,6 +30,7 @@ import com.skarif.kairos.data.OutputMode
 import com.skarif.kairos.data.ReplayGainMode
 import com.skarif.kairos.data.Settings
 import com.skarif.kairos.data.db.PlayEventEntity
+import com.skarif.kairos.online.Flavor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -67,7 +69,10 @@ class PlaybackService : MediaSessionService() {
                 /* handleAudioFocus = */ true,
             )
             .setHandleAudioBecomingNoisy(true) // pause when headphones are unplugged
-            .setWakeMode(C.WAKE_MODE_LOCAL)
+            // Online flavor: a data source that also understands streamed songs' Uris.
+            .apply { Flavor.online?.let { setMediaSourceFactory(DefaultMediaSourceFactory(it.dataSourceFactory(this@PlaybackService))) } }
+            // Streams need the network to stay up while the screen is off.
+            .setWakeMode(if (Flavor.online != null) C.WAKE_MODE_NETWORK else C.WAKE_MODE_LOCAL)
             .build()
         player.addListener(playerListener)
         player.addAnalyticsListener(analytics)
@@ -123,6 +128,7 @@ class PlaybackService : MediaSessionService() {
 
     private fun resolve(item: MediaItem): MediaItem {
         if (item.localConfiguration != null) return item
+        item.requestMetadata.mediaUri?.let { return item.buildUpon().setUri(it).build() } // online song
         val id = item.mediaId.toLongOrNull() ?: return item
         return item.buildUpon()
             .setUri(ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id))
@@ -183,7 +189,8 @@ class PlaybackService : MediaSessionService() {
     private fun applyReplayGain(s: Settings) {
         val player = session?.player ?: return
         val id = player.currentMediaItem?.mediaId?.toLongOrNull()
-        if (s.replayGain == ReplayGainMode.OFF || s.outputMode == OutputMode.BIT_PERFECT || id == null) {
+        // Negative ids are online songs: no file tags to read.
+        if (s.replayGain == ReplayGainMode.OFF || s.outputMode == OutputMode.BIT_PERFECT || id == null || id < 0) {
             player.volume = 1f
             return
         }

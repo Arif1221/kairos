@@ -17,6 +17,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 /** One audio file. The id is MediaStore's id, so it stays stable across rescans. */
@@ -39,7 +41,15 @@ data class SongEntity(
     val sizeBytes: Long,
     val dateAddedSec: Long,
     val bitrate: Int,
+    /** Cover image URL, for online songs only (local ones read art from the file). */
+    val artUrl: String? = null,
 )
+
+/** [SongEntity.volume] of songs streamed from an online source. */
+const val ONLINE_VOLUME = "online"
+
+/** Streamed rather than stored on the device. For these, [SongEntity.fileName] holds the source's track id. */
+val SongEntity.isOnline: Boolean get() = volume == ONLINE_VOLUME
 
 fun SongEntity.contentUri(): Uri =
     ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
@@ -87,14 +97,19 @@ data class LyricsOffsetEntity(@PrimaryKey val songId: Long, val offsetMs: Long)
 
 @Dao
 interface SongDao {
+    /** Local and online songs (online ones are kept once played, favourited or added to a playlist). */
     @Query("SELECT * FROM songs ORDER BY title COLLATE NOCASE")
     fun observeAll(): Flow<List<SongEntity>>
+
+    /** Songs on this device: the library. */
+    @Query("SELECT * FROM songs WHERE volume != '$ONLINE_VOLUME' ORDER BY title COLLATE NOCASE")
+    fun observeLocal(): Flow<List<SongEntity>>
 
     @Query("SELECT * FROM songs WHERE id = :id")
     fun observe(id: Long): Flow<SongEntity?>
 
-    @Query("SELECT id FROM songs")
-    suspend fun allIds(): List<Long>
+    @Query("SELECT id FROM songs WHERE volume != '$ONLINE_VOLUME'")
+    suspend fun localIds(): List<Long>
 
     @Upsert
     suspend fun upsertAll(songs: List<SongEntity>)
@@ -172,7 +187,7 @@ interface LyricsOffsetDao {
         SongEntity::class, FavoriteEntity::class, PlaylistEntity::class,
         PlaylistSongEntity::class, PlayEventEntity::class, LyricsOffsetEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class PlayerDatabase : RoomDatabase() {
@@ -184,6 +199,15 @@ abstract class PlayerDatabase : RoomDatabase() {
 
     companion object {
         fun create(context: Context): PlayerDatabase =
-            Room.databaseBuilder(context, PlayerDatabase::class.java, "player.db").build()
+            Room.databaseBuilder(context, PlayerDatabase::class.java, "player.db")
+                .addMigrations(MIGRATION_1_2)
+                .build()
+
+        /** v2: songs.artUrl, for online songs. */
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE songs ADD COLUMN artUrl TEXT")
+            }
+        }
     }
 }

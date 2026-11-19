@@ -1,4 +1,4 @@
-# Kairos: offline Android music player (Phase 1)
+# Kairos: Android music player (offline for Play, online build on GitHub)
 
 Jetpack Compose + Media3. Design baseline: the "Music Player — v1 Screens" canvas.
 
@@ -27,6 +27,21 @@ Jetpack Compose + Media3. Design baseline: the "Music Player — v1 Screens" can
 
 ## Phase 2 (UI on top of tables that already exist)
 Home mixes, Stats, Playlists + New playlist, Queue, Equalizer screen, Sleep timer, Album detail, Search, Sort sheet, Menu.
+
+## Two builds: Play and Online
+
+| Flavor | Task | What it is | Where it ships |
+|---|---|---|---|
+| `play` | `assemblePlayRelease` | Offline player. No internet permission, no YouTube code in the APK. | Play Store |
+| `online` | `assembleOnlineRelease` | Same app plus YouTube Music search and streaming. Installs next to the play build (`com.skarif.kairos.online`). | GitHub Releases (tag `v*`) |
+
+How it is wired:
+- `main/.../online/OnlineMusic.kt` is the only thing shared code knows about. `Flavor.online` is `null` in `src/play` and `YouTubeMusic` in `src/online`.
+- Online songs are normal `songs` rows with a **negative id** and `volume = "online"`, so favourites, playlists, stats and the queue need no special cases. They are saved only once played, favourited or added to a playlist, and never appear in the Library.
+- Stream URLs expire, so the player gets `kairos-yt:<videoId>` and a `ResolvingDataSource` swaps in a fresh URL when the song is opened.
+- YouTube access goes through [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) (unofficial). When streaming breaks, bump `newpipeExtractor` in `gradle/libs.versions.toml` first.
+
+> NewPipeExtractor is GPL-3.0, so the online APK must be distributed under the GPL-3.0.
 
 ## Architecture
 ```

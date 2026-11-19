@@ -17,6 +17,18 @@ android {
         versionName = "0.4.4"
     }
 
+    // "play": offline-only build for the Play Store (no internet permission, no YouTube code).
+    // "online": adds YouTube Music search and streaming; shipped on GitHub Releases only.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") { dimension = "distribution" }
+        create("online") {
+            dimension = "distribution"
+            applicationIdSuffix = ".online"
+            versionNameSuffix = "-online"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -30,6 +42,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // NewPipeExtractor uses java.nio APIs that need desugaring below API 33.
+        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions {
         jvmTarget = "17"
@@ -60,6 +74,7 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.session)
     implementation(libs.media3.common)
+    implementation(libs.media3.datasource)
     implementation(libs.kotlinx.coroutines.guava)
 
     implementation(libs.room.runtime)
@@ -68,6 +83,11 @@ dependencies {
 
     implementation(libs.datastore.preferences)
     implementation(libs.palette.ktx)
+
+    coreLibraryDesugaring(libs.desugar.jdk.libs.nio)
+
+    "onlineImplementation"(libs.newpipe.extractor)
+    "onlineImplementation"(libs.okhttp)
 
     testImplementation(libs.junit)
 }

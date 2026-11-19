@@ -9,6 +9,7 @@ import com.skarif.kairos.data.db.LyricsOffsetDao
 import com.skarif.kairos.data.db.LyricsOffsetEntity
 import com.skarif.kairos.data.db.SongEntity
 import com.skarif.kairos.data.db.contentUri
+import com.skarif.kairos.data.db.isOnline
 import com.skarif.kairos.lyrics.ByteSource
 import com.skarif.kairos.lyrics.LrcParser
 import com.skarif.kairos.lyrics.Lyrics
@@ -35,6 +36,7 @@ class LyricsRepository(
     data class LyricsResult(val lyrics: Lyrics?)
 
     suspend fun load(song: SongEntity, s: Settings): Lyrics? = withContext(Dispatchers.IO) {
+        if (song.isOnline) return@withContext null // no file to read tags or a .lrc from
         val key = "${song.id}|${s.readEmbeddedLyrics}|${s.readLrcFiles}|${s.lyricsPreference}|${s.lrcFolderUris.hashCode()}"
         cache.get(key)?.let { return@withContext it.lyrics }
 
@@ -55,7 +57,8 @@ class LyricsRepository(
     suspend fun setOffset(songId: Long, offsetMs: Long) = offsets.upsert(LyricsOffsetEntity(songId, offsetMs))
 
     /** Reads tags once; also used for ReplayGain by the playback service. */
-    fun readTags(song: SongEntity): TagReader.Result? = readTags(context, song.contentUri())
+    fun readTags(song: SongEntity): TagReader.Result? =
+        if (song.isOnline) null else readTags(context, song.contentUri())
 
     private fun readEmbedded(song: SongEntity): Lyrics? {
         val r = readTags(song) ?: return null

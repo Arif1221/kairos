@@ -108,7 +108,7 @@ class MediaScanner(private val context: Context, private val songDao: SongDao) {
         val songs = queryAll(minDurationMs).filter { folderKey(it.folder) !in excludedFolders }
         songDao.upsertAll(songs)
         val keep = songs.mapTo(HashSet()) { it.id }
-        val gone = songDao.allIds().filter { it !in keep }
+        val gone = songDao.localIds().filter { it !in keep }
         gone.chunked(500).forEach { songDao.deleteIds(it) } // SQLite caps bound parameters
         songs.size
     }
