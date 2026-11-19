@@ -60,7 +60,7 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
             Box(Modifier.fillMaxSize().background(Color(0xB3121212)))
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).statusBarsPadding()
-                    .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 140.dp),
+                    .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 230.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

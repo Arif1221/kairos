@@ -10,7 +10,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -60,9 +62,11 @@ import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.components.formatTime
+import com.skarif.kairos.ui.components.sharedCard
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 
+@OptIn(ExperimentalFoundationApi::class)
 /** Design reference: the hotel screen (photo hero) plus the finance chart card as the seek bar. */
 @Composable
 fun NowPlayingScreen(
@@ -103,6 +107,7 @@ fun NowPlayingScreen(
                     Modifier
                         .fillMaxWidth()
                         .height(heroHeight)
+                        .sharedCard("art-current", RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp))
                         .clip(RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp))
                         .background(c.accent),
                 ) {
@@ -117,14 +122,27 @@ fun NowPlayingScreen(
                             .pointerInput(s.id) {
                                 detectDragGestures(
                                     onDragEnd = {
-                                        val w = size.width
-                                        when {
-                                            dragX.value < -w * 0.22f -> { haptics.performHapticFeedback(HapticFeedbackType.LongPress); vm.next() }
-                                            dragX.value > w * 0.22f -> { haptics.performHapticFeedback(HapticFeedbackType.LongPress); vm.previous() }
-                                            dragY.value > size.height * 0.2f -> onBack()
-                                        }
-                                        scope.launch { dragX.animateTo(0f, spring(dampingRatio = 0.7f)) }
+                                        val w = size.width.toFloat()
                                         scope.launch { dragY.animateTo(0f, spring(dampingRatio = 0.7f)) }
+                                        scope.launch {
+                                            when {
+                                                dragX.value < -w * 0.22f -> {
+                                                    // Fly out to the left, come back in from the right with the next cover.
+                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    dragX.animateTo(-w * 1.6f, tween(180))
+                                                    vm.next()
+                                                    dragX.snapTo(w * 1.2f)
+                                                }
+                                                dragX.value > w * 0.22f -> {
+                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    dragX.animateTo(w * 1.6f, tween(180))
+                                                    vm.previous()
+                                                    dragX.snapTo(-w * 1.2f)
+                                                }
+                                                dragY.value > size.height * 0.2f -> onBack()
+                                            }
+                                            dragX.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 300f))
+                                        }
                                     },
                                     onDragCancel = {
                                         scope.launch { dragX.animateTo(0f) }
@@ -206,10 +224,13 @@ fun NowPlayingScreen(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        s.artist.uppercase(), color = c.text, textAlign = TextAlign.Center,
+                        s.artist.uppercase(), color = c.text, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         style = T.small.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp),
                     )
-                    Text(s.title, color = c.text, style = T.h2.copy(fontSize = 30.sp, lineHeight = 34.sp), textAlign = TextAlign.Center)
+                    Text(
+                        s.title, color = c.text, style = T.h2.copy(fontSize = 30.sp, lineHeight = 34.sp), textAlign = TextAlign.Center, maxLines = 1,
+                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2500),
+                    )
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     InfoChip(Ic.Wave, now.output?.let { "${s.formatLabel()} $it" } ?: s.formatLabel())

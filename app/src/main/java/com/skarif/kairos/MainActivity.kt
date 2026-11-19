@@ -9,6 +9,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -22,12 +24,14 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -45,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -53,12 +58,15 @@ import androidx.navigation.compose.rememberNavController
 import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
+import com.skarif.kairos.ui.components.LocalSharedScope
+import com.skarif.kairos.ui.components.ProvideNavScope
 import com.skarif.kairos.ui.screens.CollectionScreen
 import com.skarif.kairos.ui.screens.EqualizerScreen
 import com.skarif.kairos.ui.screens.FoldersScreen
 import com.skarif.kairos.ui.screens.HomeScreen
 import com.skarif.kairos.ui.screens.LibraryScreen
 import com.skarif.kairos.ui.screens.LyricsScreen
+import com.skarif.kairos.ui.screens.MiniPlayer
 import com.skarif.kairos.ui.screens.MenuDrawer
 import com.skarif.kairos.ui.screens.NewPlaylistScreen
 import com.skarif.kairos.ui.screens.NowPlayingScreen
@@ -85,7 +93,7 @@ class MainActivity : ComponentActivity() {
 private val TABS = listOf("home", "library", "stats", "search")
 
 /** Screens whose top edge is dark in every theme. */
-private val DARK_TOP = setOf("library", "stats", "now", "collection/{key}")
+private val DARK_TOP = setOf("library", "stats", "now", "lyrics", "collection/{key}")
 
 /** Player screens and sheets rise from the bottom, like the design's sheets. */
 private val sheetEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
@@ -95,6 +103,7 @@ private val sheetExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> E
     slideOutVertically(tween(300, easing = FastOutSlowInEasing)) { it / 4 } + fadeOut(tween(220))
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun PlayerRoot(vm: MainViewModel = viewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -119,7 +128,7 @@ private fun PlayerRoot(vm: MainViewModel = viewModel()) {
         val view = LocalView.current
         val darkUi = P.colors.dark
         val darkTop = darkUi || route in DARK_TOP
-        val darkBottom = darkUi || route == "stats"
+        val darkBottom = darkUi || route == "stats" || route == "lyrics"
         if (!view.isInEditMode) {
             SideEffect {
                 val window = (view.context as Activity).window
@@ -130,6 +139,8 @@ private fun PlayerRoot(vm: MainViewModel = viewModel()) {
             }
         }
 
+        SharedTransitionLayout {
+        CompositionLocalProvider(LocalSharedScope provides this) {
         Box(Modifier.fillMaxSize()) {
             NavHost(
                 nav, startDestination = start,
@@ -138,64 +149,69 @@ private fun PlayerRoot(vm: MainViewModel = viewModel()) {
                 popEnterTransition = { fadeIn(tween(240)) },
                 popExitTransition = { fadeOut(tween(180)) + slideOutHorizontally(tween(280)) { it / 12 } },
             ) {
-                composable("onboarding") {
+                screen("onboarding") {
                     OnboardingScreen(vm) { nav.navigate("home") { popUpTo("onboarding") { inclusive = true } } }
                 }
-                composable("home", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
+                screen("home", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
                     HomeScreen(
                         vm, onMenu = openMenu, onSearch = { nav.tab("search") }, onOpenCollection = ::openCollection,
                         onOpenNowPlaying = { nav.navigate("now") }, onPlaylists = { nav.navigate("playlists") },
                         onLibrary = { nav.tab("library") },
                     )
                 }
-                composable("library", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
+                screen("library", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
                     LibraryScreen(
                         vm, onOpenNowPlaying = { nav.navigate("now") }, onSettings = { nav.navigate("settings") },
-                        onFolders = { nav.navigate("folders") }, onSort = { nav.navigate("sort") }, onOpenAlbum = ::openAlbum,
+                        onFolders = { nav.navigate("folders") }, onSort = { nav.navigate("sort") }, onOpenAlbum = ::openAlbum, onOpenCollection = ::openCollection,
                     )
                 }
-                composable("stats", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) { StatsScreen(vm, onMenu = openMenu, onSettings = { nav.navigate("settings") }) }
-                composable("search", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
+                screen("stats", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) { StatsScreen(vm, onMenu = openMenu, onSettings = { nav.navigate("settings") }) }
+                screen("search", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
                     SearchScreen(vm, onMenu = openMenu, onOpenCollection = ::openCollection, onOpenNowPlaying = { nav.navigate("now") })
                 }
-                composable("now", enterTransition = sheetEnter, popExitTransition = sheetExit) {
+                screen("now", enterTransition = sheetEnter, popExitTransition = sheetExit) {
                     NowPlayingScreen(
                         vm, onBack = { nav.popBackStack() }, onLyrics = { nav.navigate("lyrics") }, onQueue = { nav.navigate("queue") },
                         onEqualizer = { nav.navigate("eq") }, onSleep = { nav.navigate("sleep") }, onAlbum = ::openAlbum,
                     )
                 }
-                composable("lyrics", enterTransition = sheetEnter, popExitTransition = sheetExit) { LyricsScreen(vm, onBack = { nav.popBackStack() }) }
-                composable("queue", enterTransition = sheetEnter, popExitTransition = sheetExit) {
+                screen("lyrics", enterTransition = sheetEnter, popExitTransition = sheetExit) { LyricsScreen(vm, onBack = { nav.popBackStack() }) }
+                screen("queue", enterTransition = sheetEnter, popExitTransition = sheetExit) {
                     QueueScreen(vm, onBack = { nav.popBackStack() }, onSaveAsPlaylist = { nav.navigate("newplaylist?fromQueue=true") })
                 }
-                composable("eq", enterTransition = sheetEnter, popExitTransition = sheetExit) { EqualizerScreen(vm, onBack = { nav.popBackStack() }) }
-                composable("sleep", enterTransition = sheetEnter, popExitTransition = sheetExit) { SleepTimerScreen(vm, onBack = { nav.popBackStack() }) }
-                composable("sort", enterTransition = sheetEnter, popExitTransition = sheetExit) { SortScreen(vm, onBack = { nav.popBackStack() }) }
-                composable("playlists") {
+                screen("eq", enterTransition = sheetEnter, popExitTransition = sheetExit) { EqualizerScreen(vm, onBack = { nav.popBackStack() }) }
+                screen("sleep", enterTransition = sheetEnter, popExitTransition = sheetExit) { SleepTimerScreen(vm, onBack = { nav.popBackStack() }) }
+                screen("sort", enterTransition = sheetEnter, popExitTransition = sheetExit) { SortScreen(vm, onBack = { nav.popBackStack() }) }
+                screen("playlists") {
                     PlaylistsScreen(vm, onBack = { nav.popBackStack() }, onNew = { nav.navigate("newplaylist?fromQueue=false") }, onOpenCollection = ::openCollection)
                 }
-                composable("newplaylist?fromQueue={fromQueue}") { e ->
+                screen("newplaylist?fromQueue={fromQueue}") { e ->
                     val fromQueue = e.arguments?.getString("fromQueue") == "true"
                     val initial = remember { if (fromQueue) vm.now.value.queue.map { it.songId }.filter { it >= 0 } else emptyList() }
                     NewPlaylistScreen(vm, onDone = { nav.popBackStack() }, initialSongs = initial)
                 }
-                composable("collection/{key}") { e ->
+                screen("collection/{key}") { e ->
                     val key = Uri.decode(e.arguments?.getString("key") ?: "")
                     CollectionScreen(vm, key, onBack = { nav.popBackStack() }, onOpenNowPlaying = { nav.navigate("now") }, onOpenAlbum = ::openAlbum)
                 }
-                composable("settings") {
+                screen("settings") {
                     SettingsScreen(vm, onBack = { nav.popBackStack() }, onFolders = { nav.navigate("folders") }, onEqualizer = { nav.navigate("eq") })
                 }
-                composable("folders") { FoldersScreen(vm, onBack = { nav.popBackStack() }) }
+                screen("folders") { FoldersScreen(vm, onBack = { nav.popBackStack() }) }
             }
 
             AnimatedVisibility(
                 route in TABS,
                 modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp),
-                enter = slideInVertically(tween(320, easing = FastOutSlowInEasing)) { it } + fadeIn(),
-                exit = slideOutVertically(tween(220)) { it } + fadeOut(),
+                enter = slideInVertically(tween(320, easing = FastOutSlowInEasing)) { it / 2 } + fadeIn(),
+                exit = slideOutVertically(tween(220)) { it / 2 } + fadeOut(),
             ) {
-                Dock(route = route, onTab = { nav.tab(it) }, onNow = { nav.navigate("now") })
+                ProvideNavScope(this) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        MiniPlayer(vm, onOpen = { nav.navigate("now") })
+                        Dock(route = route, onTab = { nav.tab(it) }, onNow = { nav.navigate("now") })
+                    }
+                }
             }
 
             AnimatedVisibility(menuOpen, enter = fadeIn() + slideInHorizontally { -it / 3 }, exit = fadeOut() + slideOutHorizontally { -it / 3 }) {
@@ -206,8 +222,24 @@ private fun PlayerRoot(vm: MainViewModel = viewModel()) {
             }
             BackHandler(enabled = menuOpen) { menuOpen = false }
         }
+        }
+        }
     }
 }
+
+/** A NavHost destination that also tells shared-card transitions which animation it is in. */
+private fun NavGraphBuilder.screen(
+    route: String,
+    enterTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition?)? = null,
+    exitTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition?)? = null,
+    popExitTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition?)? = exitTransition,
+    content: @Composable (NavBackStackEntry) -> Unit,
+) = composable(
+    route,
+    enterTransition = enterTransition,
+    exitTransition = exitTransition,
+    popExitTransition = popExitTransition,
+) { entry -> ProvideNavScope(this) { content(entry) } }
 
 /** Tab-style navigation: one copy of each tab, Home at the bottom of the stack. */
 private fun NavHostController.tab(route: String) = navigate(route) {
