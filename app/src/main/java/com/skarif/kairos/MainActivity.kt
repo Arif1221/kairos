@@ -81,12 +81,17 @@ import com.skarif.kairos.ui.screens.StatsScreen
 import com.skarif.kairos.ui.screens.hasAudioPermission
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.PlayerTheme
+import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { PlayerRoot() }
+        // A first run (or a restore without the music permission) starts on the welcome screen.
+        // Read the stored flag before the first frame so a returning user never sees it flash.
+        val onboarded = runBlocking { (application as PlayerApp).container.settings.load().onboarded }
+        val start = if (onboarded && hasAudioPermission(this)) "home" else "onboarding"
+        setContent { PlayerRoot(start) }
     }
 }
 
@@ -105,13 +110,12 @@ private val sheetExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> E
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun PlayerRoot(vm: MainViewModel = viewModel()) {
+private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val album by vm.albumColors.collectAsStateWithLifecycle()
     PlayerTheme(settings, album) {
         val context = LocalContext.current
         val nav = rememberNavController()
-        val start = remember { if (hasAudioPermission(context)) "home" else "onboarding" }
         var menuOpen by remember { mutableStateOf(false) }
         // MediaStore may have changed since last time; a rescan is cheap.
         LaunchedEffect(Unit) { if (hasAudioPermission(context)) vm.scanNow() }
@@ -177,7 +181,7 @@ private fun PlayerRoot(vm: MainViewModel = viewModel()) {
                 }
                 screen("lyrics", enterTransition = sheetEnter, popExitTransition = sheetExit) { LyricsScreen(vm, onBack = { nav.popBackStack() }) }
                 screen("queue", enterTransition = sheetEnter, popExitTransition = sheetExit) {
-                    QueueScreen(vm, onBack = { nav.popBackStack() }, onSaveAsPlaylist = { nav.navigate("newplaylist?fromQueue=true") })
+                    QueueScreen(vm, onBack = { nav.popBackStack() }, onSaveAsPlaylist = { nav.navigate("newplaylist?fromQueue=true") }, onOpenAlbum = ::openAlbum)
                 }
                 screen("eq", enterTransition = sheetEnter, popExitTransition = sheetExit) { EqualizerScreen(vm, onBack = { nav.popBackStack() }) }
                 screen("sleep", enterTransition = sheetEnter, popExitTransition = sheetExit) { SleepTimerScreen(vm, onBack = { nav.popBackStack() }) }

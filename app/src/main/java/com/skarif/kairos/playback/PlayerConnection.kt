@@ -104,6 +104,21 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
     fun playQueueItem(index: Int) = controller?.run { seekToDefaultPosition(index); play() }
     fun moveQueueItem(from: Int, to: Int) = controller?.moveMediaItem(from, to)
     fun removeQueueItem(index: Int) = controller?.removeMediaItem(index)
+
+    /** Moves a queue entry to play right after the current song. */
+    fun moveToNext(index: Int) = controller?.run {
+        val cur = currentMediaItemIndex
+        if (index == cur) return@run
+        moveMediaItem(index, if (index > cur) cur + 1 else cur)
+    }
+
+    fun moveToEnd(index: Int) = controller?.run { if (index != currentMediaItemIndex) moveMediaItem(index, mediaItemCount - 1) }
+
+    /** Removes everything after the current song. */
+    fun clearUpcoming() = controller?.run { if (currentMediaItemIndex + 1 < mediaItemCount) removeMediaItems(currentMediaItemIndex + 1, mediaItemCount) }
+
+    /** Removes the songs already played. */
+    fun clearPlayed() = controller?.run { if (currentMediaItemIndex > 0) removeMediaItems(0, currentMediaItemIndex) }
     fun toggleShuffle() = controller?.run { shuffleModeEnabled = !shuffleModeEnabled }
     fun cycleRepeat() = controller?.run {
         repeatMode = when (repeatMode) {

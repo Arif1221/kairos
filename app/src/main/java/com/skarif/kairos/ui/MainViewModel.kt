@@ -347,6 +347,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun playQueueItem(i: Int) { ct.player.playQueueItem(i) }
     fun moveQueueItem(from: Int, to: Int) { ct.player.moveQueueItem(from, to) }
     fun removeQueueItem(i: Int) { ct.player.removeQueueItem(i) }
+    fun moveToNext(i: Int) { ct.player.moveToNext(i) }
+    fun moveToEnd(i: Int) { ct.player.moveToEnd(i) }
+    fun clearUpcoming() { ct.player.clearUpcoming() }
+    fun clearPlayed() { ct.player.clearPlayed() }
     fun toggleShuffle() { ct.player.toggleShuffle() }
     fun cycleRepeat() { ct.player.cycleRepeat() }
     fun song(id: Long): SongEntity? = songById.value[id]

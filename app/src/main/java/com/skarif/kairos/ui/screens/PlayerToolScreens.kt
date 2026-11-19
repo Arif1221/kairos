@@ -63,12 +63,18 @@ import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 import com.skarif.kairos.ui.theme.mixedHeadline
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.combinedClickable
 import java.text.DateFormat
 import java.util.Date
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Unit) {
+fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Unit, onOpenAlbum: (Long) -> Unit) {
     val c = P.colors
+    var menuFor by remember { mutableStateOf<Pair<Int, com.skarif.kairos.data.db.SongEntity>?>(null) }
+    var confirmClear by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val now by vm.now.collectAsStateWithLifecycle()
     val cur by vm.currentSong.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
@@ -82,6 +88,18 @@ fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> U
         val target = header + now.queuePosition
         val visible = list.layoutInfo.visibleItemsInfo.any { it.index == target }
         if (!visible) list.animateScrollToItem((target - 1).coerceAtLeast(0))
+    }
+
+    menuFor?.let { (i, song) -> SongActionsDialog(vm, song, onOpenAlbum, queueIndex = i) { menuFor = null } }
+    if (confirmClear) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            containerColor = c.sheet,
+            title = { Text("Clear up next?", style = T.h2, color = c.text) },
+            text = { Text("Removes the $left songs after the current one. The current song keeps playing.", style = T.body, color = c.muted) },
+            confirmButton = { androidx.compose.material3.TextButton({ vm.clearUpcoming(); confirmClear = false }) { Text("Clear", color = c.text, style = T.title) } },
+            dismissButton = { androidx.compose.material3.TextButton({ confirmClear = false }) { Text("Cancel", color = c.muted) } },
+        )
     }
 
     ScreenBackground(art, settings.blurBackground) {
@@ -123,10 +141,20 @@ fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> U
                 }
             }
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Pill("Save as playlist", onSaveAsPlaylist, icon = Ic.PlaylistAdd, modifier = Modifier.fillMaxWidth())
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Pill("Save as playlist", onSaveAsPlaylist, icon = Ic.PlaylistAdd)
+                        Pill("Now playing", {
+                            scope.launch { list.animateScrollToItem((header + now.queuePosition - 1).coerceAtLeast(0)) }
+                        }, icon = Ic.Music)
+                        if (left > 0) Pill("Clear up next", { confirmClear = true }, icon = Ic.Trash)
+                        if (now.queuePosition > 0) Pill("Clear played", vm::clearPlayed, icon = Ic.Close)
+                    }
                     Text(
-                        if (now.shuffle) "Swipe left to remove. Turn shuffle off to reorder." else "Swipe left to remove. Use the arrows to reorder.",
+                        if (now.shuffle) "Swipe left to remove, hold a song for more. Turn shuffle off to reorder."
+                        else "Swipe right to play next, left to remove. Hold a song for more.",
                         style = T.small, color = c.muted,
                     )
                 }
@@ -136,11 +164,18 @@ fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> U
                 val playing = pos == now.queuePosition
                 val played = pos < now.queuePosition
                 Box(Modifier.animateItem()) {
-                    SwipeActions(null, null, null, "Remove", Ic.Close, if (playing) null else ({ vm.removeQueueItem(e.index) })) {
+                    SwipeActions(
+                        "Play next", Ic.Next, if (playing || now.shuffle) null else ({ vm.moveToNext(e.index) }),
+                        "Remove", Ic.Close, if (playing) null else ({ vm.removeQueueItem(e.index) }),
+                    ) {
                         Row(
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
                                 .background(if (playing) c.accent else c.card.copy(alpha = if (played) 0.45f else 0.85f))
-                                .clickable(role = Role.Button, onClickLabel = "Play") { vm.playQueueItem(e.index) }.padding(8.dp),
+                                .combinedClickable(
+                                    role = Role.Button, onClickLabel = "Play", onLongClickLabel = "More options",
+                                    onLongClick = { if (s != null) menuFor = e.index to s },
+                                ) { vm.playQueueItem(e.index) }
+                                .padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             SongArt(vm, s, 46.dp, corner = 14.dp)
