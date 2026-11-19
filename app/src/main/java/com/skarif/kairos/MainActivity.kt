@@ -64,27 +64,34 @@ import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.LocalSharedScope
 import com.skarif.kairos.ui.components.ProvideNavScope
 import com.skarif.kairos.ui.screens.CollectionScreen
-import com.skarif.kairos.ui.screens.EqualizerScreen
 import com.skarif.kairos.ui.screens.FoldersScreen
 import com.skarif.kairos.ui.screens.HomeScreen
 import com.skarif.kairos.ui.screens.LibraryScreen
-import com.skarif.kairos.ui.screens.LyricsScreen
-import com.skarif.kairos.ui.screens.MiniPlayer
 import com.skarif.kairos.ui.screens.MenuDrawer
 import com.skarif.kairos.ui.screens.NewPlaylistScreen
-import com.skarif.kairos.ui.screens.NowPlayingScreen
 import com.skarif.kairos.ui.screens.OnboardingScreen
 import com.skarif.kairos.ui.screens.PlaylistsScreen
-import com.skarif.kairos.ui.screens.QueueScreen
 import com.skarif.kairos.ui.screens.SearchScreen
 import com.skarif.kairos.ui.screens.SettingsScreen
-import com.skarif.kairos.ui.screens.SleepTimerScreen
-import com.skarif.kairos.ui.screens.SortScreen
 import com.skarif.kairos.ui.screens.StatsScreen
 import com.skarif.kairos.ui.screens.hasAudioPermission
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.PlayerTheme
 import kotlinx.coroutines.runBlocking
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import com.skarif.kairos.ui.motion.Motion
+import com.skarif.kairos.ui.player.LocalPlayer
+import com.skarif.kairos.ui.player.PlayerSheet
+import com.skarif.kairos.ui.player.PlayerPage
+import com.skarif.kairos.ui.player.PlayerController
+import com.skarif.kairos.ui.screens.SortSheet
+import com.skarif.kairos.ui.screens.SleepTimerSheet
+import com.skarif.kairos.ui.screens.EqualizerSheet
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -101,30 +108,15 @@ class MainActivity : ComponentActivity() {
 private val TABS = listOf("home", "library", "stats", "search")
 
 /** Screens whose top edge is dark in every theme. */
-private val DARK_TOP = setOf("now", "collection/{key}")
+private val DARK_TOP = setOf("collection/{key}")
 
-/** Player screens and sheets rise from the bottom, like the design's sheets. */
-/** Material 3 "emphasized" curves: quick start, long gentle settle. */
-private val Emphasized = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)
-private val EmphasizedAccel = androidx.compose.animation.core.CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
+/** Bottom sheets opened over whatever is showing, including the player. */
+private enum class Tool { SLEEP, EQ, SORT }
 
-private val sheetEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-    slideInVertically(tween(450, easing = Emphasized)) { it } + fadeIn(tween(200))
-}
-private val sheetExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-    slideOutVertically(tween(300, easing = EmphasizedAccel)) { it } + fadeOut(tween(250, delayMillis = 50))
-}
 private val tabEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-    fadeIn(tween(260, delayMillis = 60)) + scaleIn(tween(320, easing = Emphasized), initialScale = 0.97f)
+    fadeIn(Motion.fadeIn()) + scaleIn(tween(Motion.PAGE_MS, easing = Motion.Emphasized), initialScale = 0.97f)
 }
-private val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-    if (targetState.destination.route in SHEETS) underSheet else fadeOut(tween(120))
-}
-
-/** Screens that rise from the bottom over the current one. */
-private val SHEETS = setOf("now", "lyrics", "queue", "eq", "sleep", "sort")
-/** The page under a rising sheet stays put until the sheet has covered it. */
-private val underSheet = fadeOut(tween(60, delayMillis = 440))
+private val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = { fadeOut(Motion.fadeOut()) }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -134,50 +126,48 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
     PlayerTheme(settings, album) {
         val context = LocalContext.current
         val nav = rememberNavController()
+        val scope = rememberCoroutineScope()
+        val player = remember { PlayerController(scope) }
         var menuOpen by remember { mutableStateOf(false) }
+        var tool by remember { mutableStateOf<Tool?>(null) }
+        val song by vm.currentSong.collectAsStateWithLifecycle()
         // MediaStore may have changed since last time; a rescan is cheap.
         LaunchedEffect(Unit) { if (hasAudioPermission(context)) vm.scanNow() }
         fun openCollection(key: String) = nav.navigate("collection/" + Uri.encode(key))
         fun openAlbum(id: Long) = openCollection("album:$id")
         val openMenu = { menuOpen = true }
+        val openPlayer = { player.expand() }
 
         val entry by nav.currentBackStackEntryAsState()
         val route = entry?.destination?.route
+        val playerUp by remember { derivedStateOf { player.progress.value > 0.5f } }
 
-        // Bar icons must contrast with what is drawn behind them, which differs per screen:
-        // Library's header, the Now Playing and album covers, and Stats are dark at the top
-        // even in the light theme, so they get white icons.
+        // Bar icons must contrast with what is behind them: the player's cover is dark at the top,
+        // album pages too; everything else follows the theme.
         val view = LocalView.current
         val darkUi = P.colors.dark
-        val darkTop = darkUi || route in DARK_TOP
-        val darkBottom = darkUi
+        val darkTop = if (playerUp) darkUi || player.page == PlayerPage.MAIN else darkUi || route in DARK_TOP
         if (!view.isInEditMode) {
             SideEffect {
                 val window = (view.context as Activity).window
                 WindowCompat.getInsetsController(window, view).apply {
                     isAppearanceLightStatusBars = !darkTop
-                    isAppearanceLightNavigationBars = !darkBottom
+                    isAppearanceLightNavigationBars = !darkUi
                 }
             }
         }
 
+        CompositionLocalProvider(LocalPlayer provides player) {
         SharedTransitionLayout {
         CompositionLocalProvider(LocalSharedScope provides this) {
         Box(Modifier.fillMaxSize()) {
             NavHost(
                 nav, startDestination = start,
-                // Push: the new page slides in from the right over the old one, which recedes.
-                enterTransition = { slideInHorizontally(tween(400, easing = Emphasized)) { it / 4 } + fadeIn(tween(250)) },
-                exitTransition = {
-                    if (targetState.destination.route in SHEETS) underSheet
-                    else scaleOut(tween(400, easing = Emphasized), targetScale = 0.94f) + fadeOut(tween(300))
-                },
-                popEnterTransition = {
-                    // Coming back from a sheet: the page is simply there underneath it.
-                    if (initialState.destination.route in SHEETS) EnterTransition.None
-                    else scaleIn(tween(400, easing = Emphasized), initialScale = 0.94f) + fadeIn(tween(300))
-                },
-                popExitTransition = { slideOutHorizontally(tween(300, easing = EmphasizedAccel)) { it / 4 } + fadeOut(tween(250)) },
+                // Push: the new page slides in from the right while the old one recedes; pop reverses it.
+                enterTransition = { slideInHorizontally(tween(Motion.PAGE_MS, easing = Motion.Emphasized)) { it / 4 } + fadeIn(Motion.fadeIn()) },
+                exitTransition = { scaleOut(tween(Motion.PAGE_MS, easing = Motion.Emphasized), targetScale = 0.94f) + fadeOut(tween(Motion.PAGE_MS)) },
+                popEnterTransition = { scaleIn(tween(Motion.PAGE_MS, easing = Motion.Emphasized), initialScale = 0.94f) + fadeIn(tween(Motion.PAGE_MS)) },
+                popExitTransition = { slideOutHorizontally(tween(300, easing = Motion.EmphasizedAccelerate)) { it / 4 } + fadeOut(tween(250)) },
             ) {
                 screen("onboarding") {
                     OnboardingScreen(vm) { nav.navigate("home") { popUpTo("onboarding") { inclusive = true } } }
@@ -185,33 +175,20 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 screen("home", enterTransition = tabEnter, exitTransition = tabExit) {
                     HomeScreen(
                         vm, onMenu = openMenu, onSearch = { nav.tab("search") }, onOpenCollection = ::openCollection,
-                        onOpenNowPlaying = { nav.navigate("now") }, onPlaylists = { nav.navigate("playlists") },
+                        onOpenNowPlaying = openPlayer, onPlaylists = { nav.navigate("playlists") },
                         onLibrary = { nav.tab("library") },
                     )
                 }
                 screen("library", enterTransition = tabEnter, exitTransition = tabExit) {
                     LibraryScreen(
-                        vm, onOpenNowPlaying = { nav.navigate("now") }, onSettings = { nav.navigate("settings") },
-                        onFolders = { nav.navigate("folders") }, onSort = { nav.navigate("sort") }, onOpenAlbum = ::openAlbum, onOpenCollection = ::openCollection,
+                        vm, onOpenNowPlaying = openPlayer, onSettings = { nav.navigate("settings") },
+                        onFolders = { nav.navigate("folders") }, onSort = { tool = Tool.SORT }, onOpenAlbum = ::openAlbum, onOpenCollection = ::openCollection,
                     )
                 }
                 screen("stats", enterTransition = tabEnter, exitTransition = tabExit) { StatsScreen(vm, onMenu = openMenu, onSettings = { nav.navigate("settings") }) }
                 screen("search", enterTransition = tabEnter, exitTransition = tabExit) {
-                    SearchScreen(vm, onMenu = openMenu, onOpenCollection = ::openCollection, onOpenNowPlaying = { nav.navigate("now") })
+                    SearchScreen(vm, onMenu = openMenu, onOpenCollection = ::openCollection, onOpenNowPlaying = openPlayer)
                 }
-                screen("now", enterTransition = sheetEnter, popExitTransition = sheetExit) {
-                    NowPlayingScreen(
-                        vm, onBack = { nav.popBackStack() }, onLyrics = { nav.navigate("lyrics") }, onQueue = { nav.navigate("queue") },
-                        onEqualizer = { nav.navigate("eq") }, onSleep = { nav.navigate("sleep") }, onAlbum = ::openAlbum,
-                    )
-                }
-                screen("lyrics", enterTransition = sheetEnter, popExitTransition = sheetExit) { LyricsScreen(vm, onBack = { nav.popBackStack() }, onQueue = { nav.navigate("queue") }) }
-                screen("queue", enterTransition = sheetEnter, popExitTransition = sheetExit) {
-                    QueueScreen(vm, onBack = { nav.popBackStack() }, onSaveAsPlaylist = { nav.navigate("newplaylist?fromQueue=true") }, onOpenAlbum = ::openAlbum)
-                }
-                screen("eq", enterTransition = sheetEnter, popExitTransition = sheetExit) { EqualizerScreen(vm, onBack = { nav.popBackStack() }) }
-                screen("sleep", enterTransition = sheetEnter, popExitTransition = sheetExit) { SleepTimerScreen(vm, onBack = { nav.popBackStack() }) }
-                screen("sort", enterTransition = sheetEnter, popExitTransition = sheetExit) { SortScreen(vm, onBack = { nav.popBackStack() }) }
                 screen("playlists") {
                     PlaylistsScreen(vm, onBack = { nav.popBackStack() }, onNew = { nav.navigate("newplaylist?fromQueue=false") }, onOpenCollection = ::openCollection)
                 }
@@ -222,51 +199,87 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 }
                 screen("collection/{key}") { e ->
                     val key = Uri.decode(e.arguments?.getString("key") ?: "")
-                    CollectionScreen(vm, key, onBack = { nav.popBackStack() }, onOpenNowPlaying = { nav.navigate("now") }, onOpenAlbum = ::openAlbum)
+                    CollectionScreen(vm, key, onBack = { nav.popBackStack() }, onOpenNowPlaying = openPlayer, onOpenAlbum = ::openAlbum)
                 }
                 screen("settings") {
-                    SettingsScreen(vm, onBack = { nav.popBackStack() }, onFolders = { nav.navigate("folders") }, onEqualizer = { nav.navigate("eq") })
+                    SettingsScreen(vm, onBack = { nav.popBackStack() }, onFolders = { nav.navigate("folders") }, onEqualizer = { tool = Tool.EQ })
                 }
                 screen("folders") { FoldersScreen(vm, onBack = { nav.popBackStack() }) }
             }
 
+            // Dock. It sinks away as the player opens, tied to the same progress as the player.
             AnimatedVisibility(
                 route in TABS,
-                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 12.dp),
-                enter = slideInVertically(tween(320, easing = FastOutSlowInEasing)) { it / 2 } + fadeIn(),
-                exit = slideOutVertically(tween(220)) { it / 2 } + fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = slideInVertically(Motion.spatial()) { it } + fadeIn(Motion.fadeIn()),
+                exit = slideOutVertically(Motion.spatial()) { it } + fadeOut(Motion.fadeOut()),
             ) {
-                ProvideNavScope(this) {
-                    // Soft fade behind the mini player and dock, so cards scrolling under them
-                    // recede instead of clashing with the controls.
-                    val bg = P.colors.bg
-                    Column(
-                        Modifier.drawBehind {
-                            val extra = 140.dp.toPx()
+                val bg = P.colors.bg
+                Column(
+                    Modifier
+                        .graphicsLayer {
+                            val p = player.progress.value
+                            translationY = p * size.height
+                            alpha = 1f - p
+                        }
+                        // Soft fade behind the mini player and dock, so cards scrolling under them recede.
+                        .drawBehind {
                             drawRect(
                                 androidx.compose.ui.graphics.Brush.verticalGradient(
-                                    0f to bg.copy(alpha = 0f), 0.35f to bg.copy(alpha = 0.82f), 1f to bg.copy(alpha = 0.96f),
-                                    startY = -60.dp.toPx(), endY = size.height + extra,
+                                    0f to bg.copy(alpha = 0f), 0.3f to bg.copy(alpha = 0.8f), 1f to bg.copy(alpha = 0.95f),
+                                    startY = -40.dp.toPx(), endY = size.height,
                                 ),
-                                topLeft = androidx.compose.ui.geometry.Offset(-size.width, -60.dp.toPx()),
-                                size = androidx.compose.ui.geometry.Size(size.width * 3, size.height + 60.dp.toPx() + extra),
+                                topLeft = androidx.compose.ui.geometry.Offset(-size.width, -40.dp.toPx()),
+                                size = androidx.compose.ui.geometry.Size(size.width * 3, size.height + 40.dp.toPx()),
                             )
-                        },
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        MiniPlayer(vm, onOpen = { nav.navigate("now") })
-                        Dock(route = route, onTab = { nav.tab(it) }, onNow = { nav.navigate("now") })
-                    }
+                        }
+                        .navigationBarsPadding()
+                        .padding(bottom = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (song != null) Spacer(Modifier.height(74.dp)) // room for the mini player
+                    Dock(route = route, onTab = { nav.tab(it) }, onNow = openPlayer)
                 }
             }
 
-            AnimatedVisibility(menuOpen, enter = fadeIn() + slideInHorizontally { -it / 3 }, exit = fadeOut() + slideOutHorizontally { -it / 3 }) {
+            // The player: mini player above the dock, the whole screen when open.
+            if (route != null && route != "onboarding") {
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val navBar = androidx.compose.foundation.layout.WindowInsets.navigationBars.getBottom(density).toFloat()
+                val targetBottom = navBar + with(density) { (if (route in TABS) 12.dp + 76.dp + 10.dp else 12.dp).toPx() }
+                val miniBottom by androidx.compose.animation.core.animateFloatAsState(targetBottom, Motion.spatial(), label = "miniBottom")
+                PlayerSheet(
+                    vm, player, miniBottom,
+                    onAlbum = ::openAlbum,
+                    onSleep = { tool = Tool.SLEEP },
+                    onEqualizer = { tool = Tool.EQ },
+                    onSaveQueue = { nav.navigate("newplaylist?fromQueue=true") },
+                )
+            }
+
+            AnimatedVisibility(menuOpen, enter = fadeIn(Motion.fadeIn()) + slideInHorizontally(Motion.spatial()) { -it / 3 }, exit = fadeOut(Motion.fadeOut()) + slideOutHorizontally(Motion.spatial()) { -it / 3 }) {
                 MenuDrawer(vm, onClose = { menuOpen = false }) { r ->
                     menuOpen = false
-                    if (r in TABS) nav.tab(r) else nav.navigate(r.let { if (it == "newplaylist") "newplaylist?fromQueue=false" else it })
+                    when (r) {
+                        "now" -> player.expand()
+                        "queue" -> player.expand(PlayerPage.QUEUE)
+                        "eq" -> tool = Tool.EQ
+                        "sleep" -> tool = Tool.SLEEP
+                        in TABS -> nav.tab(r)
+                        "newplaylist" -> nav.navigate("newplaylist?fromQueue=false")
+                        else -> nav.navigate(r)
+                    }
                 }
             }
             BackHandler(enabled = menuOpen) { menuOpen = false }
+
+            when (tool) {
+                Tool.SLEEP -> SleepTimerSheet(vm, onBack = { tool = null })
+                Tool.EQ -> EqualizerSheet(vm, onBack = { tool = null })
+                Tool.SORT -> SortSheet(vm, onBack = { tool = null })
+                null -> Unit
+            }
+        }
         }
         }
         }

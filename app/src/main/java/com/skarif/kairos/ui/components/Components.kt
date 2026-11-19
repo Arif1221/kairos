@@ -55,6 +55,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -540,4 +541,29 @@ fun HatchedBars(
             }
         }
     }
+}
+
+/**
+ * A real bottom sheet: drag it down to close, tap outside to close, and the page behind stays
+ * put. [content] gets a `close` that slides the sheet away before [onDismiss] runs.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun KairosSheet(onDismiss: () -> Unit, content: @Composable androidx.compose.foundation.layout.ColumnScope.(close: () -> Unit) -> Unit) {
+    val c = P.colors
+    val state = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val close: () -> Unit = {
+        scope.launch { state.hide() }.invokeOnCompletion { if (!state.isVisible) onDismiss() }
+    }
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = state,
+        containerColor = c.sheet,
+        shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp),
+        scrimColor = Color(0x66000000),
+        dragHandle = {
+            Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(40.dp, 5.dp).clip(RoundedCornerShape(3.dp)).background(c.muted.copy(alpha = 0.5f)))
+        },
+    ) { content(close) }
 }

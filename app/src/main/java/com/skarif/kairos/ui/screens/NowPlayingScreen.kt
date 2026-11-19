@@ -73,204 +73,129 @@ import com.skarif.kairos.ui.components.sharedCard
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 
+/**
+ * The full player's main page. The cover itself is drawn by the player layer underneath, so it
+ * can morph from the mini player; this page draws everything on top of it and handles the
+ * cover's gestures: sideways to change song, down to close.
+ */
 @OptIn(ExperimentalFoundationApi::class)
-/** Design reference: the hotel screen (photo hero) plus the finance chart card as the seek bar. */
 @Composable
-fun NowPlayingScreen(
+fun NowPlayingPane(
     vm: MainViewModel,
-    onBack: () -> Unit,
+    ctrl: com.skarif.kairos.ui.player.PlayerController,
     onLyrics: () -> Unit,
     onQueue: () -> Unit,
     onEqualizer: () -> Unit,
     onSleep: () -> Unit,
     onAlbum: (Long) -> Unit,
+    onSkip: (dir: Int, velocityX: Float) -> Unit,
+    hasPrev: Boolean,
+    hasNext: Boolean,
 ) {
     val c = P.colors
     val song by vm.currentSong.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
-    val art by vm.artwork.collectAsStateWithLifecycle()
     val favs by vm.favorites.collectAsStateWithLifecycle()
-    val settings by vm.settings.collectAsStateWithLifecycle()
     val sleep by vm.sleep.collectAsStateWithLifecycle()
-    val s = song
-    // Hero scales with the screen: big on tall phones, never crowding the controls on short ones.
+    val s = song ?: return
+    // Must match the cover rectangle in PlayerSheet.
     val heroHeight = (LocalConfiguration.current.screenHeightDp * 0.47f).coerceIn(300f, 440f).dp
+    val scope = rememberCoroutineScope()
+    val tracker = remember { androidx.compose.ui.input.pointer.util.VelocityTracker() }
+    var axis by remember { mutableIntStateOf(0) } // 0 undecided, 1 sideways, 2 down
+    val liked = s.id in favs
 
-    // Pull the cover down to close: the whole screen follows your finger, shrinks a little and
-    // rounds its corners, like a card being put away.
-    val dragY = remember { Animatable(0f) }
-    val screenH = with(androidx.compose.ui.platform.LocalDensity.current) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
-    ScreenBackground(
-        art, settings.blurBackground,
-        Modifier.graphicsLayer {
-            val f = (dragY.value / screenH).coerceIn(0f, 1f)
-            translationY = dragY.value
-            scaleX = 1f - f * 0.12f; scaleY = scaleX
-            shape = RoundedCornerShape((f * 160).dp)
-            clip = f > 0f
-        },
-    ) {
-        if (s == null) {
-            Column(
-                Modifier.fillMaxSize().statusBarsPadding().padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                CircleButton(Ic.Back, "Back", onBack)
-                Text("Nothing is playing. Pick a song in your library.", style = T.body, color = c.muted)
-            }
-            return@ScreenBackground
-        }
-        val liked = s.id in favs
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding()) {
-            Box(Modifier.fillMaxWidth().height(heroHeight + 38.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(ctrl.mainScroll).navigationBarsPadding()) {
+        Box(Modifier.fillMaxWidth().height(heroHeight + 38.dp)) {
+            Box(Modifier.fillMaxWidth().height(heroHeight).clip(RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp))) {
                 Box(
                     Modifier
-                        .fillMaxWidth()
-                        .height(heroHeight)
-                        .sharedCard("art-current", RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp))
-                        .clip(RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp))
-                        .background(c.accent),
-                ) {
-                    // Swipe the cover like a pager: the previous and next covers sit either side and
-                    // slide in with your finger. A short swipe or a flick is enough.
-                    val dragX = remember { Animatable(0f) }
-                    var axis by remember { mutableIntStateOf(0) } // 0 undecided, 1 sideways, 2 down
-                    val scope = rememberCoroutineScope()
-                    val haptics = LocalHapticFeedback.current
-                    var widthPx by remember { mutableFloatStateOf(1f) }
-                    val prevSong = now.queue.getOrNull(now.queuePosition - 1)?.let { vm.song(it.songId) }
-                    val nextSong = now.queue.getOrNull(now.queuePosition + 1)?.let { vm.song(it.songId) }
-                    val curImg = rememberCoverNow(vm, s)
-                    val prevImg = rememberCoverNow(vm, prevSong)
-                    val nextImg = rememberCoverNow(vm, nextSong)
-                    // When the song changes the neighbour that slid in is now the current cover, so
-                    // snapping back to 0 shows the same picture: no jump.
-                    LaunchedEffect(s.id) { dragX.snapTo(0f) }
-                    val tracker = remember { androidx.compose.ui.input.pointer.util.VelocityTracker() }
-                    fun settle(vx: Float) = scope.launch {
-                        val w = widthPx
-                        val goNext = nextSong != null && (dragX.value < -w * 0.18f || (vx < -900f && dragX.value < 0f))
-                        val goPrev = prevSong != null && (dragX.value > w * 0.18f || (vx > 900f && dragX.value > 0f))
-                        when {
-                            goNext -> {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                dragX.animateTo(-w, tween(200, easing = FastOutSlowInEasing))
-                                vm.next()
-                            }
-                            goPrev -> {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                dragX.animateTo(w, tween(200, easing = FastOutSlowInEasing))
-                                vm.previousTrack()
-                            }
-                            else -> dragX.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 400f))
-                        }
-                    }
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
-                            .pointerInput(s.id) {
-                                detectDragGestures(
-                                    onDragStart = { tracker.resetTracking(); axis = 0 },
-                                    onDragEnd = {
-                                        val v = tracker.calculateVelocity()
-                                        if (axis == 2) {
-                                            if (dragY.value > screenH * 0.18f || v.y > 1200f) {
-                                                // Keep going down while the screen closes.
-                                                scope.launch { dragY.animateTo(screenH, tween(260, easing = FastOutSlowInEasing)) }
-                                                onBack()
-                                            } else {
-                                                scope.launch { dragY.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 400f)) }
-                                            }
-                                        } else {
-                                            settle(v.x)
-                                        }
-                                    },
-                                    onDragCancel = {
-                                        scope.launch { dragX.animateTo(0f) }
-                                        scope.launch { dragY.animateTo(0f) }
-                                    },
-                                ) { change, amount ->
-                                    change.consume()
-                                    tracker.addPosition(change.uptimeMillis, change.position)
-                                    // Lock to one direction from the first movement: either skip or close, never both.
-                                    if (axis == 0) axis = if (kotlin.math.abs(amount.x) >= kotlin.math.abs(amount.y)) 1 else 2
-                                    if (axis == 1) {
-                                        // Resist at the ends of the queue.
-                                        val nx = dragX.value + amount.x
-                                        val resisted = if ((nx > 0 && prevSong == null) || (nx < 0 && nextSong == null)) dragX.value + amount.x * 0.3f else nx
-                                        scope.launch { dragX.snapTo(resisted) }
+                        .fillMaxSize()
+                        .pointerInput(s.id, hasPrev, hasNext) {
+                            detectDragGestures(
+                                onDragStart = { tracker.resetTracking(); axis = 0 },
+                                onDragEnd = {
+                                    val v = tracker.calculateVelocity()
+                                    if (axis == 2) {
+                                        ctrl.settle(v.y)
                                     } else {
-                                        scope.launch { dragY.snapTo((dragY.value + amount.y).coerceAtLeast(0f)) }
+                                        val x = ctrl.skipX.value
+                                        val w = size.width
+                                        val dir = when {
+                                            x < -w * 0.18f || (v.x < -900f && x < 0f) -> -1
+                                            x > w * 0.18f || (v.x > 900f && x > 0f) -> 1
+                                            else -> 0
+                                        }
+                                        onSkip(dir, v.x)
                                     }
+                                },
+                                onDragCancel = {
+                                    if (axis == 2) ctrl.settle(0f) else onSkip(0, 0f)
+                                },
+                            ) { change, amount ->
+                                change.consume()
+                                tracker.addPosition(change.uptimeMillis, change.position)
+                                // Lock to one direction from the first movement: change song or close, never both.
+                                if (axis == 0) axis = if (kotlin.math.abs(amount.x) >= kotlin.math.abs(amount.y)) 1 else 2
+                                if (axis == 1) {
+                                    // Resist at the ends of the queue.
+                                    val nx = ctrl.skipX.value + amount.x
+                                    val edge = (nx > 0 && !hasPrev) || (nx < 0 && !hasNext)
+                                    scope.launch { ctrl.skipX.snapTo(if (edge) ctrl.skipX.value + amount.x * 0.3f else nx) }
+                                } else {
+                                    ctrl.dragBy(amount.y)
                                 }
-                            },
-                    ) {
-                        @Composable
-                        fun cover(img: androidx.compose.ui.graphics.ImageBitmap?, offset: Int, desc: String?) {
-                            Box(
-                                Modifier.fillMaxSize().graphicsLayer {
-                                    translationX = dragX.value + offset * size.width
-                                    // Neighbours sit slightly darker and come up to full as they arrive.
-                                    val t = (1f - kotlin.math.abs(translationX) / size.width).coerceIn(0f, 1f)
-                                    alpha = 0.55f + 0.45f * t
-                                }.background(c.accent),
-                            ) {
-                                if (img != null) Image(img, desc, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                             }
-                        }
-                        if (prevSong != null) cover(prevImg, -1, null)
-                        if (nextSong != null) cover(nextImg, 1, null)
-                        cover(curImg ?: art?.asImageBitmap(), 0, "${s.album} cover")
-                    }
-                    // Scrims keep the buttons and the title readable on any cover, light or dark.
-                    Box(
-                        Modifier.fillMaxWidth().height(150.dp).align(Alignment.TopCenter)
-                            .background(Brush.verticalGradient(listOf(Color(0x80000000), Color.Transparent))),
-                    )
-                    Box(
-                        Modifier.fillMaxWidth().height(240.dp).align(Alignment.BottomCenter)
-                            .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x66000000), Color(0xC7000000)))),
-                    )
-                    Row(
-                        Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        CircleButton(Ic.Down, "Close now playing", onBack, container = Color(0x59000000), content = Color.White)
-                        Box(Modifier.weight(1f))
-                        CircleButton(
-                            Ic.Clock, if (sleep.active) "Sleep timer, on" else "Sleep timer", onSleep,
-                            container = if (sleep.active) c.accent else Color(0x59000000), content = if (sleep.active) c.onAccent else Color.White,
-                        )
-                        CircleButton(Ic.Sliders, "Equalizer", onEqualizer, container = Color(0x59000000), content = Color.White)
-                        CircleButton(Ic.Lyrics, "Lyrics", onLyrics, container = Color(0x59000000), content = Color.White)
-                    }
-                    Column(
-                        Modifier.align(Alignment.BottomStart).padding(start = 22.dp, bottom = 34.dp, end = 110.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Ic.Music, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                            Text(if (s.year > 0) "${s.year}" else "Album", color = Color.White, style = T.small.copy(fontWeight = FontWeight.SemiBold))
-                        }
-                        Text(
-                            s.album, color = Color.White, style = T.big.copy(fontSize = 38.sp, lineHeight = 40.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Open album") { onAlbum(s.albumId) },
-                        )
-                        Text(
-                            "Open album", color = Color.White, style = T.small.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
-                            modifier = Modifier.clickable(role = Role.Button) { onAlbum(s.albumId) },
-                        )
-                    }
-                }
-                CircleButton(
-                    if (liked) Ic.HeartFilled else Ic.Heart,
-                    if (liked) "Remove from favourites" else "Add to favourites",
-                    { vm.toggleFavorite(s.id) },
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 22.dp),
-                    size = 76.dp, container = Color(0xFF151515), content = Color.White, iconSize = 28.dp,
+                        },
                 )
+                // Scrims keep the buttons and the title readable on any cover, light or dark.
+                Box(
+                    Modifier.fillMaxWidth().height(150.dp).align(Alignment.TopCenter)
+                        .background(Brush.verticalGradient(listOf(Color(0x80000000), Color.Transparent))),
+                )
+                Box(
+                    Modifier.fillMaxWidth().height(240.dp).align(Alignment.BottomCenter)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x66000000), Color(0xC7000000)))),
+                )
+                Row(
+                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircleButton(Ic.Down, "Close player", { ctrl.collapse() }, container = Color(0x59000000), content = Color.White)
+                    Box(Modifier.weight(1f))
+                    CircleButton(
+                        Ic.Clock, if (sleep.active) "Sleep timer, on" else "Sleep timer", onSleep,
+                        container = if (sleep.active) c.accent else Color(0x59000000), content = if (sleep.active) c.onAccent else Color.White,
+                    )
+                    CircleButton(Ic.Sliders, "Equalizer", onEqualizer, container = Color(0x59000000), content = Color.White)
+                    CircleButton(Ic.Lyrics, "Lyrics", onLyrics, container = Color(0x59000000), content = Color.White)
+                }
+                Column(
+                    Modifier.align(Alignment.BottomStart).padding(start = 22.dp, bottom = 34.dp, end = 110.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Ic.Music, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Text(if (s.year > 0) "${s.year}" else "Album", color = Color.White, style = T.small.copy(fontWeight = FontWeight.SemiBold))
+                    }
+                    Text(
+                        s.album, color = Color.White, style = T.big.copy(fontSize = 38.sp, lineHeight = 40.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Open album") { onAlbum(s.albumId) },
+                    )
+                    Text(
+                        "Open album", color = Color.White, style = T.small.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+                        modifier = Modifier.clickable(role = Role.Button) { onAlbum(s.albumId) },
+                    )
+                }
             }
+            CircleButton(
+                if (liked) Ic.HeartFilled else Ic.Heart,
+                if (liked) "Remove from favourites" else "Add to favourites",
+                { vm.toggleFavorite(s.id) },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 22.dp),
+                size = 76.dp, container = Color(0xFF151515), content = Color.White, iconSize = 28.dp,
+            )
+        }
 
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 18.dp),
@@ -330,7 +255,6 @@ fun NowPlayingScreen(
                     CircleButton(Ic.Queue, "Queue", onQueue)
                 }
             }
-        }
     }
 }
 

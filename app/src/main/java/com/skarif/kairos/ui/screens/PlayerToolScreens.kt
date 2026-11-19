@@ -51,6 +51,7 @@ import com.skarif.kairos.ui.components.Card
 import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.HatchedBars
 import com.skarif.kairos.ui.components.Ic
+import com.skarif.kairos.ui.components.KairosSheet
 import com.skarif.kairos.ui.components.Pill
 import com.skarif.kairos.ui.components.PillMeter
 import com.skarif.kairos.ui.components.RadioCard
@@ -63,6 +64,7 @@ import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 import com.skarif.kairos.ui.theme.mixedHeadline
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.layout.Spacer
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.combinedClickable
 import java.text.DateFormat
@@ -70,7 +72,7 @@ import java.util.Date
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Unit, onOpenAlbum: (Long) -> Unit) {
+fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Unit, onOpenAlbum: (Long) -> Unit) {
     val c = P.colors
     val now by vm.now.collectAsStateWithLifecycle()
     val cur by vm.currentSong.collectAsStateWithLifecycle()
@@ -103,14 +105,14 @@ fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> U
         )
     }
 
-    ScreenBackground(art, settings.blurBackground) {
+    Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             // Top bar: back, title, and the less-used actions in a menu.
             Row(
                 Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CircleButton(Ic.Back, "Back", onBack, size = 48.dp)
+                CircleButton(Ic.Back, "Back to now playing", onBack, size = 48.dp)
                 Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
                     Text("Queue", style = T.h2, color = c.text)
                     Text("${now.queuePosition + 1} of ${now.queue.size}, $left up next", style = T.small, color = c.muted)
@@ -145,7 +147,8 @@ fun QueueScreen(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> U
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SongArt(vm, cur, 56.dp, corner = 18.dp)
+                    // The player layer draws the cover here, moving it in from the big hero.
+                    Spacer(Modifier.size(56.dp))
                     Column(Modifier.weight(1f)) {
                         Text(cur?.title ?: "Nothing playing", style = T.title.copy(fontSize = 18.sp), color = c.onAccent, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(cur?.artist ?: "", style = T.small, color = c.onAccent.copy(alpha = 0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -262,7 +265,7 @@ private val PRESETS = mapOf(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun EqualizerScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun EqualizerSheet(vm: MainViewModel, onBack: () -> Unit) {
     val c = P.colors
     val s by vm.settings.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
@@ -273,14 +276,16 @@ fun EqualizerScreen(vm: MainViewModel, onBack: () -> Unit) {
         st.copy(eqEnabled = true, eqGains = st.eqGains.toMutableList().also { it[i] = (it[i] + d).coerceIn(-12f, 12f) })
     }
 
-    ScreenBackground(art, s.blurBackground) {
+    KairosSheet(onBack) { close ->
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding()
-                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp),
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding()
+                .padding(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            ScreenHeader("Equalizer", onBack)
-            Text(mixedHeadline("Shape " to false, "your" to true, " sound" to false), style = T.h1, color = c.text)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(mixedHeadline("Shape " to false, "your" to true, " sound" to false), Modifier.weight(1f), style = T.h1.copy(fontSize = 34.sp), color = c.text)
+                CircleButton(Ic.Close, "Close", close)
+            }
             if (s.outputMode == OutputMode.BIT_PERFECT) {
                 Text("Bit-perfect output is on, so the equalizer is bypassed. Switch to Hi-res in Settings to use it.", style = T.body, color = c.text)
             }
@@ -331,7 +336,7 @@ private fun EffectRow(title: String, value: Int, onChange: (Int) -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SleepTimerScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun SleepTimerSheet(vm: MainViewModel, onBack: () -> Unit) {
     val c = P.colors
     val sleep by vm.sleep.collectAsStateWithLifecycle()
     val cur by vm.currentSong.collectAsStateWithLifecycle()
@@ -344,17 +349,14 @@ fun SleepTimerScreen(vm: MainViewModel, onBack: () -> Unit) {
     LaunchedEffect(sleep.active) { while (sleep.active) { nowMs = System.currentTimeMillis(); delay(1000) } }
     val clock = DateFormat.getTimeInstance(DateFormat.SHORT)
 
-    ScreenBackground(art, settings.blurBackground) {
-        Box(Modifier.fillMaxSize().background(Color(0x61000000)))
+    KairosSheet(onBack) { close ->
         Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().clip(RoundedCornerShape(topStart = 38.dp, topEnd = 38.dp)).background(c.sheet)
-                .navigationBarsPadding().padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 24.dp),
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Box(Modifier.align(Alignment.CenterHorizontally).size(40.dp, 5.dp).clip(RoundedCornerShape(3.dp)).background(c.muted.copy(alpha = 0.5f)))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(mixedHeadline("Sleep " to false, "timer" to true), Modifier.weight(1f), style = T.h1.copy(fontSize = 34.sp), color = c.text)
-                CircleButton(Ic.Close, "Close", onBack)
+                CircleButton(Ic.Close, "Close", close)
             }
             if (sleep.active) {
                 Card(color = c.accent) {
@@ -365,7 +367,7 @@ fun SleepTimerScreen(vm: MainViewModel, onBack: () -> Unit) {
                         style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.onAccent,
                     )
                 }
-                Pill("Cancel timer", vm::cancelSleep, selected = true, big = true, modifier = Modifier.fillMaxWidth())
+                Pill("Cancel timer", { vm.cancelSleep(); close() }, selected = true, big = true, modifier = Modifier.fillMaxWidth())
             } else {
                 Card(color = c.accent) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -389,7 +391,7 @@ fun SleepTimerScreen(vm: MainViewModel, onBack: () -> Unit) {
                 ToggleRow("Fade out", fade, { fade = it }, "Lower the volume over the last 30 seconds")
                 Pill("Start timer", {
                     if (endOfSong) vm.startSleepEndOfSong(fade) else vm.startSleep(minutes, fade)
-                    onBack()
+                    close()
                 }, accent = true, big = true, icon = Ic.Clock, modifier = Modifier.fillMaxWidth())
             }
         }
@@ -397,7 +399,7 @@ fun SleepTimerScreen(vm: MainViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-fun SortScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun SortSheet(vm: MainViewModel, onBack: () -> Unit) {
     val c = P.colors
     val s by vm.settings.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
@@ -412,17 +414,14 @@ fun SortScreen(vm: MainViewModel, onBack: () -> Unit) {
     val naturalDesc = s.songSort == SongSort.DATE_ADDED || s.songSort == SongSort.MOST_PLAYED
     val selectedIndex = if (s.sortDescending == naturalDesc) 0 else 1
 
-    ScreenBackground(art, s.blurBackground) {
-        Box(Modifier.fillMaxSize().background(Color(0x61000000)))
+    KairosSheet(onBack) { close ->
         Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().clip(RoundedCornerShape(topStart = 38.dp, topEnd = 38.dp)).background(c.sheet)
-                .navigationBarsPadding().padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 24.dp),
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Box(Modifier.align(Alignment.CenterHorizontally).size(40.dp, 5.dp).clip(RoundedCornerShape(3.dp)).background(c.muted.copy(alpha = 0.5f)))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(mixedHeadline("Sort " to false, "songs" to true), Modifier.weight(1f), style = T.h1.copy(fontSize = 34.sp), color = c.text)
-                CircleButton(Ic.Close, "Close", onBack)
+                CircleButton(Ic.Close, "Close", close)
             }
             SongSort.entries.forEach { o ->
                 RadioCard(o.label, "", s.songSort == o, {
@@ -430,7 +429,7 @@ fun SortScreen(vm: MainViewModel, onBack: () -> Unit) {
                 })
             }
             Segmented(labels, selectedIndex, { i -> vm.updateSettings { it.copy(sortDescending = if (i == 0) naturalDesc else !naturalDesc) } })
-            Pill("Show ${songs.size} songs", onBack, selected = true, big = true, modifier = Modifier.fillMaxWidth())
+            Pill("Show ${songs.size} songs", close, selected = true, big = true, modifier = Modifier.fillMaxWidth())
         }
     }
 }

@@ -43,6 +43,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.ui.draw.blur
@@ -87,7 +88,7 @@ private val Fg: Color @Composable get() = P.colors.text
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit) {
+fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCollapse: () -> Unit) {
     val c = P.colors
     val song by vm.currentSong.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
@@ -96,7 +97,7 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit) {
     val offset by vm.lyricsOffset.collectAsStateWithLifecycle()
     var options by rememberSaveable { mutableStateOf(false) }
 
-    com.skarif.kairos.ui.components.ScreenBackground(art, true) {
+    Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
@@ -104,10 +105,8 @@ fun LyricsScreen(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 CircleButton(Ic.Down, "Back to now playing", onBack, size = 44.dp, container = Glass, content = Fg)
-                art?.let { bmp ->
-                    val img = remember(bmp) { bmp.asImageBitmap() }
-                    Image(img, null, Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
-                }
+                // The player layer draws the cover here (it shrinks from the big hero into this spot).
+                Spacer(Modifier.size(40.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         song?.title ?: "", style = T.title.copy(fontSize = 16.sp), color = Fg, maxLines = 1,
