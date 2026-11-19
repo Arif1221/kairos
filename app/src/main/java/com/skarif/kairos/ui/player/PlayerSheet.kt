@@ -81,6 +81,8 @@ import com.skarif.kairos.ui.screens.rememberCoverNow
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -105,32 +107,47 @@ class PlayerController(private val scope: CoroutineScope) {
 
     val isOpen: Boolean get() = progress.targetValue > 0.5f
 
-    fun expand(to: PlayerPage = PlayerPage.MAIN) {
-        page = to
-        scope.launch { progress.animateTo(1f, Motion.sheet()) }
+    /** True while a finger is moving the player. */
+    var dragging by mutableStateOf(false)
+        private set
+
+    // Only one animation drives the player at a time; a new one replaces the old.
+    private var job: Job? = null
+    private fun run(block: suspend CoroutineScope.() -> Unit) {
+        job?.cancel()
+        job = scope.launch(block = block)
     }
 
-    fun collapse() {
-        scope.launch {
-            progress.animateTo(0f, Motion.sheet())
-            page = PlayerPage.MAIN
-            mainScroll.scrollTo(0)
-        }
+    fun expand(to: PlayerPage = PlayerPage.MAIN) {
+        page = to
+        run { progress.animateTo(1f, Motion.sheet()) }
+    }
+
+    fun collapse() = run {
+        progress.animateTo(0f, Motion.sheet())
+        page = PlayerPage.MAIN
+        mainScroll.scrollTo(0)
     }
 
     fun dragBy(dyPx: Float) {
-        scope.launch { progress.snapTo((progress.value - dyPx / rangePx).coerceIn(0f, 1f)) }
+        dragging = true
+        job?.cancel()
+        // Undispatched: the snap happens now, in order, never after a later settle().
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            progress.snapTo((progress.value - dyPx / rangePx).coerceIn(0f, 1f))
+        }
     }
 
     /** Ends a drag: a flick decides, otherwise whichever side is closer. */
     fun settle(velocityY: Float) {
+        dragging = false
         val target = when {
             velocityY > 900f -> 0f
             velocityY < -900f -> 1f
             progress.value > 0.5f -> 1f
             else -> 0f
         }
-        scope.launch {
+        run {
             progress.animateTo(target, Motion.sheet(), initialVelocity = -velocityY / rangePx)
             if (target == 0f) { page = PlayerPage.MAIN; mainScroll.scrollTo(0) }
         }
@@ -190,6 +207,11 @@ fun PlayerSheet(
     LaunchedEffect(s.id) { ctrl.skipX.snapTo(0f) }
 
     val open by remember { derivedStateOf { ctrl.progress.value > 0.001f } }
+    // Safety net: if anything ever leaves the player resting half open, finish the move.
+    LaunchedEffect(ctrl) {
+        androidx.compose.runtime.snapshotFlow { Triple(ctrl.progress.isRunning, ctrl.dragging, ctrl.progress.value) }
+            .collect { (running, dragging, v) -> if (!running && !dragging && v > 0.001f && v < 0.999f) ctrl.settle(0f) }
+    }
     BackHandler(enabled = ctrl.isOpen) {
         if (ctrl.page != PlayerPage.MAIN) ctrl.page = PlayerPage.MAIN else ctrl.collapse()
     }

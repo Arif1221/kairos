@@ -177,7 +177,12 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
     var smart by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     data class Tile(val key: String, val name: String, val sub: String, val songs: List<SongEntity>)
     val tiles = if (smart) mixes.map { Tile(it.key, it.title, "Smart, ${it.songs.size} songs", it.songs) }
-    else playlists.map { Tile("playlist:${it.id}", it.name, "${it.songs.size} songs", it.songs) }
+    else {
+        // Favourites always comes first among your own playlists.
+        val favs = mixes.firstOrNull { it.key == "favourites" }
+        listOfNotNull(favs?.let { Tile("favourites", "Favourites", "${it.songs.size} songs you love", it.songs) }) +
+            playlists.map { Tile("playlist:${it.id}", it.name, "${it.songs.size} songs", it.songs) }
+    }
 
     ScreenBackground(art, settings.blurBackground) {
         LazyVerticalGrid(
@@ -196,7 +201,7 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
                     }
                     Text(mixedHeadline("Your " to false, "playlists" to true, ", made " to false, "your way" to true), style = T.h1, color = c.text)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Pill("Made by you  ${playlists.size}", { smart = false }, selected = !smart)
+                        Pill("Made by you  ${playlists.size + 1}", { smart = false }, selected = !smart)
                         Pill("Smart  ${mixes.size}", { smart = true }, selected = smart)
                     }
                     if (tiles.isEmpty()) Text("No playlists yet. Tap New playlist to make one.", style = T.body, color = c.muted)

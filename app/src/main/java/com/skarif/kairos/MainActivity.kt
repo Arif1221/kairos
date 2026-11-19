@@ -10,7 +10,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -61,7 +60,6 @@ import androidx.navigation.compose.rememberNavController
 import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
-import com.skarif.kairos.ui.components.LocalSharedScope
 import com.skarif.kairos.ui.components.ProvideNavScope
 import com.skarif.kairos.ui.screens.CollectionScreen
 import com.skarif.kairos.ui.screens.FoldersScreen
@@ -158,16 +156,15 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
         }
 
         CompositionLocalProvider(LocalPlayer provides player) {
-        SharedTransitionLayout {
-        CompositionLocalProvider(LocalSharedScope provides this) {
         Box(Modifier.fillMaxSize()) {
             NavHost(
                 nav, startDestination = start,
-                // Push: the new page slides in from the right while the old one recedes; pop reverses it.
-                enterTransition = { slideInHorizontally(tween(Motion.PAGE_MS, easing = Motion.Emphasized)) { it / 4 } + fadeIn(Motion.fadeIn()) },
-                exitTransition = { scaleOut(tween(Motion.PAGE_MS, easing = Motion.Emphasized), targetScale = 0.94f) + fadeOut(tween(Motion.PAGE_MS)) },
-                popEnterTransition = { scaleIn(tween(Motion.PAGE_MS, easing = Motion.Emphasized), initialScale = 0.94f) + fadeIn(tween(Motion.PAGE_MS)) },
-                popExitTransition = { slideOutHorizontally(tween(300, easing = Motion.EmphasizedAccelerate)) { it / 4 } + fadeOut(tween(250)) },
+                // Push: the new page slides in from the right, the old one drifts left and fades.
+                // Pop is the mirror image. Translation only, so it stays smooth on long lists.
+                enterTransition = { slideInHorizontally(tween(Motion.PAGE_MS, easing = Motion.Emphasized)) { it / 5 } + fadeIn(tween(260, easing = Motion.EmphasizedDecelerate)) },
+                exitTransition = { slideOutHorizontally(tween(Motion.PAGE_MS, easing = Motion.Emphasized)) { -it / 10 } + fadeOut(tween(200)) },
+                popEnterTransition = { slideInHorizontally(tween(Motion.PAGE_MS, easing = Motion.Emphasized)) { -it / 10 } + fadeIn(tween(260, easing = Motion.EmphasizedDecelerate)) },
+                popExitTransition = { slideOutHorizontally(tween(320, easing = Motion.EmphasizedAccelerate)) { it / 5 } + fadeOut(tween(200)) },
             ) {
                 screen("onboarding") {
                     OnboardingScreen(vm) { nav.navigate("home") { popUpTo("onboarding") { inclusive = true } } }
@@ -279,8 +276,6 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 Tool.SORT -> SortSheet(vm, onBack = { tool = null })
                 null -> Unit
             }
-        }
-        }
         }
         }
     }

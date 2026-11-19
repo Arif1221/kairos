@@ -141,7 +141,7 @@ fun NowPlayingPane(
                                     // Resist at the ends of the queue.
                                     val nx = ctrl.skipX.value + amount.x
                                     val edge = (nx > 0 && !hasPrev) || (nx < 0 && !hasNext)
-                                    scope.launch { ctrl.skipX.snapTo(if (edge) ctrl.skipX.value + amount.x * 0.3f else nx) }
+                                    scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { ctrl.skipX.snapTo(if (edge) ctrl.skipX.value + amount.x * 0.3f else nx) }
                                 } else {
                                     ctrl.dragBy(amount.y)
                                 }
@@ -193,7 +193,7 @@ fun NowPlayingPane(
                 if (liked) "Remove from favourites" else "Add to favourites",
                 { vm.toggleFavorite(s.id) },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 22.dp),
-                size = 76.dp, container = Color(0xFF151515), content = Color.White, iconSize = 28.dp,
+                size = 76.dp, container = c.accent, content = c.onAccent, iconSize = 28.dp,
             )
         }
 

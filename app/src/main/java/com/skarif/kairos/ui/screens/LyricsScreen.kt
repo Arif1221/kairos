@@ -220,7 +220,7 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
             }
             val isCur = i == current
             val alpha by animateFloatAsState(when { isCur -> 1f; i < current -> 0.35f; else -> 0.55f }, tween(500, easing = FastOutSlowInEasing), label = "lineAlpha")
-            val scale by animateFloatAsState(if (isCur) 1f else 0.82f, tween(500, easing = FastOutSlowInEasing), label = "lineScale")
+            val scale by animateFloatAsState(if (isCur) 1f else 0.78f, tween(500, easing = FastOutSlowInEasing), label = "lineScale")
             var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
             val start = line.timeMs + offsetMs
             val end = lyrics.lines.getOrNull(i + 1)?.timeMs?.plus(offsetMs) ?: (start + 4000)
@@ -238,7 +238,7 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
                     .clickable(role = Role.Button, onClickLabel = "Play from this line") { onSeek(start) }
                     .then(if (isCur) Modifier.semantics { heading() } else Modifier),
                 // One weight for every line: switching weight re-wraps the text and makes it jump.
-                style = T.h1.copy(fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.ExtraBold),
+                style = T.h1.copy(fontSize = 35.sp, lineHeight = 41.sp, fontWeight = FontWeight.ExtraBold),
                 color = Fg,
                 onTextLayout = { layout = it },
             )

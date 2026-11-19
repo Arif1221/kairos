@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -196,21 +197,37 @@ private fun DialogItem(text: String, onClick: () -> Unit) {
  */
 @Composable
 fun rememberLivePosition(vm: MainViewModel): androidx.compose.runtime.State<Long> {
-    val reported by vm.position.collectAsStateWithLifecycle()
+    val reported = vm.position.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
-    return produceState(reported, reported, now.isPlaying) {
-        val start = if (!now.isPlaying || kotlin.math.abs(reported - value) > 600) reported else maxOf(value, reported)
-        value = start
-        if (!now.isPlaying) return@produceState
-        val t0 = androidx.compose.runtime.withFrameMillis { it }
-        while (true) androidx.compose.runtime.withFrameMillis { t -> value = maxOf(start, reported + (t - t0)) }
+    // When the player last reported, in the frame clock's time base (System.nanoTime).
+    val reportedAt = remember { longArrayOf(System.nanoTime()) }
+    LaunchedEffect(reported.value) { reportedAt[0] = System.nanoTime() }
+    return produceState(reported.value, now.isPlaying) {
+        if (!now.isPlaying) {
+            androidx.compose.runtime.snapshotFlow { reported.value }.collect { value = it }
+            return@produceState
+        }
+        // A steady clock that runs at real speed and is nudged gently towards the player's
+        // reports, so it never stalls or jumps between them. Big gaps (a seek) snap.
+        var shown = value.toDouble()
+        var last = androidx.compose.runtime.withFrameNanos { it }
+        while (true) {
+            androidx.compose.runtime.withFrameNanos { t ->
+                shown += (t - last) / 1_000_000.0
+                last = t
+                val truth = reported.value + (t - reportedAt[0]) / 1_000_000.0
+                val err = truth - shown
+                shown = if (kotlin.math.abs(err) > 500) truth else shown + err * 0.06
+                value = shown.toLong()
+            }
+        }
     }
 }
 
 /** Seek bar that reads the playback position itself, so only it redraws 5 times a second. */
 @Composable
 fun LiveWaveformSeek(vm: MainViewModel, durationMs: Long, seed: Long, modifier: Modifier = Modifier, barsHeight: Dp = 66.dp, bars: Int = 26) {
-    val pos by vm.position.collectAsStateWithLifecycle()
+    val pos = rememberLivePosition(vm)
     val now by vm.now.collectAsStateWithLifecycle()
     com.skarif.kairos.ui.components.WaveformSeek(pos, durationMs, seed, vm::seekTo, modifier, barsHeight, bars, playing = now.isPlaying)
 }
