@@ -18,6 +18,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -100,15 +102,30 @@ class MainActivity : ComponentActivity() {
 private val TABS = listOf("home", "library", "stats", "search", "discover")
 
 /** Screens whose top edge is dark in every theme. */
-private val DARK_TOP = setOf("library", "now", "collection/{key}")
+private val DARK_TOP = setOf("now", "collection/{key}")
 
 /** Player screens and sheets rise from the bottom, like the design's sheets. */
+/** Material 3 "emphasized" curves: quick start, long gentle settle. */
+private val Emphasized = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0f, 0f, 1f)
+private val EmphasizedAccel = androidx.compose.animation.core.CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
+
 private val sheetEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-    slideInVertically(tween(380, easing = FastOutSlowInEasing)) { it / 4 } + fadeIn(tween(260))
+    slideInVertically(tween(450, easing = Emphasized)) { it } + fadeIn(tween(200))
 }
 private val sheetExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-    slideOutVertically(tween(300, easing = FastOutSlowInEasing)) { it / 4 } + fadeOut(tween(220))
+    slideOutVertically(tween(300, easing = EmphasizedAccel)) { it } + fadeOut(tween(250, delayMillis = 50))
 }
+private val tabEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    fadeIn(tween(260, delayMillis = 60)) + scaleIn(tween(320, easing = Emphasized), initialScale = 0.97f)
+}
+private val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
+    if (targetState.destination.route in SHEETS) underSheet else fadeOut(tween(120))
+}
+
+/** Screens that rise from the bottom over the current one. */
+private val SHEETS = setOf("now", "lyrics", "queue", "eq", "sleep", "sort")
+/** The page under a rising sheet stays put until the sheet has covered it. */
+private val underSheet = fadeOut(tween(60, delayMillis = 440))
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -150,29 +167,37 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
         Box(Modifier.fillMaxSize()) {
             NavHost(
                 nav, startDestination = start,
-                enterTransition = { fadeIn(tween(240)) + slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { it / 12 } },
-                exitTransition = { fadeOut(tween(180)) },
-                popEnterTransition = { fadeIn(tween(240)) },
-                popExitTransition = { fadeOut(tween(180)) + slideOutHorizontally(tween(280)) { it / 12 } },
+                // Push: the new page slides in from the right over the old one, which recedes.
+                enterTransition = { slideInHorizontally(tween(400, easing = Emphasized)) { it / 4 } + fadeIn(tween(250)) },
+                exitTransition = {
+                    if (targetState.destination.route in SHEETS) underSheet
+                    else scaleOut(tween(400, easing = Emphasized), targetScale = 0.94f) + fadeOut(tween(300))
+                },
+                popEnterTransition = {
+                    // Coming back from a sheet: the page is simply there underneath it.
+                    if (initialState.destination.route in SHEETS) EnterTransition.None
+                    else scaleIn(tween(400, easing = Emphasized), initialScale = 0.94f) + fadeIn(tween(300))
+                },
+                popExitTransition = { slideOutHorizontally(tween(300, easing = EmphasizedAccel)) { it / 4 } + fadeOut(tween(250)) },
             ) {
                 screen("onboarding") {
                     OnboardingScreen(vm) { nav.navigate("home") { popUpTo("onboarding") { inclusive = true } } }
                 }
-                screen("home", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
+                screen("home", enterTransition = tabEnter, exitTransition = tabExit) {
                     HomeScreen(
                         vm, onMenu = openMenu, onSearch = { nav.tab("search") }, onOpenCollection = ::openCollection,
                         onOpenNowPlaying = { nav.navigate("now") }, onPlaylists = { nav.navigate("playlists") },
                         onLibrary = { nav.tab("library") },
                     )
                 }
-                screen("library", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
+                screen("library", enterTransition = tabEnter, exitTransition = tabExit) {
                     LibraryScreen(
                         vm, onOpenNowPlaying = { nav.navigate("now") }, onSettings = { nav.navigate("settings") },
                         onFolders = { nav.navigate("folders") }, onSort = { nav.navigate("sort") }, onOpenAlbum = ::openAlbum, onOpenCollection = ::openCollection,
                     )
                 }
-                screen("stats", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) { StatsScreen(vm, onMenu = openMenu, onSettings = { nav.navigate("settings") }) }
-                screen("search", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
+                screen("stats", enterTransition = tabEnter, exitTransition = tabExit) { StatsScreen(vm, onMenu = openMenu, onSettings = { nav.navigate("settings") }) }
+                screen("search", enterTransition = tabEnter, exitTransition = tabExit) {
                     SearchScreen(vm, onMenu = openMenu, onOpenCollection = ::openCollection, onOpenNowPlaying = { nav.navigate("now") })
                 }
                 screen("discover", enterTransition = { fadeIn(tween(220)) }, exitTransition = { fadeOut(tween(160)) }) {
@@ -184,7 +209,7 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                         onEqualizer = { nav.navigate("eq") }, onSleep = { nav.navigate("sleep") }, onAlbum = ::openAlbum,
                     )
                 }
-                screen("lyrics", enterTransition = sheetEnter, popExitTransition = sheetExit) { LyricsScreen(vm, onBack = { nav.popBackStack() }) }
+                screen("lyrics", enterTransition = sheetEnter, popExitTransition = sheetExit) { LyricsScreen(vm, onBack = { nav.popBackStack() }, onQueue = { nav.navigate("queue") }) }
                 screen("queue", enterTransition = sheetEnter, popExitTransition = sheetExit) {
                     QueueScreen(vm, onBack = { nav.popBackStack() }, onSaveAsPlaylist = { nav.navigate("newplaylist?fromQueue=true") }, onOpenAlbum = ::openAlbum)
                 }

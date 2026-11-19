@@ -45,4 +45,11 @@ public class LrcParserTest {
         assertEquals(-6.48f, TagReader.parseGain("-6.48 dB"), 0.001f);
         assertEquals(-7.25f, TagReader.parseGain("-7,25 dB"), 0.001f);
     }
+
+    @Test
+    public void dropsVoiceTags() {
+        Lyrics l = LrcParser.parse("[00:01.00]v1:Give me tough love\n[00:02.00]v2: So say it", "t");
+        assertEquals("Give me tough love", l.lines.get(0).text);
+        assertEquals("So say it", l.lines.get(1).text);
+    }
 }

@@ -96,7 +96,20 @@ fun NowPlayingScreen(
     // Hero scales with the screen: big on tall phones, never crowding the controls on short ones.
     val heroHeight = (LocalConfiguration.current.screenHeightDp * 0.47f).coerceIn(300f, 440f).dp
 
-    ScreenBackground(art, settings.blurBackground) {
+    // Pull the cover down to close: the whole screen follows your finger, shrinks a little and
+    // rounds its corners, like a card being put away.
+    val dragY = remember { Animatable(0f) }
+    val screenH = with(androidx.compose.ui.platform.LocalDensity.current) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    ScreenBackground(
+        art, settings.blurBackground,
+        Modifier.graphicsLayer {
+            val f = (dragY.value / screenH).coerceIn(0f, 1f)
+            translationY = dragY.value
+            scaleX = 1f - f * 0.12f; scaleY = scaleX
+            shape = RoundedCornerShape((f * 160).dp)
+            clip = f > 0f
+        },
+    ) {
         if (s == null) {
             Column(
                 Modifier.fillMaxSize().statusBarsPadding().padding(18.dp),
@@ -121,7 +134,7 @@ fun NowPlayingScreen(
                     // Swipe the cover like a pager: the previous and next covers sit either side and
                     // slide in with your finger. A short swipe or a flick is enough.
                     val dragX = remember { Animatable(0f) }
-                    val dragY = remember { Animatable(0f) }
+                    var axis by remember { mutableIntStateOf(0) } // 0 undecided, 1 sideways, 2 down
                     val scope = rememberCoroutineScope()
                     val haptics = LocalHapticFeedback.current
                     var widthPx by remember { mutableFloatStateOf(1f) }
@@ -158,12 +171,20 @@ fun NowPlayingScreen(
                             .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
                             .pointerInput(s.id) {
                                 detectDragGestures(
-                                    onDragStart = { tracker.resetTracking() },
+                                    onDragStart = { tracker.resetTracking(); axis = 0 },
                                     onDragEnd = {
-                                        val vx = tracker.calculateVelocity().x
-                                        if (dragY.value > size.height * 0.2f && kotlin.math.abs(dragX.value) < size.width * 0.1f) onBack()
-                                        scope.launch { dragY.animateTo(0f, spring(dampingRatio = 0.7f)) }
-                                        settle(vx)
+                                        val v = tracker.calculateVelocity()
+                                        if (axis == 2) {
+                                            if (dragY.value > screenH * 0.18f || v.y > 1200f) {
+                                                // Keep going down while the screen closes.
+                                                scope.launch { dragY.animateTo(screenH, tween(260, easing = FastOutSlowInEasing)) }
+                                                onBack()
+                                            } else {
+                                                scope.launch { dragY.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 400f)) }
+                                            }
+                                        } else {
+                                            settle(v.x)
+                                        }
                                     },
                                     onDragCancel = {
                                         scope.launch { dragX.animateTo(0f) }
@@ -172,14 +193,18 @@ fun NowPlayingScreen(
                                 ) { change, amount ->
                                     change.consume()
                                     tracker.addPosition(change.uptimeMillis, change.position)
-                                    // Resist at the ends of the queue.
-                                    val nx = dragX.value + amount.x
-                                    val resisted = if ((nx > 0 && prevSong == null) || (nx < 0 && nextSong == null)) dragX.value + amount.x * 0.3f else nx
-                                    scope.launch { dragX.snapTo(resisted) }
-                                    scope.launch { dragY.snapTo((dragY.value + amount.y).coerceAtLeast(0f)) }
+                                    // Lock to one direction from the first movement: either skip or close, never both.
+                                    if (axis == 0) axis = if (kotlin.math.abs(amount.x) >= kotlin.math.abs(amount.y)) 1 else 2
+                                    if (axis == 1) {
+                                        // Resist at the ends of the queue.
+                                        val nx = dragX.value + amount.x
+                                        val resisted = if ((nx > 0 && prevSong == null) || (nx < 0 && nextSong == null)) dragX.value + amount.x * 0.3f else nx
+                                        scope.launch { dragX.snapTo(resisted) }
+                                    } else {
+                                        scope.launch { dragY.snapTo((dragY.value + amount.y).coerceAtLeast(0f)) }
+                                    }
                                 }
-                            }
-                            .graphicsLayer { translationY = dragY.value * 0.4f },
+                            },
                     ) {
                         @Composable
                         fun cover(img: androidx.compose.ui.graphics.ImageBitmap?, offset: Int, desc: String?) {

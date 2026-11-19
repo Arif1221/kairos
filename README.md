@@ -1,4 +1,8 @@
-# Kairos: Android music player (offline for Play, online build on GitHub)
+# Kairos Online (`online` branch)
+
+> **Two branches, two apps.**
+> - `main`: **Kairos**, the offline player (Play Store). All offline features are built there.
+> - `online`: **Kairos Online**, `main` plus YouTube Music streaming. Online-only work happens here, and `main` is merged in regularly. Nothing goes from `online` back into `main`.
 
 Jetpack Compose + Media3. Design baseline: the "Music Player — v1 Screens" canvas.
 
@@ -28,12 +32,10 @@ Jetpack Compose + Media3. Design baseline: the "Music Player — v1 Screens" can
 ## Phase 2 (UI on top of tables that already exist)
 Home mixes, Stats, Playlists + New playlist, Queue, Equalizer screen, Sleep timer, Album detail, Search, Sort sheet, Menu.
 
-## Two builds: Play and Online
-
-| Flavor | Task | What it is | Where it ships |
-|---|---|---|---|
-| `play` | `assemblePlayRelease` | Offline player. No internet permission, no YouTube code in the APK. | Play Store |
-| `online` | `assembleOnlineRelease` | Same app plus YouTube Music search and streaming. Installs next to the play build (`com.skarif.kairos.online`). | GitHub Releases (tag `v*`) |
+## How the online build is set up
+The `online` branch keeps two Gradle flavors so `main`'s code merges in cleanly:
+- `online` (`assembleOnlineRelease`): what this branch builds and releases.
+- `play`: the offline app, kept only so shared code compiles both ways. It isn't built or released here.
 
 Online build features:
 - **Discover** tab (replaces Stats in the dock; Stats is in the menu): "More from" shelves for your most played artists, trending, new releases and mood chips (Bollywood, Lo-fi, Punjabi...).
@@ -85,6 +87,13 @@ PlayerApp      AppContainer: hand-written dependency wiring
   ```
 
 ## Getting the APK from GitHub
-**Releases (recommended):** open the repo's **Releases** page and download `app-online-release.apk` (Kairos Online) or `app-play-release.apk` (offline Kairos). A release is made automatically when `versionName` in `app/build.gradle.kts` changes on `main` (or when a `v*` tag is pushed).
+**Releases:** download `app-online-release.apk` from the latest `v*-online` release. Pushing to `online` with a new `versionName` publishes one automatically.
 
-**Every push:** `.github/workflows/build.yml` builds both flavors. Open **Actions**, pick the run, and download `kairos-online-apk` or `kairos-play-apk` under Artifacts (zips). Both are R8-optimised and signed with the fixed sideload key, so newer builds install over older ones.
+**Every push:** open **Actions**, pick the latest run on `online`, and download `kairos-online-apk` (a zip).
+
+## Keeping up with main
+```
+git checkout online
+git merge origin/main
+```
+Conflicts to expect: `versionCode`/`versionName` (keep online's numbering, ahead of main), `.github/workflows/build.yml` (keep this branch's), and `MainViewModel.mixes` (the favourites mix must read `byId`, which includes saved online songs).
