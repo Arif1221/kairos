@@ -36,6 +36,8 @@ import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.Pill
 import com.skarif.kairos.ui.components.PillMeter
 import com.skarif.kairos.ui.components.ScreenBackground
+import com.skarif.kairos.ui.components.sharedCard
+import com.skarif.kairos.ui.components.cardClick
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 import com.skarif.kairos.ui.theme.mixedHeadline
@@ -63,7 +65,7 @@ fun HomeScreen(
     ScreenBackground(art, settings.blurBackground) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).statusBarsPadding()
-                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 140.dp),
+                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 230.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -87,8 +89,8 @@ fun HomeScreen(
             if (album != null && song != null) {
                 val idx = album.songs.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
                 Column(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(34.dp)).background(c.tint)
-                        .clickable(role = Role.Button, onClickLabel = "Open now playing", onClick = onOpenNowPlaying).padding(18.dp),
+                    Modifier.fillMaxWidth().cardClick("Open now playing", onOpenNowPlaying)
+                        .clip(RoundedCornerShape(34.dp)).background(c.tint).padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -122,8 +124,10 @@ private fun MixCard(vm: MainViewModel, m: Collection, onOpen: () -> Unit, onPlay
     val c = P.colors
     val accent = artColor(vm, m.songs.firstOrNull())
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(34.dp)).background(tintOf(c.card, accent, c.dark))
-            .clickable(role = Role.Button, onClickLabel = "Open ${m.title}", onClick = onOpen).padding(18.dp),
+        Modifier.fillMaxWidth()
+            .sharedCard("col-${m.key}", RoundedCornerShape(34.dp))
+            .cardClick("Open ${m.title}", onOpen)
+            .clip(RoundedCornerShape(34.dp)).background(tintOf(c.card, accent, c.dark)).padding(18.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {

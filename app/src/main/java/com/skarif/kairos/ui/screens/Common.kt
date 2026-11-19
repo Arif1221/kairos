@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
@@ -201,14 +202,20 @@ fun SwipeActions(
     val state = androidx.compose.material3.rememberSwipeToDismissBoxState(
         confirmValueChange = { v ->
             when (v) {
-                androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd -> onRight?.let { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); it() }
-                androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> onLeft?.let { haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); it() }
+                androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd -> onRight?.invoke()
+                androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> onLeft?.invoke()
                 else -> Unit
             }
             false // never stay dismissed; the action ran, the row returns
         },
         positionalThreshold = { it * 0.3f },
     )
+    // A tick under the finger the moment the swipe passes the point where it will act.
+    androidx.compose.runtime.LaunchedEffect(state.targetValue) {
+        if (state.targetValue != androidx.compose.material3.SwipeToDismissBoxValue.Settled) {
+            haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+        }
+    }
     androidx.compose.material3.SwipeToDismissBox(
         state = state,
         enableDismissFromStartToEnd = onRight != null,
@@ -236,7 +243,15 @@ fun SwipeActions(
                             .background(if (right) c.accent else c.ink),
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (icon != null && strip > 44.dp) Icon(icon, null, tint = fg, modifier = Modifier.size(22.dp))
+                        // The icon grows as you pull, and pops once the action is armed.
+                        val armed = state.targetValue != androidx.compose.material3.SwipeToDismissBoxValue.Settled
+                        val iconScale by androidx.compose.animation.core.animateFloatAsState(
+                            if (armed) 1.25f else (0.6f + state.progress * 0.5f).coerceAtMost(1f),
+                            androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 500f), label = "swipeIcon",
+                        )
+                        if (icon != null && strip > 36.dp) {
+                            Icon(icon, null, tint = fg, modifier = Modifier.size(22.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale })
+                        }
                     }
                 }
             }

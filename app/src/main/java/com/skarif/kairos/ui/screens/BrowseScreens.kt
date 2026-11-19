@@ -59,6 +59,8 @@ import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.Pill
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.components.ScreenHeader
+import com.skarif.kairos.ui.components.sharedCard
+import com.skarif.kairos.ui.components.cardClick
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 import com.skarif.kairos.ui.theme.mixedHeadline
@@ -107,7 +109,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
         LazyVerticalGrid(
             GridCells.Fixed(2),
             Modifier.fillMaxSize().statusBarsPadding(),
-            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 140.dp),
+            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 230.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -137,24 +139,28 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
             } else {
                 val list = if (tab == 0) albums else artists
                 items(list, key = { (if (tab == 0) "a" else "r") + it.id }) { s ->
+                    val k = if (tab == 0) "album:${s.albumId}" else "artist:${s.artist}"
                     CoverTile(
-                        vm, s,
+                        vm, s, key = k,
                         kicker = if (tab == 0) s.artist else "Artist",
                         title = if (tab == 0) s.album else s.artist,
-                    ) { onOpenCollection(if (tab == 0) "album:${s.albumId}" else "artist:${s.artist}") }
+                    ) { onOpenCollection(k) }
                 }
             }
         }
     }
 }
 
+/** Cover card that grows into the album/artist page when tapped. */
 @Composable
-private fun CoverTile(vm: MainViewModel, song: SongEntity, kicker: String, title: String, onClick: () -> Unit) {
+fun CoverTile(vm: MainViewModel, song: SongEntity, key: String, kicker: String, title: String, onClick: () -> Unit) {
     val img = rememberCover(vm, song)
     val c = P.colors
     Box(
-        Modifier.fillMaxWidth().height(214.dp).clip(RoundedCornerShape(30.dp)).background(c.tint)
-            .clickable(role = Role.Button, onClickLabel = "Open $title", onClick = onClick),
+        Modifier.fillMaxWidth().height(214.dp)
+            .sharedCard("col-$key", RoundedCornerShape(30.dp))
+            .cardClick("Open $title", onClick)
+            .clip(RoundedCornerShape(30.dp)).background(c.tint),
     ) {
         if (img != null) Image(img, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         Box(Modifier.fillMaxWidth().height(110.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000)))))
@@ -202,8 +208,9 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
             }
             items(tiles, key = { it.key }) { t ->
                 Column(
-                    Modifier.clip(RoundedCornerShape(30.dp)).background(c.card)
-                        .clickable(role = Role.Button, onClickLabel = "Open ${t.name}") { onOpenCollection(t.key) }
+                    Modifier.sharedCard("col-${t.key}", RoundedCornerShape(30.dp))
+                        .cardClick("Open ${t.name}") { onOpenCollection(t.key) }
+                        .clip(RoundedCornerShape(30.dp)).background(c.card)
                         .padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -335,7 +342,11 @@ fun CollectionScreen(vm: MainViewModel, key: String, onBack: () -> Unit, onOpenN
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
             item {
                 Box(Modifier.fillMaxWidth().height(400.dp)) {
-                    Box(Modifier.fillMaxWidth().height(380.dp).clip(RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp)).background(c.accent)) {
+                    Box(
+                        Modifier.fillMaxWidth().height(380.dp)
+                            .sharedCard("col-$key", RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp))
+                            .clip(RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp)).background(c.accent),
+                    ) {
                         if (cover != null) {
                             if (isAlbum) Image(cover, "${col?.title} cover", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                             else Mosaic(vm, col?.songs.orEmpty(), Modifier.fillMaxSize())
