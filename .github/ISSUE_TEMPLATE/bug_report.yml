@@ -1,0 +1,43 @@
+name: Bug report
+description: Something doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the queue
+        2. Tap back
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: Kairos version
+      placeholder: "0.7.6"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Phone and Android version
+      placeholder: "Pixel 7, Android 15"
+    validations:
+      required: true
+  - type: textarea
+    id: crash
+    attributes:
+      label: Crash report
+      description: If the app crashed, reopen Kairos and tap "Copy report", then paste it here.
+      render: text
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshots or screen recording

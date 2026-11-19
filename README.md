@@ -1,67 +1,101 @@
-# Kairos: offline Android music player (Phase 1)
+<div align="center">
 
-Jetpack Compose + Media3. Design baseline: the "Music Player — v1 Screens" canvas.
+<img src="docs/store/icon-512.png" width="112" alt="Kairos app icon" />
 
-## Open and run
-1. Android Studio Ladybug (2024.2) or newer → **Open** this folder.
-2. Let Gradle sync (it downloads AGP 8.7, Kotlin 2.1, Media3 1.5.1, Room 2.6.1).
-3. Run on a phone or emulator with Android 9 (API 28) or newer, with some music on it.
+# Kairos
 
-> This project was written in a sandbox with no access to Google's Maven repository, so it has
-> **not been compiled yet**. The Kotlin was syntax-checked and the lyrics engine was run against
-> real tagged files, but expect a few small compile fixes on the first sync. Send me any errors.
+**An offline music player for Android with time-synced lyrics, hi-res and bit-perfect audio, and a design that follows your album art.**
 
-## What works in Phase 1
-| Area | What it does |
+[![Latest release](https://img.shields.io/github/v/release/Arif1221/kairos?label=release&color=8B6CFF)](https://github.com/Arif1221/kairos/releases/latest)
+[![Build](https://img.shields.io/github/actions/workflow/status/Arif1221/kairos/build.yml?branch=main)](https://github.com/Arif1221/kairos/actions/workflows/build.yml)
+[![Android 9+](https://img.shields.io/badge/Android-9%2B-3DDC84?logo=android&logoColor=white)](#requirements)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+
+[Download the APK](https://github.com/Arif1221/kairos/releases/latest) · [Report a bug](https://github.com/Arif1221/kairos/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/Arif1221/kairos/issues/new?template=feature_request.yml)
+
+</div>
+
+Kairos plays the music already on your phone: MP3, FLAC, M4A/AAC, OGG, Opus and WAV. No account, no ads, no tracking, and no internet permission at all. It is built with Jetpack Compose and Media3 (ExoPlayer).
+
+<!-- Screenshots: add phone screenshots to docs/screenshots/ and list them here, e.g.
+<p align="center"><img src="docs/screenshots/player.png" width="22%" alt="Now playing" /></p> -->
+
+## Features
+
+**Lyrics**
+- Time-synced lyrics with a karaoke-style fill that moves line by line, start to finish
+- Reads lyrics embedded in the file (MP3 `USLT`/`SYLT`, FLAC Vorbis comments, M4A `©lyr`) and `.lrc` files next to your songs
+- Word-level timestamps, `[offset]` tags, and a per-song timing fix in 0.1 s steps
+- Tap a line to jump there
+
+**Sound**
+- Hi-res output (32-bit float) and bit-perfect USB output on Android 14+
+- 10-band equalizer, bass boost and virtualizer
+- ReplayGain (track and album), gapless playback
+- Sleep timer that can fade out or stop at the end of the song
+
+**Library**
+- Songs, albums, artists and genres, with an A–Z fast scroller
+- Songs with several artists ("A feat. B") show under each of them
+- Choose which folders to scan; skip short clips
+- Playlists, favourites, and auto playlists: Most played, On repeat, Recently added, Forgotten gems, genre mixes and more
+- Listening stats: time listened, top songs and artists, streaks
+
+**Design**
+- The whole app takes its accent colour from the cover that is playing
+- One player surface: swipe the mini player up into the full player and back down
+- Swipe the cover to change song; swipe rows to play next or remove
+- Light, dark and pure-black themes
+
+## Download
+
+Get the latest APK from [Releases](https://github.com/Arif1221/kairos/releases/latest). Play Store listing coming soon.
+
+### Requirements
+Android 9 (API 28) or newer. Bit-perfect USB output needs Android 14.
+
+## Privacy
+
+Kairos does not collect, send or share any data. It has no internet permission. Your library, playlists and listening history stay in the app's private storage on your phone. Read the full [privacy policy](PRIVACY.md).
+
+## Build from source
+
+You need Android Studio Ladybug (2024.2) or newer, or JDK 17 and the Android SDK.
+
+```bash
+git clone https://github.com/Arif1221/kairos.git
+cd kairos
+./gradlew assembleDebug          # debug APK in app/build/outputs/apk/debug/
+./gradlew testReleaseUnitTest    # unit tests (lyrics parser)
+```
+
+Release builds are signed in CI with a key stored in GitHub secrets. Local release builds without that key are signed with your debug key, so they install on your own phone.
+
+## How it is built
+
+| Part | What it uses |
 |---|---|
-| First launch | Asks for audio access (and notifications on Android 13+), then scans |
-| Library | MediaStore → Room, songs list, dark header with counts, rescan |
-| Folder selection | Include/exclude folders, skip files under 30 s, scan again |
-| Playback | Media3 ExoPlayer in a `MediaSessionService`: background play, notification, lock screen, headset buttons, pause when headphones unplug, gapless |
-| Now Playing | Album-art hero, favourite, format/duration/queue chips, waveform seek bar, controls |
-| Lyrics | Embedded (MP3 USLT/SYLT, FLAC Vorbis, M4A ©lyr) and `.lrc` files; time-synced highlight with auto-scroll; tap a line to jump; per-song timing fix (±0.1 s) |
-| Theme | Light / Dark / System, colour from album art (Palette API) or a fixed colour, blurred album background, pure black |
-| Audio quality | Hi-res (32-bit float output), bit-perfect USB on Android 14+, Standard; ReplayGain (track/album) |
-| EQ engine | 10-band `DynamicsProcessing`, bass boost, virtualizer (settings stored; screen in Phase 2) |
-| Stats data | Every listen is saved (`play_events`) for the Stats and Mixes screens |
+| UI | Jetpack Compose, Material 3, one `MainViewModel` exposing `StateFlow`s |
+| Playback | Media3 ExoPlayer in a `MediaSessionService` (notification, lock screen, headset buttons) |
+| Library | MediaStore scan into Room; settings in DataStore |
+| Lyrics | A tag reader and LRC parser in plain Java, with no Android imports, so they run in unit tests |
+| Colour | Palette API: the accent is the colour that covers the most of the cover |
+| Audio | `DynamicsProcessing` EQ, float output, `AudioManager` mixer attributes for bit-perfect USB |
 
-## Phase 2 (UI on top of tables that already exist)
-Home mixes, Stats, Playlists + New playlist, Queue, Equalizer screen, Sleep timer, Album detail, Search, Sort sheet, Menu.
-
-## Architecture
 ```
-ui/            Compose screens, theme (colours from album art), components
-  MainViewModel  one ViewModel exposing StateFlows to every screen
-playback/      PlaybackService (ExoPlayer + MediaSession), PlayerConnection (MediaController),
-               AudioEffects (EQ), BitPerfect (Android 14 USB mixer)
-data/          Room database, MediaScanner, SettingsStore (DataStore),
-               LyricsRepository, ArtworkRepository (thumbnails + Palette)
-lyrics/        Pure Java: TagReader, LrcParser. No Android imports, unit-testable.
-PlayerApp      AppContainer: hand-written dependency wiring
+app/src/main/java/com/skarif/kairos/
+├── ui/          screens, player layer, theme, motion tokens, components
+├── playback/    PlaybackService, PlayerConnection, AudioEffects, BitPerfect
+├── data/        Room database, MediaScanner, SettingsStore, Lyrics and Artwork repositories
+└── lyrics/      TagReader and LrcParser (pure Java)
 ```
 
-### Decisions worth knowing
-- **Media3 instead of VLC.** Smaller app, native notification and gapless playback, no LGPL rules.
-  Add the FFmpeg decoder later only if you hit a format MediaCodec can't play (e.g. APE).
-- **Lyrics parser written by hand, in Java.** No tag library handles all three containers on
-  Android without trouble. Java so it can be tested without an Android device.
-- **`.lrc` needs folder permission.** On Android 13+, audio permission does not cover `.lrc`
-  text files. The user allows their music folder once (Settings → Lyrics → Allow a folder).
-- **Changing output mode needs an app restart.** Float output is fixed when ExoPlayer is built.
-- **Waveform bars are a stable pattern per song**, not the real waveform. Real peaks need decoding the file (Phase 2+).
-- **Font:** the design uses Urbanist. Add it via Resource Manager → Downloadable font, then set
-  `fontFamily` in `ui/theme/Theme.kt` (`T`).
+## Contributing
 
-## Tests
-- `app/src/test/.../LrcParserTest.java`: JUnit, runs with `./gradlew test`.
-- `tools/lyrics-check/`: builds real MP3/FLAC/M4A files with embedded lyrics (needs ffmpeg and
-  `pip install mutagen`) and checks the TagReader against them, plus 2,000 random-garbage files:
-  ```
-  python3 tools/lyrics-check/make_fixtures.py /tmp/fx
-  javac -d /tmp/out app/src/main/java/com/skarif/kairos/lyrics/*.java tools/lyrics-check/LyricsCheck.java
-  java -cp /tmp/out LyricsCheck /tmp/fx
-  ```
+Bug reports, ideas and pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first. For security issues, see [SECURITY.md](SECURITY.md).
 
-## Getting the APK from GitHub
-Every push runs `.github/workflows/build.yml`. Open the repo's **Actions** tab, select the latest
-run, and download **kairos-apk** under Artifacts. It is a zip containing `app-release.apk` (optimised with R8, signed with the debug key).
+## License
+
+Kairos is free software under the [GNU General Public License v3.0](LICENSE). You can use, study, share and change it; versions you distribute must stay under the same licence.
+
+The Urbanist font is under the [SIL Open Font License](app/src/main/assets/licenses/urbanist-OFL.txt).
