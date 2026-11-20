@@ -1,0 +1,16 @@
+name: Feature request
+description: Suggest an idea for Kairos
+labels: [enhancement]
+body:
+  - type: textarea
+    id: want
+    attributes:
+      label: What would you like to do?
+      description: Describe what you want to do and why. A sketch or screenshot helps.
+    validations:
+      required: true
+  - type: textarea
+    id: now
+    attributes:
+      label: How do you do it today?
+      description: Any workaround you use, or another app that does it well.

@@ -1,0 +1,3 @@
+• New app icon, with a themed icon on Android 13+
+• Bigger Home cards and a richer Continue card
+• Smoother player and page transitions

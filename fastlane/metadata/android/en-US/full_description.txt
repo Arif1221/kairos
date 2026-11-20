@@ -1,0 +1,28 @@
+Kairos is an offline music player for the songs already on your phone. No account, no ads, no tracking, and no internet permission.
+
+<b>Synced lyrics</b>
+• Karaoke-style lyrics that fill line by line as the song plays
+• Reads lyrics embedded in MP3, FLAC and M4A files, and .lrc files next to your songs
+• Tap a line to jump there; fix the timing per song
+
+<b>Sound</b>
+• Hi-res 32-bit output, and bit-perfect USB output on Android 14+
+• 10-band equalizer, bass boost and virtualizer
+• ReplayGain and gapless playback
+• Sleep timer that fades out or stops after the current song
+
+<b>Your library</b>
+• Songs, albums, artists and genres with a fast A–Z scroller
+• Songs with several artists show under each artist
+• Playlists, favourites and auto playlists: Most played, On repeat, Recently added, Forgotten gems and genre mixes
+• Listening stats: time listened, top songs and artists, streaks
+• Choose which folders to scan
+
+<b>Design</b>
+• The app takes its colour from the album cover that is playing
+• Swipe the mini player up into the full player, and swipe the cover to change song
+• Light, dark and pure-black themes
+
+Plays MP3, FLAC, M4A/AAC, OGG, Opus and WAV. Android 9 or newer.
+
+Kairos is free and open source (GPL-3.0): https://github.com/Arif1221/kairos

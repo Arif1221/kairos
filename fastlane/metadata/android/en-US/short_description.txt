@@ -1,0 +1,1 @@
+Offline music player with synced lyrics, hi-res audio and album-art colours

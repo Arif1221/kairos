@@ -60,6 +60,8 @@ fun DiscoverScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenNowPlaying: () -
     val up by o.networkUp.collectAsStateWithLifecycle()
     val recent by o.recentlyStreamed.collectAsStateWithLifecycle()
     val offline by o.availableOffline.collectAsStateWithLifecycle()
+    val update by o.update.collectAsStateWithLifecycle()
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
     var actionsFor by remember { mutableStateOf<SongEntity?>(null) }
     val now by vm.now.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
@@ -85,6 +87,20 @@ fun DiscoverScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenNowPlaying: () -
                         CircleButton(Ic.Refresh, "Refresh", { o.loadDiscover(force = true) })
                     }
                     Text(mixedHeadline("Discover\n" to false, "something new" to true), style = T.h1, color = c.text)
+                }
+            }
+            (update as? com.skarif.kairos.ui.UpdateState.Available)?.let { u ->
+                item {
+                    Row(
+                        Modifier.padding(horizontal = 18.dp).clip(RoundedCornerShape(24.dp)).background(c.card).padding(16.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("Kairos Online ${u.version} is out", style = T.title, color = c.text)
+                            Text("Fixes and new features. Installs over this version.", style = T.small, color = c.muted)
+                        }
+                        Pill("Get it", { uri.openUri(u.url) }, selected = true)
+                    }
                 }
             }
             if (!up) item {

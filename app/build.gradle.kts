@@ -14,18 +14,22 @@ android {
         minSdk = 28 // DynamicsProcessing (10-band EQ) needs Android 9
         targetSdk = 35
         // Online: main's version + a 4th online number; versionCode = main's * 10 + that number.
-        versionCode = 212
-        versionName = "0.7.5.2"
+        versionCode = 221
+        versionName = "0.7.6.1"
     }
 
+    // Release signing comes from the environment (GitHub secrets in CI), never from the repo.
+    // Without it, local release builds fall back to the debug key so they still install.
+    val keystorePath = System.getenv("KAIROS_KEYSTORE")
+    val hasReleaseKey = keystorePath != null && file(keystorePath).exists()
     signingConfigs {
-        // One fixed key, so every CI build installs over the previous one. A fresh debug key
-        // per CI run made Android refuse updates. Sideload-only; use a private upload key for Play.
-        create("kairos") {
-            storeFile = file("kairos-release.jks")
-            storePassword = "REMOVED"
-            keyAlias = "kairos"
-            keyPassword = "REMOVED"
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = file(keystorePath!!)
+                storePassword = System.getenv("KAIROS_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KAIROS_KEY_ALIAS")
+                keyPassword = System.getenv("KAIROS_KEY_PASSWORD")
+            }
         }
     }
 
@@ -45,7 +49,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("kairos")
+            signingConfig = if (hasReleaseKey) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

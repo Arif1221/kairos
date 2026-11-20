@@ -197,7 +197,12 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                         style = T.small, color = c.muted,
                     )
                     Pill("Clear saved songs", { vm.onlineUi.clearCache() }, icon = Ic.Trash, modifier = Modifier.fillMaxWidth())
+                    Text("Search shows first", style = T.body, color = c.text)
+                    Segmented(listOf("Songs", "Videos"), if (s.searchVideosFirst) 1 else 0, { i ->
+                        vm.updateSettings { it.copy(searchVideosFirst = i == 1) }
+                    })
                 }
+                OnlineAboutCard(vm)
             }
 
             Pill("Music folders", onFolders, icon = Ic.Folder, big = true, modifier = Modifier.fillMaxWidth())
@@ -249,6 +254,38 @@ fun FoldersScreen(vm: MainViewModel, onBack: () -> Unit) {
                 vm::scanNow, accent = true, big = true, modifier = Modifier.fillMaxWidth(),
             )
             (scan as? ScanState.Done)?.let { Text("Library updated: ${it.songs} songs.", style = T.body, color = c.text) }
+        }
+    }
+}
+
+/** Online build: version, update check (it ships only on GitHub, so nothing else tells users), source and privacy. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun OnlineAboutCard(vm: MainViewModel) {
+    val c = P.colors
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    val update by vm.onlineUi.update.collectAsStateWithLifecycle()
+    val repo = "https://github.com/${com.skarif.kairos.ui.REPO}"
+    Card {
+        Text("About Kairos Online", style = T.h2, color = c.text)
+        Text("Version ${vm.onlineUi.appVersion}. Free and open source (GPL-3.0). Not affiliated with YouTube or Google.", style = T.small, color = c.muted)
+        when (val u = update) {
+            is com.skarif.kairos.ui.UpdateState.Available -> {
+                Text("Version ${u.version} is available.", style = T.body, color = c.text)
+                Pill("Download ${u.version}", { uri.openUri(u.url) }, selected = true, modifier = Modifier.fillMaxWidth())
+            }
+            com.skarif.kairos.ui.UpdateState.Checking -> Text("Checking for updates...", style = T.small, color = c.muted)
+            com.skarif.kairos.ui.UpdateState.UpToDate -> Text("You have the latest version.", style = T.small, color = c.muted)
+            com.skarif.kairos.ui.UpdateState.Failed -> Text("Couldn't check for updates.", style = T.small, color = c.muted)
+            com.skarif.kairos.ui.UpdateState.Idle -> {}
+        }
+        if (update !is com.skarif.kairos.ui.UpdateState.Available) {
+            Pill("Check for updates", { vm.onlineUi.checkForUpdate() }, icon = Ic.Refresh, modifier = Modifier.fillMaxWidth())
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Pill("Source code", { uri.openUri(repo + "/tree/online") })
+            Pill("Privacy", { uri.openUri(repo + "/blob/online/PRIVACY.md") })
+            Pill("Report a bug", { uri.openUri(repo + "/issues") })
         }
     }
 }

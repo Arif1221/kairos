@@ -274,9 +274,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Discover, network state and the stream cache (online flavor; inert in the play build). */
     val onlineUi = OnlineFeatures(app, ct, viewModelScope) { l -> l.forEach { seenOnline[it.id] = it } }
 
-    private val _onlineKind = MutableStateFlow(OnlineKind.SONGS)
-    val onlineKind: StateFlow<OnlineKind> = _onlineKind.asStateFlow()
-    fun setOnlineKind(k: OnlineKind) { _onlineKind.value = k }
+    /** Songs or Videos: the user's pick this session, else the default from Settings. */
+    private val _onlineKindPick = MutableStateFlow<OnlineKind?>(null)
+    private val _onlineKind = combine(_onlineKindPick, ct.settings.settings) { pick, s ->
+        pick ?: if (s.searchVideosFirst) OnlineKind.VIDEOS else OnlineKind.SONGS
+    }.distinctUntilChanged()
+    val onlineKind: StateFlow<OnlineKind> = _onlineKind.state(OnlineKind.SONGS)
+    fun setOnlineKind(k: OnlineKind) { _onlineKindPick.value = k }
 
     val onlineResults: StateFlow<OnlineSearch> = combine(
         _query.map { it.trim() }.distinctUntilChanged().debounce(450), // don't hit the network on every keystroke

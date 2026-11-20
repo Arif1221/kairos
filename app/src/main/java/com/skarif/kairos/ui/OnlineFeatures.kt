@@ -33,7 +33,10 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
 import java.time.LocalDate
+import org.json.JSONArray
 
 /** One row of the Discover page. */
 data class Shelf(val title: String, val songs: List<SongEntity>)
@@ -50,6 +53,17 @@ val DISCOVER_MOODS = listOf(
     "Punjabi" to "punjabi hits", "Hip hop" to "hip hop hits", "Romantic" to "romantic songs",
     "Workout" to "workout songs", "Indie" to "indie hits", "Sad" to "sad songs", "Party" to "party songs",
 )
+
+const val REPO = "Arif1221/kairos"
+
+/** Kairos Online ships only on GitHub, so the app checks there for a newer release itself. */
+sealed interface UpdateState {
+    data object Idle : UpdateState
+    data object Checking : UpdateState
+    data object UpToDate : UpdateState
+    data class Available(val version: String, val url: String) : UpdateState
+    data object Failed : UpdateState
+}
 
 /**
  * Everything the online build adds on top of the offline app's state: Discover, network
@@ -125,7 +139,67 @@ class OnlineFeatures(
     private val _moodSongs = MutableStateFlow<OnlineSearch>(OnlineSearch.Idle)
     val moodSongs: StateFlow<OnlineSearch> = _moodSongs.asStateFlow()
 
+    /** This build's version without the "-online" suffix, e.g. "0.7.6.1". */
+    val appVersion: String = runCatching {
+        app.packageManager.getPackageInfo(app.packageName, 0).versionName.orEmpty().removeSuffix("-online")
+    }.getOrDefault("")
+
+    private val _update = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    val update: StateFlow<UpdateState> = _update.asStateFlow()
+
+    /** Looks for the newest `v<version>-online` release on GitHub. */
+    fun checkForUpdate() {
+        if (source == null || _update.value == UpdateState.Checking) return
+        scope.launch(Dispatchers.IO) {
+            _update.value = UpdateState.Checking
+            _update.value = try {
+                val conn = URL("https://api.github.com/repos/$REPO/releases?per_page=20").openConnection() as HttpURLConnection
+                val body = try {
+                    conn.connectTimeout = 10_000
+                    conn.readTimeout = 10_000
+                    conn.setRequestProperty("Accept", "application/vnd.github+json")
+                    conn.inputStream.use { it.readBytes().decodeToString() }
+                } finally {
+                    conn.disconnect()
+                }
+                val arr = JSONArray(body)
+                val latest = (0 until arr.length()).map { arr.getJSONObject(it) }
+                    .filter { !it.optBoolean("draft") && !it.optBoolean("prerelease") }
+                    .map { it.optString("tag_name") to it.optString("html_url") }
+                    .filter { (tag, _) -> tag.startsWith("v") && tag.endsWith("-online") }
+                    .maxWithOrNull { a, b -> compareVersions(a.first.version(), b.first.version()) }
+                when {
+                    latest == null -> UpdateState.UpToDate
+                    compareVersions(latest.first.version(), appVersion) > 0 -> UpdateState.Available(latest.first.version(), latest.second)
+                    else -> UpdateState.UpToDate
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                UpdateState.Failed
+            }
+        }
+    }
+
+    private fun String.version() = removePrefix("v").removeSuffix("-online")
+
+    /** Compares dotted versions number by number: 0.7.10 > 0.7.9, 0.7.6.1 > 0.7.6. */
+    private fun compareVersions(a: String, b: String): Int {
+        val x = a.split('.').map { it.toIntOrNull() ?: 0 }
+        val y = b.split('.').map { it.toIntOrNull() ?: 0 }
+        for (i in 0 until maxOf(x.size, y.size)) {
+            val d = (x.getOrNull(i) ?: 0).compareTo(y.getOrNull(i) ?: 0)
+            if (d != 0) return d
+        }
+        return 0
+    }
+
     init {
+        // One quiet update check per launch, once there is a connection.
+        scope.launch {
+            networkUp.filter { it }.first()
+            checkForUpdate()
+        }
         // Coming back online retries whatever failed.
         scope.launch {
             networkUp.drop(1).filter { it }.collect {

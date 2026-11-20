@@ -61,6 +61,8 @@ data class Settings(
     val streamQuality: StreamQuality = StreamQuality.HIGH,
     /** Online flavor only: use [StreamQuality.LOW] on metered (mobile) networks. */
     val dataSaverOnMobile: Boolean = true,
+    /** Online flavor only: online search starts on Videos instead of Songs. */
+    val searchVideosFirst: Boolean = false,
 ) {
     val minDurationMs: Long get() = if (skipShortFiles) 30_000L else 0L
 }
@@ -93,6 +95,7 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
         val sortDesc = booleanPreferencesKey("sort_desc")
         val streamQuality = stringPreferencesKey("stream_quality")
         val dataSaver = booleanPreferencesKey("data_saver_mobile")
+        val videosFirst = booleanPreferencesKey("search_videos_first")
     }
 
     val settings: StateFlow<Settings> = ds.data
@@ -131,6 +134,7 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
             sortDescending = p[K.sortDesc] ?: d.sortDescending,
             streamQuality = enumOr(p[K.streamQuality], d.streamQuality),
             dataSaverOnMobile = p[K.dataSaver] ?: d.dataSaverOnMobile,
+            searchVideosFirst = p[K.videosFirst] ?: d.searchVideosFirst,
         )
     }
 
@@ -157,6 +161,7 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
         p[K.sortDesc] = s.sortDescending
         p[K.streamQuality] = s.streamQuality.name
         p[K.dataSaver] = s.dataSaverOnMobile
+        p[K.videosFirst] = s.searchVideosFirst
     }
 
     private inline fun <reified E : Enum<E>> enumOr(name: String?, default: E): E =
