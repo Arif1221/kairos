@@ -161,7 +161,7 @@ fun HomeScreen(
                     items(recent.size, key = { recent[it].id }) { i ->
                         val s2 = recent[i]
                         Column(
-                            Modifier.width(150.dp).cardClick("Play ${s2.title}") { vm.play(recent, i); onOpenNowPlaying() },
+                            Modifier.width(150.dp).cardClick("Play ${s2.title}") { vm.play(recent, i, "Recently played"); onOpenNowPlaying() },
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             SongArt(vm, s2, 150.dp, corner = 30.dp)
@@ -184,7 +184,7 @@ fun HomeScreen(
                 ) {
                     items(more.size, key = { more[it].key }) { i ->
                         val m = more[i]
-                        MixCard(vm, m, card, Modifier.width(300.dp), onOpen = { onOpenCollection(m.key) }, onPlay = { vm.play(m.songs, 0); onOpenNowPlaying() })
+                        MixCard(vm, m, card, Modifier.width(300.dp), onOpen = { onOpenCollection(m.key) }, onPlay = { vm.play(m.songs, 0, m.title); onOpenNowPlaying() })
                     }
                 }
             } else {

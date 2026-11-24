@@ -311,6 +311,7 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 PlayerSheet(
                     vm, player, miniBottom,
                     onAlbum = ::openAlbum,
+                    onOpenCollection = ::openCollection,
                     onSleep = { tool = Tool.SLEEP },
                     onEqualizer = { tool = Tool.EQ },
                     onSaveQueue = { nav.navigate("newplaylist?fromQueue=true") },

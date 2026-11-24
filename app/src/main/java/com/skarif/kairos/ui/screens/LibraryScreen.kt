@@ -269,7 +269,7 @@ fun LibraryScreen(
                         itemsIndexed(run.songs, key = { _, s -> s.id }, span = { _, _ -> GridItemSpan(2) }, contentType = { _, _ -> "song" }) { i, s ->
                             Box(Modifier.padding(end = if (letters.isNotEmpty()) 22.dp else 0.dp)) {
                                 SongRow(s, playing = s.id == now.songId, vm, onLongClick = { actionsFor = s }) {
-                                    vm.play(shownSongs, run.start + i)
+                                    vm.play(shownSongs, run.start + i, "Your library")
                                     onOpenNowPlaying()
                                 }
                             }
@@ -299,7 +299,7 @@ fun LibraryScreen(
                                 Text(name, style = T.title, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text("${list.size} songs, ${list.distinctBy { vm.albumGroup(it.albumId)?.id ?: it.albumId }.size} albums", style = T.small, color = c.muted)
                             }
-                            CircleButton(Ic.Play, "Play $name", { vm.play(list, 0); onOpenNowPlaying() }, size = 44.dp, container = c.card)
+                            CircleButton(Ic.Play, "Play $name", { vm.play(list, 0, name); onOpenNowPlaying() }, size = 44.dp, container = c.card)
                         }
                     }
                 }

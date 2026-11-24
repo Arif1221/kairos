@@ -38,6 +38,7 @@ data class NowPlaying(
     val output: String? = null,
     val usbConnected: Boolean = false,
     val outputNeedsRestart: Boolean = false,
+    val speed: Float = 1f,
 )
 
 /** [index] is the player's media item index; [songId] the song. */
@@ -128,6 +129,7 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
             else -> Player.REPEAT_MODE_OFF
         }
     }
+    fun setSpeed(v: Float) = controller?.setPlaybackSpeed(v.coerceIn(0.25f, 3f))
     fun setVolume(v: Float) = controller?.run { volume = v.coerceIn(0f, 1f) }
     val volume: Float get() = controller?.volume ?: 1f
 
@@ -166,6 +168,7 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
             output = extras.getString(PlaybackService.EXTRA_OUTPUT),
             usbConnected = extras.getBoolean(PlaybackService.EXTRA_USB),
             outputNeedsRestart = extras.getBoolean(PlaybackService.EXTRA_NEEDS_RESTART),
+            speed = c.playbackParameters.speed,
         )
         if (next != _state.value) _state.value = next
         // Position only changes on its own while playing, so only tick then.

@@ -528,20 +528,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setQuery(q: String) { _query.value = q }
 
-    fun play(list: List<SongEntity>, index: Int) = ct.player.play(list, index)
+    private val _playingFrom = MutableStateFlow<String?>(null)
+    /** "Playing from" label for the player: the album, playlist or screen the queue came from. */
+    val playingFrom: StateFlow<String?> = _playingFrom.asStateFlow()
+
+    fun play(list: List<SongEntity>, index: Int, from: String? = null) { _playingFrom.value = from; ct.player.play(list, index) }
+
+    /** Song radio: this song, then similar songs from your library. */
+    fun startRadio(song: SongEntity) {
+        val more = similarSongs(listOf(song), songs.value, historyFlow.value.taste, 40, kotlin.random.Random.Default, blocked.value)
+        play(listOf(song) + more, 0, from = "${song.title} radio")
+    }
+
+    fun setSpeed(v: Float) { ct.player.setSpeed(v) }
     /**
      * Shuffles with artists spread out, then plays that order with the player's own shuffle off.
      * The queue shows exactly what will play, and play next / reorder keep working.
      */
-    fun shuffle(list: List<SongEntity>, smart: Boolean = settings.value.smartShuffle) {
+    fun shuffle(list: List<SongEntity>, smart: Boolean = settings.value.smartShuffle, from: String? = null) {
         if (list.isEmpty()) return
+        _playingFrom.value = from
         val r = kotlin.random.Random.Default
         val order = if (smart) smartShuffle(list, songs.value, historyFlow.value.taste, r, blocked.value) else spreadShuffle(list, r)
         ct.player.play(order, 0)
     }
 
     /** Shuffle the whole library (or a big list), leaving out hidden and snoozed songs. */
-    fun shuffleAll(list: List<SongEntity>) = shuffle(list.filter { it.id !in blocked.value }.ifEmpty { list }, smart = false)
+    fun shuffleAll(list: List<SongEntity>, from: String? = "Your library") = shuffle(list.filter { it.id !in blocked.value }.ifEmpty { list }, smart = false, from = from)
 
     // ---------------------------------------------------------------- hide, snooze, taste
 

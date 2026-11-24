@@ -178,6 +178,7 @@ fun PlayerSheet(
     ctrl: PlayerController,
     miniBottomPx: Float,
     onAlbum: (Long) -> Unit,
+    onOpenCollection: (String) -> Unit,
     onSleep: () -> Unit,
     onEqualizer: () -> Unit,
     onSaveQueue: () -> Unit,
@@ -345,6 +346,7 @@ fun PlayerSheet(
                             onQueue = { ctrl.page = PlayerPage.QUEUE },
                             onEqualizer = onEqualizer, onSleep = onSleep,
                             onAlbum = { id -> ctrl.collapse(); onAlbum(id) },
+                            onOpenCollection = { k -> ctrl.collapse(); onOpenCollection(k) },
                             onSkip = { dir, vx ->
                                 // Finish the swipe: slide the neighbour fully in, then change song.
                                 scope.launch {

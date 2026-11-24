@@ -16,6 +16,9 @@ Offline builds. Each version is on the [Releases](https://github.com/Arif1221/ka
 - Your year in music in Stats
 - Playlists: rename, remove and reorder songs, custom cover, import and export .m3u
 - Filter Favourites and playlists by genre and save the result as a playlist
+- Search finds artists, albums and genres, not just songs; Genres browse tab
+- Player: "Playing from", ⋮ menu (song radio, share, share file, playback speed, sleep timer, equalizer, credits, hide, go to artist), tappable artist, elapsed and remaining time, Smart Shuffle and radio buttons
+- Under the player: live lyrics preview, up next, about the artist with more of their songs, and song info
 
 ## 0.7.6
 - New app icon, with a themed icon on Android 13+

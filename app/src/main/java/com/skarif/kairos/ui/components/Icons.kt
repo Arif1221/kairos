@@ -61,5 +61,7 @@ object Ic {
     val DownArrow by lazy { stroke("downArrow", "M12 5v14M19 12l-7 7-7-7") }
     val Minus by lazy { stroke("minus", "M5 12h14") }
     val Trash by lazy { stroke("trash", "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13") }
+    val Share by lazy { stroke("share", "M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13") }
+    val Radio by lazy { stroke("radio", "M4.9 19.1a10 10 0 0 1 0-14.2M19.1 4.9a10 10 0 0 1 0 14.2M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z") }
     val PlaylistAdd by lazy { stroke("playlistAdd", "M3 6h12M3 12h12M3 18h7M17 14v7M13.5 17.5h7") }
 }

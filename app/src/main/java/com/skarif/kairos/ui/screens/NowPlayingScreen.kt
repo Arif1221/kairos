@@ -88,6 +88,7 @@ fun NowPlayingPane(
     onEqualizer: () -> Unit,
     onSleep: () -> Unit,
     onAlbum: (Long) -> Unit,
+    onOpenCollection: (String) -> Unit,
     onSkip: (dir: Int, velocityX: Float) -> Unit,
     hasPrev: Boolean,
     hasNext: Boolean,
@@ -104,6 +105,13 @@ fun NowPlayingPane(
     val tracker = remember { androidx.compose.ui.input.pointer.util.VelocityTracker() }
     var axis by remember { mutableIntStateOf(0) } // 0 undecided, 1 sideways, 2 down
     val liked = s.id in favs
+    val from by vm.playingFrom.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var menu by remember { androidx.compose.runtime.mutableStateOf(false) }
+    var speedDialog by remember { androidx.compose.runtime.mutableStateOf(false) }
+    if (menu) PlayerMenu(vm, s, onAlbum, { a -> onOpenCollection("artist:$a") }, onSleep, onEqualizer) { menu = false }
+    if (speedDialog) SpeedDialog(vm) { speedDialog = false }
 
     Column(Modifier.fillMaxSize().verticalScroll(ctrl.mainScroll).navigationBarsPadding()) {
         Box(Modifier.fillMaxWidth().height(heroHeight + 38.dp)) {
@@ -160,15 +168,16 @@ fun NowPlayingPane(
                 Row(
                     Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     CircleButton(Ic.Down, "Close player", { ctrl.collapse() }, container = Color(0x59000000), content = Color.White)
-                    Box(Modifier.weight(1f))
-                    CircleButton(
-                        Ic.Clock, if (sleep.active) "Sleep timer, on" else "Sleep timer", onSleep,
-                        container = if (sleep.active) c.accent else Color(0x59000000), content = if (sleep.active) c.onAccent else Color.White,
-                    )
-                    CircleButton(Ic.Sliders, "Equalizer", onEqualizer, container = Color(0x59000000), content = Color.White)
+                    // "Playing from": where this queue came from, like Spotify's header.
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("PLAYING FROM", style = T.small.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp), color = Color.White.copy(alpha = 0.8f))
+                        Text(from ?: s.album, style = T.small.copy(fontWeight = FontWeight.SemiBold), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                     CircleButton(Ic.Lyrics, "Lyrics", onLyrics, container = Color(0x59000000), content = Color.White)
+                    CircleButton(Ic.Menu, "More options", { menu = true }, container = Color(0x59000000), content = Color.White)
                 }
                 Column(
                     Modifier.align(Alignment.BottomStart).padding(start = 22.dp, bottom = 34.dp, end = 110.dp),
@@ -206,6 +215,10 @@ fun NowPlayingPane(
                     Text(
                         s.artist.uppercase(), color = c.text, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         style = T.small.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp),
+                        modifier = Modifier.clip(RoundedCornerShape(12.dp))
+                            .clickable(role = Role.Button, onClickLabel = "Open artist") {
+                                onOpenCollection("artist:${com.skarif.kairos.data.splitArtists(s.artist).first()}")
+                            }.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                     Text(
                         s.title, color = c.text, style = T.h2.copy(fontSize = 30.sp, lineHeight = 34.sp), textAlign = TextAlign.Center, maxLines = 1,
@@ -216,8 +229,13 @@ fun NowPlayingPane(
                     InfoChip(Ic.Wave, now.output?.let { "${s.formatLabel()} $it" } ?: s.formatLabel())
                     InfoChip(Ic.Clock, formatTime(s.durationMs))
                     if (now.queueSize > 0) InfoChip(Ic.Queue, "${now.queuePosition + 1} of ${now.queueSize}", onQueue)
+                    if (sleep.active) InfoChip(Ic.Clock, "Sleep timer on", onSleep)
+                    if (kotlin.math.abs(now.speed - 1f) > 0.01f) InfoChip(Ic.Wave, speedLabel(now.speed)) { speedDialog = true }
                 }
-                LiveWaveformSeek(vm, now.durationMs.takeIf { it > 0 } ?: s.durationMs, s.id)
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    LiveWaveformSeek(vm, now.durationMs.takeIf { it > 0 } ?: s.durationMs, s.id)
+                    TimeRow(vm, now.durationMs.takeIf { it > 0 } ?: s.durationMs)
+                }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     CircleButton(Ic.Prev, "Previous song", vm::previous, size = 64.dp, iconSize = 22.dp)
                     Row(
@@ -243,18 +261,26 @@ fun NowPlayingPane(
                     }
                     CircleButton(Ic.Next, "Next song", vm::next, size = 64.dp, iconSize = 22.dp)
                 }
-                Row(Modifier.padding(bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CircleButton(Ic.Shuffle, if (now.shuffle) "Shuffle, on" else "Shuffle, off", vm::toggleShuffle,
+                Row(Modifier.padding(bottom = 24.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircleButton(Ic.Shuffle, if (now.shuffle) "Shuffle, on" else "Shuffle, off", vm::toggleShuffle, size = 48.dp,
                         container = if (now.shuffle) c.ink else c.card, content = if (now.shuffle) c.inkFg else c.text)
                     CircleButton(
+                        Ic.Wave, if (settings.smartShuffle) "Smart shuffle, on" else "Smart shuffle, off",
+                        { vm.updateSettings { it.copy(smartShuffle = !it.smartShuffle) } }, size = 48.dp,
+                        container = if (settings.smartShuffle) c.ink else c.card, content = if (settings.smartShuffle) c.inkFg else c.text,
+                    )
+                    CircleButton(
                         if (now.repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE) Ic.RepeatOne else Ic.Repeat,
-                        "Repeat", vm::cycleRepeat,
+                        "Repeat", vm::cycleRepeat, size = 48.dp,
                         container = if (now.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF) c.ink else c.card,
                         content = if (now.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF) c.inkFg else c.text,
                     )
-                    CircleButton(Ic.Queue, "Queue", onQueue)
+                    CircleButton(Ic.Queue, "Queue", onQueue, size = 48.dp)
+                    CircleButton(Ic.Radio, "Start song radio", { vm.startRadio(s) }, size = 48.dp)
+                    CircleButton(Ic.Share, "Share", { shareSong(ctx, s, file = false) }, size = 48.dp)
                 }
             }
+            NowPlayingCards(vm, s, onQueue = onQueue, onLyrics = onLyrics, onOpenCollection = onOpenCollection)
     }
 }
 

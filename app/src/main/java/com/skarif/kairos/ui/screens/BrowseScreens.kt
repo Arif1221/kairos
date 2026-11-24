@@ -185,7 +185,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                     item(span = { GridItemSpan(2) }, key = "h-songs") { SearchSection("Songs  ${results.size}") }
                     items(results, key = { it.id }, span = { GridItemSpan(2) }) { s ->
                         SongRow(s, s.id == now.songId, vm, onLongClick = { actionsFor = s }) {
-                            vm.play(results, results.indexOf(s))
+                            vm.play(results, results.indexOf(s), "Search")
                             onOpenNowPlaying()
                         }
                     }
@@ -545,9 +545,9 @@ fun CollectionScreen(
             }
             item {
                 Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Pill("Play", { if (shown.isNotEmpty()) { vm.play(shown, 0); onOpenNowPlaying() } }, selected = true, big = true, icon = Ic.Play, modifier = Modifier.weight(1f))
+                    Pill("Play", { if (shown.isNotEmpty()) { vm.play(shown, 0, colTitle); onOpenNowPlaying() } }, selected = true, big = true, icon = Ic.Play, modifier = Modifier.weight(1f))
                     Pill(
-                        if (settings.smartShuffle) "Smart shuffle" else "Shuffle", { vm.shuffle(shown); onOpenNowPlaying() },
+                        if (settings.smartShuffle) "Smart shuffle" else "Shuffle", { vm.shuffle(shown, from = colTitle); onOpenNowPlaying() },
                         big = true, icon = Ic.Shuffle, modifier = Modifier.weight(1f),
                     )
                     // Smart Shuffle: mixes in a suggestion from your library every few songs.
@@ -584,7 +584,7 @@ fun CollectionScreen(
                 if (popular.isNotEmpty()) {
                     item { PageSection("Popular") }
                     itemsIndexed(popular, key = { i, s -> "pop$i-${s.id}" }) { i, s ->
-                        SongRow(s, s.id == now.songId, vm, onLongClick = { actionsFor = s }) { vm.play(popular, i); onOpenNowPlaying() }
+                        SongRow(s, s.id == now.songId, vm, onLongClick = { actionsFor = s }) { vm.play(popular, i, colTitle); onOpenNowPlaying() }
                     }
                 }
                 if (pageAlbums.size > 1 || (pageAlbums.size == 1 && isGenre)) {
@@ -620,7 +620,7 @@ fun CollectionScreen(
             if (list.isNotEmpty()) {
                 itemsIndexed(list, key = { i, s -> "$i-${s.id}" }) { i, s ->
                     SongRow(s, s.id == now.songId, vm, number = if (isAlbum) (s.track.takeIf { it > 0 } ?: (i + 1)) else null, onLongClick = { actionIndex = i; actionsFor = s }) {
-                        vm.play(list, i)
+                        vm.play(list, i, colTitle)
                         onOpenNowPlaying()
                     }
                 }

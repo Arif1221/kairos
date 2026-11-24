@@ -158,6 +158,9 @@ fun SongActionsDialog(
     vm: MainViewModel, song: SongEntity, onOpenAlbum: (Long) -> Unit, queueIndex: Int? = null,
     /** Set when opened from a playlist: (playlist id, position of this song in it). */
     inPlaylist: Pair<Long, Int>? = null,
+    onOpenArtist: ((String) -> Unit)? = null,
+    /** Extra items shown first (the player adds radio, share, speed and song info). */
+    extra: (@Composable (dismiss: () -> Unit) -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     val c = P.colors
@@ -172,6 +175,7 @@ fun SongActionsDialog(
         title = { Text(song.title, style = T.h2, color = c.text, maxLines = 2) },
         text = {
             Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                extra?.invoke(onDismiss)
                 if (inPlaylist != null) {
                     val (pid, pos) = inPlaylist
                     val size = playlists.firstOrNull { it.id == pid }?.songs?.size ?: 0
@@ -192,6 +196,9 @@ fun SongActionsDialog(
                 }
                 DialogItem(if (song.id in favs) "Remove from favourites" else "Add to favourites") { vm.toggleFavorite(song.id); onDismiss() }
                 DialogItem("Go to album") { onOpenAlbum(song.albumId); onDismiss() }
+                if (onOpenArtist != null) com.skarif.kairos.data.splitArtists(song.artist).forEach { a ->
+                    DialogItem("Go to $a") { onOpenArtist(a); onDismiss() }
+                }
                 // Like Spotify's hide and snooze: keeps the song out of mixes, shuffle-all and autoplay.
                 if (song.id in hidden) DialogItem("Show in mixes again") { vm.setHidden(song.id, false); onDismiss() }
                 else DialogItem("Hide from mixes and autoplay") { vm.setHidden(song.id, true); onDismiss() }
@@ -208,7 +215,7 @@ fun SongActionsDialog(
 }
 
 @Composable
-private fun DialogItem(text: String, onClick: () -> Unit) {
+fun DialogItem(text: String, onClick: () -> Unit) {
     TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Text(text, Modifier.fillMaxWidth(), style = T.title, color = P.colors.text)
     }
