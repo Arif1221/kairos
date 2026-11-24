@@ -22,6 +22,9 @@ Offline builds. Each version is on the [Releases](https://github.com/Arif1221/ka
 - Fixed: typing in the Library filter or Search lagged; search now uses an index built once per library change
 - One swipe rule everywhere (72 dp or a quick flick): closing the player, swiping the cover or mini player, queue and library rows. Pull down anywhere on the player to close it
 - Backup and restore: favourites, playlists, history, lyrics timing, hidden songs and settings in one file, restorable on a new phone
+- Undo bar: removing from the queue or a playlist, clearing up next, hiding, snoozing, unfavouriting and deleting a playlist can be undone
+- Swipe actions show their name as you pull; times use even-width digits; card corners match across screens
+- Faster first launch and scrolling: baseline profile, list item content types, favourites collected once per list
 - Settings: resume where you left off, keep screen on with lyrics, ignore "The"/"A" when sorting, scan again, clear history, about
 
 ## 0.7.6

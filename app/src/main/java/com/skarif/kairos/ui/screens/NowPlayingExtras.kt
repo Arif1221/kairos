@@ -170,8 +170,8 @@ fun TimeRow(vm: MainViewModel, durationMs: Long) {
     val pos by vm.position.collectAsStateWithLifecycle()
     val p = pos.coerceIn(0, durationMs.coerceAtLeast(0))
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
-        Text(formatTime(p), Modifier.weight(1f), style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.muted)
-        Text("-" + formatTime((durationMs - p).coerceAtLeast(0)), style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.muted)
+        Text(formatTime(p), Modifier.weight(1f), style = T.num, color = c.muted)
+        Text("-" + formatTime((durationMs - p).coerceAtLeast(0)), style = T.num, color = c.muted)
     }
 }
 
@@ -179,7 +179,7 @@ fun TimeRow(vm: MainViewModel, durationMs: Long) {
 private fun InfoCard(title: String, action: String? = null, onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
     val c = P.colors
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(30.dp)).background(c.card)
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(c.card)
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -240,7 +240,7 @@ fun NowPlayingCards(
                         Text(s.title, style = T.title, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(s.artist, style = T.small, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    Text(formatTime(s.durationMs), style = T.small, color = c.muted)
+                    Text(formatTime(s.durationMs), style = T.num, color = c.muted)
                 }
             }
         }
@@ -266,7 +266,7 @@ fun NowPlayingCards(
                 if (more.isNotEmpty()) {
                     Text("More by ${artist.name}", style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.muted)
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(0.dp)) {
-                        items(more, key = { "mb" + it.id }) { s ->
+                        items(more, key = { "mb" + it.id }, contentType = { "song" }) { s ->
                             Column(
                                 Modifier.width(110.dp).clip(RoundedCornerShape(16.dp))
                                     .clickable(role = Role.Button, onClickLabel = "Play ${s.title}") { vm.play(more, more.indexOf(s), artist.name) },

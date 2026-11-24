@@ -318,6 +318,13 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 )
             }
 
+            // "Removed from queue — Undo" and other short messages, above the mini player and dock.
+            com.skarif.kairos.ui.screens.NoticeBar(
+                vm,
+                Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
+                    .padding(bottom = when { playerUp -> 24.dp; song != null && route in TABS -> 170.dp; song != null -> 96.dp; route in TABS -> 96.dp; else -> 24.dp }),
+            )
+
             AnimatedVisibility(menuOpen, enter = fadeIn(Motion.fadeIn()) + slideInHorizontally(Motion.spatial()) { -it / 3 }, exit = fadeOut(Motion.fadeOut()) + slideOutHorizontally(Motion.spatial()) { -it / 3 }) {
                 MenuDrawer(vm, onClose = { menuOpen = false }) { r ->
                     menuOpen = false

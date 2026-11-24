@@ -263,7 +263,7 @@ fun NowPlayingPane(
                         Modifier
                             .weight(1f)
                             .height(64.dp)
-                            .clip(RoundedCornerShape(32.dp))
+                            .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card))
                             .background(c.ink)
                             .clickable(role = Role.Button, onClick = vm::toggle),
                         verticalAlignment = Alignment.CenterVertically,

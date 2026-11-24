@@ -132,7 +132,7 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
 
             AnimatedVisibility(options, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                 Row(
-                    Modifier.padding(horizontal = 18.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Glass)
+                    Modifier.padding(horizontal = 18.dp).fillMaxWidth().clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item)).background(Glass)
                         .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -219,7 +219,7 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
         if (!lyrics.synced) {
             item { Text("These lyrics aren't time-synced.", style = T.small, color = Dim) }
         }
-        itemsIndexed(lyrics.lines) { i, line ->
+        itemsIndexed(lyrics.lines, contentType = { _, _ -> "line" }) { i, line ->
             val text = line.text.ifEmpty { "♪" }
             if (!lyrics.synced) {
                 Text(text, Modifier.fillMaxWidth(), style = T.body.copy(fontSize = 21.sp, lineHeight = 30.sp), color = Fg)

@@ -28,6 +28,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
 import com.skarif.kairos.R
 import com.skarif.kairos.data.AlbumColors
 import com.skarif.kairos.data.ArtworkRepository
@@ -79,6 +80,20 @@ object T {
     val body = base.copy(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium)
     val small = base.copy(fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.Medium)
     val label = base.copy(fontSize = 15.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+    /** Small caps-style labels above titles ("PLAYING FROM", tile kickers). */
+    val kicker = base.copy(fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    /** Times and counts: tabular digits, so "1:11" and "8:58" are the same width and don't jitter. */
+    val num = small.copy(fontFeatureSettings = "tnum", fontWeight = FontWeight.SemiBold)
+}
+
+/** Corner radii, so cards, tiles and rows match across screens. */
+object Radius {
+    /** Big cards and panels. */
+    val card = 30.dp
+    /** Rows, list items and small cards. */
+    val item = 24.dp
+    /** Cover thumbnails in rows. */
+    val art = 16.dp
 }
 
 /** "Make it **yours**": the design's light/bold headline. Pass pairs of (text, bold). */

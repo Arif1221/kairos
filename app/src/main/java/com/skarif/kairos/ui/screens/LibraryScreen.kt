@@ -115,6 +115,8 @@ fun LibraryScreen(
     val art by vm.artwork.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val scan by vm.scan.collectAsStateWithLifecycle()
+    // Collected once here, not once per row.
+    val favs by vm.favorites.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(LibTab.SONGS) }
     var actionsFor by remember { mutableStateOf<SongEntity?>(null) }
     val grid = rememberLazyGridState()
@@ -213,7 +215,7 @@ fun LibraryScreen(
                     }
                     SearchField(filter, { filter = it }, "Filter ${tab.label.lowercase()}", container = chip, height = 52.dp)
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(chip).padding(4.dp),
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item)).background(chip).padding(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         LibTab.entries.forEach { t ->
@@ -274,7 +276,7 @@ fun LibraryScreen(
                         }
                         itemsIndexed(run.songs, key = { _, s -> s.id }, span = { _, _ -> GridItemSpan(2) }, contentType = { _, _ -> "song" }) { i, s ->
                             Box(Modifier.padding(end = if (letters.isNotEmpty()) 22.dp else 0.dp)) {
-                                SongRow(s, playing = s.id == now.songId, vm, onLongClick = { actionsFor = s }) {
+                                SongRow(s, playing = s.id == now.songId, vm, favourite = s.id in favs, onLongClick = { actionsFor = s }) {
                                     vm.play(shownSongs, run.start + i, "Your library")
                                     onOpenNowPlaying()
                                 }
@@ -296,14 +298,14 @@ fun LibraryScreen(
                         Row(
                             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
                                 .cardClick("Open $name") { onOpenCollection("artist:$name") }
-                                .clip(RoundedCornerShape(24.dp)).padding(8.dp),
+                                .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item)).padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
                             SongArt(vm, list.first(), 52.dp, corner = 26.dp)
                             Column(Modifier.weight(1f)) {
                                 Text(name, style = T.title, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("${list.size} songs, ${list.distinctBy { vm.albumGroup(it.albumId)?.id ?: it.albumId }.size} albums", style = T.small, color = c.muted)
+                                Text("${list.size} songs, ${a.albums} albums", style = T.small, color = c.muted)
                             }
                             CircleButton(Ic.Play, "Play $name", { vm.play(list, 0, name); onOpenNowPlaying() }, size = 44.dp, container = c.card)
                         }

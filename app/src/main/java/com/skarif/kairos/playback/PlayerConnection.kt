@@ -150,6 +150,11 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
     fun setVolume(v: Float) = controller?.run { volume = v.coerceIn(0f, 1f) }
     val volume: Float get() = controller?.volume ?: 1f
 
+    /** Puts songs back at a queue position (undo of a removal). */
+    fun insertAt(index: Int, songs: List<SongEntity>) = controller?.run {
+        addMediaItems(index.coerceIn(0, mediaItemCount), songs.map { it.toMediaItem() })
+    }
+
     /** Adds songs at the end of the queue (autoplay). */
     fun append(songs: List<SongEntity>) = controller?.run { if (songs.isNotEmpty()) addMediaItems(songs.map { it.toMediaItem() }) }
 

@@ -180,7 +180,7 @@ fun Card(modifier: Modifier = Modifier, color: Color = P.colors.card, content: @
     Column(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(32.dp))
+            .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card))
             .background(color)
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -290,7 +290,7 @@ fun WaveformSeek(
     Column(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(30.dp))
+            .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card))
             .background(c.accent)
             .padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -425,7 +425,7 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
     Row(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
+            .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item))
             .background(c.line.copy(alpha = 0.5f))
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -453,9 +453,9 @@ fun RadioCard(title: String, description: String, selected: Boolean, onClick: ()
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item))
             .background(c.card)
-            .border(2.dp, if (selected) c.accent else Color.Transparent, RoundedCornerShape(24.dp))
+            .border(2.dp, if (selected) c.accent else Color.Transparent, RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item))
             .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,

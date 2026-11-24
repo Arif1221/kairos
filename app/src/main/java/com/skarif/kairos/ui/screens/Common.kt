@@ -5,6 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +40,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -105,13 +107,14 @@ fun SongRow(
     number: Int? = null,
     onLongClick: (() -> Unit)? = null,
     swipe: Boolean = true,
+    /** Pass from the list's screen so a long list doesn't collect favourites once per row. */
+    favourite: Boolean? = null,
     onClick: () -> Unit,
 ) {
     if (swipe) {
-        val favs by vm.favorites.collectAsStateWithLifecycle()
-        val fav = song.id in favs
+        val fav = favourite ?: (song.id in vm.favorites.collectAsStateWithLifecycle().value)
         SwipeActions(
-            "Play next", Ic.Queue, { vm.playNext(listOf(song)) },
+            "Play next", Ic.Queue, { vm.playNext(listOf(song)); vm.notify("${song.title} plays next") },
             if (fav) "Unfavourite" else "Favourite", if (fav) Ic.Heart else Ic.HeartFilled, { vm.toggleFavorite(song.id) },
         ) { SongRowContent(song, playing, vm, number, onLongClick, onClick) }
     } else {
@@ -128,7 +131,7 @@ private fun SongRowContent(song: SongEntity, playing: Boolean, vm: MainViewModel
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item))
             .background(if (playing) c.accent else Color.Transparent)
             .combinedClickable(
                 role = Role.Button, onClickLabel = "Play", onClick = onClick,
@@ -147,7 +150,7 @@ private fun SongRowContent(song: SongEntity, playing: Boolean, vm: MainViewModel
             Text(song.title, style = T.title, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(song.artist, style = T.small, color = if (playing) fg.copy(alpha = 0.8f) else c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Text(formatTime(song.durationMs), style = T.title.copy(fontSize = 15.sp), color = fg)
+        Text(formatTime(song.durationMs), style = T.num, color = if (playing) fg else c.muted)
     }
 }
 
@@ -194,7 +197,7 @@ fun SongActionsDialog(
                     }
                     DialogItem("Remove from queue") { vm.removeQueueItem(queueIndex); onDismiss() }
                 } else {
-                    DialogItem("Play next") { vm.playNext(listOf(song)); onDismiss() }
+                    DialogItem("Play next") { vm.playNext(listOf(song)); vm.notify("Plays next"); onDismiss() }
                 }
                 DialogItem(if (song.id in favs) "Remove from favourites" else "Add to favourites") { vm.toggleFavorite(song.id); onDismiss() }
                 DialogItem("Go to album") { onOpenAlbum(song.albumId); onDismiss() }
@@ -209,7 +212,7 @@ fun SongActionsDialog(
                 if (song.id in excluded) DialogItem("Use for recommendations again") { vm.setTasteExcluded(song.id, false); onDismiss() }
                 else DialogItem("Don't use for recommendations") { vm.setTasteExcluded(song.id, true); onDismiss() }
                 if (playlists.isNotEmpty()) Text("Add to playlist", Modifier.padding(top = 10.dp, bottom = 4.dp), style = T.small, color = c.muted)
-                playlists.forEach { p -> DialogItem(p.name) { vm.addToPlaylist(p.id, listOf(song.id)); onDismiss() } }
+                playlists.forEach { p -> DialogItem(p.name) { vm.addToPlaylistNamed(p.id, listOf(song.id)); onDismiss() } }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = c.text) } },
@@ -323,7 +326,7 @@ fun SwipeActions(
                 val icon = if (right) rightIcon else leftIcon
                 Box(
                     Modifier.align(if (right) Alignment.CenterStart else Alignment.CenterEnd)
-                        .width(strip).fillMaxHeight().clip(RoundedCornerShape(24.dp))
+                        .width(strip).fillMaxHeight().clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item))
                         .background(if (right) c.accent else c.ink),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -331,8 +334,14 @@ fun SwipeActions(
                         if (armed) 1.25f else (0.6f + kotlin.math.abs(o) / distancePx * 0.4f).coerceAtMost(1f),
                         androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 500f), label = "swipeIcon",
                     )
-                    if (icon != null && strip > 36.dp) {
-                        Icon(icon, null, tint = if (right) c.onAccent else c.inkFg, modifier = Modifier.size(22.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale })
+                    // Icon first; the action's name appears once there is room, so you know what a swipe will do.
+                    val fg = if (right) c.onAccent else c.inkFg
+                    val label = if (right) rightLabel else leftLabel
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (icon != null && strip > 36.dp) {
+                            Icon(icon, null, tint = fg, modifier = Modifier.size(22.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale })
+                        }
+                        if (label != null && strip > 120.dp) Text(label, style = T.label.copy(fontSize = 13.sp), color = fg, maxLines = 1)
                     }
                 }
             }
@@ -354,3 +363,47 @@ fun SwipeActions(
         ) { content() }
     }
 }
+
+/**
+ * The message bar: what just happened, with Undo when it can be undone. Disappears after
+ * 4 seconds (6 with Undo), or when swiped away or tapped.
+ */
+@Composable
+fun NoticeBar(vm: MainViewModel, modifier: Modifier = Modifier) {
+    val c = P.colors
+    val notice by vm.notice.collectAsStateWithLifecycle()
+    val n = notice
+    LaunchedEffect(n?.id) {
+        if (n != null) { kotlinx.coroutines.delay(if (n.undo != null) 6_000 else 4_000); vm.dismissNotice(n.id) }
+    }
+    androidx.compose.animation.AnimatedVisibility(
+        n != null, modifier,
+        enter = androidx.compose.animation.slideInVertically(com.skarif.kairos.ui.motion.Motion.spatial()) { it } + androidx.compose.animation.fadeIn(),
+        exit = androidx.compose.animation.slideOutVertically(com.skarif.kairos.ui.motion.Motion.spatial()) { it } + androidx.compose.animation.fadeOut(),
+    ) {
+        // Keep showing the last message while it animates out.
+        val shown = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(n) }
+        if (n != null) shown.value = n
+        val m = shown.value ?: return@AnimatedVisibility
+        Row(
+            Modifier.padding(horizontal = 18.dp).fillMaxWidth()
+                .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item)).background(c.ink)
+                .clickable(onClickLabel = "Dismiss") { vm.dismissNotice(m.id) }
+                .padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
+                .androidx_semantics_live(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(m.text, Modifier.weight(1f).padding(vertical = 10.dp), style = T.body, color = c.inkFg, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val undo = m.undo
+            if (undo != null) {
+                TextButton(onClick = { undo(); vm.dismissNotice(m.id) }) {
+                    Text("Undo", style = T.label, color = c.accent)
+                }
+            }
+        }
+    }
+}
+
+/** Screen readers announce the message when it appears. */
+private fun Modifier.androidx_semantics_live(): Modifier =
+    semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }

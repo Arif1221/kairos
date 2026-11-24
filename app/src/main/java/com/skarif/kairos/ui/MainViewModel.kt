@@ -80,11 +80,14 @@ sealed interface ScanState {
 data class Collection(val key: String, val title: String, val subtitle: String, val songs: List<SongEntity>, val playlistId: Long? = null)
 
 /** One artist, after splitting "A feat. B" tags, with every song they appear on. */
-data class ArtistUi(val name: String, val songs: List<SongEntity>)
+data class ArtistUi(val name: String, val songs: List<SongEntity>, val albums: Int = songs.distinctBy { it.albumId }.size)
 
 data class GenreUi(val name: String, val songs: List<SongEntity>)
 
 data class LibraryHits(val songs: Set<Long>, val albums: Set<Long>, val artists: Set<String>, val genres: Set<String>)
+
+/** A short message at the bottom of the screen, with Undo when the action can be undone. */
+data class Notice(val text: String, val undo: (() -> Unit)? = null, val id: Long = System.nanoTime())
 
 data class SearchHits(
     val artists: List<ArtistUi> = emptyList(),
@@ -647,14 +650,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------------------------------------------------------- hide, snooze, taste
 
-    fun setHidden(songId: Long, hidden: Boolean) = updateSettings { s ->
-        s.copy(hiddenSongs = if (hidden) s.hiddenSongs + "$songId" else s.hiddenSongs - "$songId")
+    fun setHidden(songId: Long, hidden: Boolean) {
+        updateSettings { s -> s.copy(hiddenSongs = if (hidden) s.hiddenSongs + "$songId" else s.hiddenSongs - "$songId") }
+        if (hidden) notify("Hidden from mixes and autoplay") { setHidden(songId, false) }
     }
 
     /** Keeps a song out of mixes and autoplay for [days] days. */
-    fun snooze(songId: Long, days: Int = 30) = updateSettings { s ->
-        val until = System.currentTimeMillis() + days * 24L * 3600 * 1000
-        s.copy(snoozedSongs = s.snoozedSongs.filterNot { it.startsWith("$songId:") }.toSet() + "$songId:$until")
+    fun snooze(songId: Long, days: Int = 30) {
+        updateSettings { s ->
+            val until = System.currentTimeMillis() + days * 24L * 3600 * 1000
+            s.copy(snoozedSongs = s.snoozedSongs.filterNot { it.startsWith("$songId:") }.toSet() + "$songId:$until")
+        }
+        notify("Snoozed for $days days") { unsnooze(songId) }
     }
 
     fun unsnooze(songId: Long) = updateSettings { s -> s.copy(snoozedSongs = s.snoozedSongs.filterNot { it.startsWith("$songId:") }.toSet()) }
@@ -676,7 +683,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun removeFromPlaylist(id: Long, index: Int) {
         val p = playlists.value.firstOrNull { it.id == id } ?: return
         if (index !in p.songs.indices) return
-        viewModelScope.launch { ct.db.playlists().replaceSongs(id, p.songs.map { it.id }.toMutableList().apply { removeAt(index) }) }
+        val before = p.songs.map { it.id }
+        viewModelScope.launch { ct.db.playlists().replaceSongs(id, before.toMutableList().apply { removeAt(index) }) }
+        notify("Removed ${p.songs[index].title} from ${p.name}") { viewModelScope.launch { ct.db.playlists().replaceSongs(id, before) } }
     }
 
     fun moveInPlaylist(id: Long, from: Int, to: Int) {
@@ -734,9 +743,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun toast(text: String) = kotlinx.coroutines.withContext(Dispatchers.Main) {
-        android.widget.Toast.makeText(getApplication(), text, android.widget.Toast.LENGTH_SHORT).show()
-    }
+    private val _notice = MutableStateFlow<Notice?>(null)
+    val notice: StateFlow<Notice?> = _notice.asStateFlow()
+    fun notify(text: String, undo: (() -> Unit)? = null) { _notice.value = Notice(text, undo) }
+    fun dismissNotice(id: Long) { if (_notice.value?.id == id) _notice.value = null }
+
+    private suspend fun toast(text: String) = kotlinx.coroutines.withContext(Dispatchers.Main) { notify(text) }
     fun playNext(list: List<SongEntity>) { ct.player.playNext(list) }
     fun toggle() { ct.player.toggle() }
     fun next() { ct.player.next() }
@@ -746,10 +758,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun seekTo(ms: Long) { ct.player.seekTo(ms) }
     fun playQueueItem(i: Int) { ct.player.playQueueItem(i) }
     fun moveQueueItem(from: Int, to: Int) { ct.player.moveQueueItem(from, to) }
-    fun removeQueueItem(i: Int) { ct.player.removeQueueItem(i) }
+    fun removeQueueItem(i: Int) {
+        val song = now.value.queue.firstOrNull { it.index == i }?.let { songById.value[it.songId] }
+        ct.player.removeQueueItem(i)
+        if (song != null) notify("Removed ${song.title} from the queue") { ct.player.insertAt(i, listOf(song)) }
+    }
     fun moveToNext(i: Int) { ct.player.moveToNext(i) }
     fun moveToEnd(i: Int) { ct.player.moveToEnd(i) }
-    fun clearUpcoming() { ct.player.clearUpcoming() }
+    fun clearUpcoming() {
+        val n = now.value
+        // In the player's own order (not shuffle order), which is what insertAt uses.
+        val removed = n.queue.filter { it.index > n.queueIndex }.sortedBy { it.index }.mapNotNull { songById.value[it.songId] }
+        ct.player.clearUpcoming()
+        if (removed.isNotEmpty()) notify("Cleared ${removed.size} songs from up next") { ct.player.append(removed) }
+    }
     fun clearPlayed() { ct.player.clearPlayed() }
     fun toggleShuffle() { ct.player.toggleShuffle() }
     fun cycleRepeat() { ct.player.cycleRepeat() }
@@ -761,8 +783,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleFavorite(songId: Long) {
         viewModelScope.launch {
-            if (songId in favorites.value) ct.db.favorites().remove(songId)
-            else ct.db.favorites().add(FavoriteEntity(songId, System.currentTimeMillis()))
+            if (songId in favorites.value) {
+                ct.db.favorites().remove(songId)
+                notify("Removed from favourites") { viewModelScope.launch { ct.db.favorites().add(FavoriteEntity(songId, System.currentTimeMillis())) } }
+            } else ct.db.favorites().add(FavoriteEntity(songId, System.currentTimeMillis()))
         }
     }
 
@@ -770,12 +794,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { ct.db.playlists().create(name.ifBlank { "New playlist" }, songIds) }
     }
 
+    fun addToPlaylistNamed(playlistId: Long, songIds: List<Long>) {
+        val name = playlists.value.firstOrNull { it.id == playlistId }?.name ?: return
+        addToPlaylist(playlistId, songIds)
+        notify("Added to $name")
+    }
+
     fun addToPlaylist(playlistId: Long, songIds: List<Long>) {
         viewModelScope.launch { ct.db.playlists().append(playlistId, songIds) }
     }
 
     fun deletePlaylist(playlistId: Long) {
+        val p = playlists.value.firstOrNull { it.id == playlistId }
         viewModelScope.launch { ct.db.playlists().delete(playlistId) }
+        if (p != null) notify("Deleted ${p.name}") { createPlaylist(p.name, p.songs.map { it.id }) }
     }
 
     /** Positive = lyrics appear later. */

@@ -147,7 +147,7 @@ fun OnboardingScreen(vm: MainViewModel, onDone: () -> Unit) {
 private fun WelcomeRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, sub: String) {
     val c = P.colors
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(c.card).padding(14.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item)).background(c.card).padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {

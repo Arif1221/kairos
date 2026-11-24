@@ -141,7 +141,7 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
 
             // Pinned: the current song stays on screen however far you scroll.
             Column(
-                Modifier.padding(horizontal = 18.dp).fillMaxWidth().clip(RoundedCornerShape(30.dp)).background(c.accent)
+                Modifier.padding(horizontal = 18.dp).fillMaxWidth().clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(c.accent)
                     .clickable(role = Role.Button, onClickLabel = "Show in queue") {
                         scope.launch { list.animateScrollToItem((now.queuePosition - 1).coerceAtLeast(0)) }
                     }
@@ -188,7 +188,7 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
                     contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 2.dp, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    itemsIndexed(now.queue, key = { _, e -> e.index }) { pos, e ->
+                    itemsIndexed(now.queue, key = { _, e -> e.index }, contentType = { _, _ -> "queue" }) { pos, e ->
                         val song = songMap[e.songId]
                         val playing = pos == now.queuePosition
                         val played = pos < now.queuePosition
@@ -220,7 +220,7 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
                                         )
                                         Text(song?.artist ?: "", style = T.small, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
-                                    Text(formatTime(song?.durationMs ?: 0), style = T.small, color = c.muted)
+                                    Text(formatTime(song?.durationMs ?: 0), style = T.num, color = c.muted)
                                 }
                             }
                         }
@@ -460,7 +460,7 @@ fun MenuDrawer(vm: MainViewModel, onClose: () -> Unit, onNavigate: (String) -> U
             Text(mixedHeadline("Your " to false, "music" to true), style = T.h1.copy(fontSize = 32.sp), color = c.text)
             if (cur != null) {
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(c.accent)
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item)).background(c.accent)
                         .clickable(role = Role.Button, onClickLabel = "Open now playing") { onNavigate("now") }.padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -474,7 +474,7 @@ fun MenuDrawer(vm: MainViewModel, onClose: () -> Unit, onNavigate: (String) -> U
             }
             items.forEach { (label, route, icon) ->
                 Row(
-                    Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(26.dp))
+                    Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item))
                         .selectable(false, role = Role.Button) { onNavigate(route) },
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {

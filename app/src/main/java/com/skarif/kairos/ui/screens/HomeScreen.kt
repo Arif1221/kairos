@@ -131,7 +131,7 @@ fun HomeScreen(
                 val idx = album.songs.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
                 Column(
                     Modifier.padding(horizontal = 18.dp).fillMaxWidth().cardClick("Open player", onOpenNowPlaying)
-                        .clip(RoundedCornerShape(30.dp)).background(card).padding(14.dp),
+                        .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(card).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -158,7 +158,7 @@ fun HomeScreen(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    items(recent.size, key = { recent[it].id }) { i ->
+                    items(recent.size, key = { recent[it].id }, contentType = { "song" }) { i ->
                         val s2 = recent[i]
                         Column(
                             Modifier.width(150.dp).cardClick("Play ${s2.title}") { vm.play(recent, i, "Recently played"); onOpenNowPlaying() },
@@ -182,7 +182,7 @@ fun HomeScreen(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    items(more.size, key = { more[it].key }) { i ->
+                    items(more.size, key = { more[it].key }, contentType = { "mix" }) { i ->
                         val m = more[i]
                         MixCard(vm, m, card, Modifier.width(300.dp), onOpen = { onOpenCollection(m.key) }, onPlay = { vm.play(m.songs, 0, m.title); onOpenNowPlaying() })
                     }
@@ -199,7 +199,7 @@ fun HomeScreen(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    items(fresh.size, key = { "fa" + fresh[it].albumId }) { i ->
+                    items(fresh.size, key = { "fa" + fresh[it].albumId }, contentType = { "album" }) { i ->
                         val s2 = fresh[i]
                         Box(Modifier.width(170.dp)) {
                             CoverTile(vm, s2, key = "album:${s2.albumId}", kicker = s2.artist, title = s2.album) { onOpenCollection("album:${s2.albumId}") }
@@ -231,7 +231,7 @@ private fun QuickPick(vm: MainViewModel, m: Collection, card: androidx.compose.u
     val c = P.colors
     Row(
         modifier.height(72.dp).cardClick("Open ${m.title}", onOpen)
-            .clip(RoundedCornerShape(24.dp)).background(card).padding(8.dp),
+            .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item)).background(card).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SongArt(vm, m.songs.firstOrNull(), 56.dp, corner = 18.dp)
@@ -247,9 +247,9 @@ private fun MixCard(vm: MainViewModel, m: Collection, card: androidx.compose.ui.
     val c = P.colors
     Row(
         modifier
-            .sharedCard("col-${m.key}", RoundedCornerShape(30.dp))
+            .sharedCard("col-${m.key}", RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card))
             .cardClick("Open ${m.title}", onOpen)
-            .clip(RoundedCornerShape(30.dp)).background(card).padding(12.dp),
+            .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(card).padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

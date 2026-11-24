@@ -79,7 +79,7 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
                 Text(st.change, style = T.body, color = c.muted)
             }
             Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(c.accent).padding(14.dp),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(c.accent).padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -156,7 +156,7 @@ private fun RecapCard(vm: MainViewModel, r: com.skarif.kairos.data.Recap) {
     val c = P.colors
     val month = java.time.Month.of(r.topMonth).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault())
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(c.ink).padding(20.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(c.ink).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("Your ${r.year} in music", style = T.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = c.inkFg.copy(alpha = 0.7f))
@@ -195,7 +195,7 @@ private fun RecapLine(label: String, value: String) {
 @Composable
 private fun StatTile(label: String, value: String, modifier: Modifier) {
     val c = P.colors
-    Column(modifier.clip(RoundedCornerShape(24.dp)).background(c.card).padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier.clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item)).background(c.card).padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = T.small, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(value, style = T.big.copy(fontSize = 28.sp, lineHeight = 30.sp), color = c.text, maxLines = 1)
     }

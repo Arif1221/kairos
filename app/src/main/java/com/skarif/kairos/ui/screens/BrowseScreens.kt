@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -102,6 +103,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
     val q by vm.query.collectAsStateWithLifecycle()
     val results by vm.searchResults.collectAsStateWithLifecycle()
     val hits by vm.searchHits.collectAsStateWithLifecycle()
+    val favs by vm.favorites.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -146,7 +148,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                     item(span = { GridItemSpan(2) }, key = "h-artists") { SearchSection("Artists") }
                     item(span = { GridItemSpan(2) }, key = "artists") {
                         androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            items(hits.artists, key = { "sa" + it.name.lowercase() }) { a ->
+                            items(hits.artists, key = { "sa" + it.name.lowercase() }, contentType = { "artist" }) { a ->
                                 Column(
                                     Modifier.width(92.dp).cardClick("Open ${a.name}") { onOpenCollection("artist:${a.name}") },
                                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -163,7 +165,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                     item(span = { GridItemSpan(2) }, key = "h-albums") { SearchSection("Albums") }
                     item(span = { GridItemSpan(2) }, key = "albums") {
                         androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            items(hits.albums, key = { "sal" + it.id }) { g ->
+                            items(hits.albums, key = { "sal" + it.id }, contentType = { "album" }) { g ->
                                 Box(Modifier.size(width = 160.dp, height = 214.dp)) {
                                     CoverTile(vm, g.songs.first(), key = "album:${g.id}", kicker = g.artist, title = g.title) { onOpenCollection("album:${g.id}") }
                                 }
@@ -175,7 +177,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                     item(span = { GridItemSpan(2) }, key = "h-genres") { SearchSection("Genres") }
                     item(span = { GridItemSpan(2) }, key = "genres") {
                         androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(hits.genres, key = { "sg" + it.name.lowercase() }) { g ->
+                            items(hits.genres, key = { "sg" + it.name.lowercase() }, contentType = { "genre" }) { g ->
                                 Pill("${g.name}  ${g.songs.size}", { onOpenCollection("genre:${g.name}") })
                             }
                         }
@@ -183,9 +185,9 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                 }
                 if (results.isNotEmpty()) {
                     item(span = { GridItemSpan(2) }, key = "h-songs") { SearchSection("Songs  ${results.size}") }
-                    items(results, key = { it.id }, span = { GridItemSpan(2) }) { s ->
-                        SongRow(s, s.id == now.songId, vm, onLongClick = { actionsFor = s }) {
-                            vm.play(results, results.indexOf(s), "Search")
+                    gridItemsIndexed(results, key = { _, s -> s.id }, span = { _, _ -> GridItemSpan(2) }, contentType = { _, _ -> "song" }) { i, s ->
+                        SongRow(s, s.id == now.songId, vm, favourite = s.id in favs, onLongClick = { actionsFor = s }) {
+                            vm.play(results, i, "Search")
                             onOpenNowPlaying()
                         }
                     }
@@ -200,7 +202,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                 if (list.isEmpty() && tab == 2) {
                     item(span = { GridItemSpan(2) }) { Text("No genre tags found in your music.", style = T.body, color = c.muted) }
                 }
-                items(list, key = { it.key }) { t ->
+                items(list, key = { it.key }, contentType = { "tile" }) { t ->
                     CoverTile(vm, t.song, key = t.key, kicker = t.kicker, title = t.title) { onOpenCollection(t.key) }
                 }
             }
@@ -220,9 +222,9 @@ fun CoverTile(vm: MainViewModel, song: SongEntity, key: String, kicker: String, 
     val c = P.colors
     Box(
         Modifier.fillMaxWidth().height(214.dp)
-            .sharedCard("col-$key", RoundedCornerShape(30.dp))
+            .sharedCard("col-$key", RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card))
             .cardClick("Open $title", onClick)
-            .clip(RoundedCornerShape(30.dp)).background(c.tint),
+            .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(c.tint),
     ) {
         if (img != null) Image(img, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         Box(Modifier.fillMaxWidth().height(110.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000)))))
@@ -278,11 +280,11 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
                     if (tiles.isEmpty()) Text("No playlists yet. Tap New playlist to make one.", style = T.body, color = c.muted)
                 }
             }
-            items(tiles, key = { it.key }) { t ->
+            items(tiles, key = { it.key }, contentType = { "playlist" }) { t ->
                 Column(
-                    Modifier.sharedCard("col-${t.key}", RoundedCornerShape(30.dp))
+                    Modifier.sharedCard("col-${t.key}", RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card))
                         .cardClick("Open ${t.name}") { onOpenCollection(t.key) }
-                        .clip(RoundedCornerShape(30.dp)).background(c.card)
+                        .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(c.card)
                         .padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -360,8 +362,8 @@ fun NewPlaylistScreen(vm: MainViewModel, onDone: () -> Unit, initialSongs: List<
                 }
             }
             SearchField(find, { find = it }, "Find songs to add")
-            LazyColumn(Modifier.weight(1f).clip(RoundedCornerShape(30.dp)).background(c.card.copy(alpha = 0.7f))) {
-                items(shown, key = { it.id }) { s ->
+            LazyColumn(Modifier.weight(1f).clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(c.card.copy(alpha = 0.7f))) {
+                items(shown, key = { it.id }, contentType = { "pick" }) { s ->
                     val on = s.id in picked
                     Row(
                         Modifier.fillMaxWidth().clickable(role = Role.Checkbox) { if (on) picked.remove(s.id) else picked.add(s.id) }
@@ -389,7 +391,7 @@ fun NewPlaylistScreen(vm: MainViewModel, onDone: () -> Unit, initialSongs: List<
 @Composable
 private fun SearchFieldPlain(value: String, onChange: (String) -> Unit, placeholder: String) {
     val c = P.colors
-    Box(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(26.dp)).background(c.card).padding(horizontal = 18.dp), contentAlignment = Alignment.CenterStart) {
+    Box(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item)).background(c.card).padding(horizontal = 18.dp), contentAlignment = Alignment.CenterStart) {
         if (value.isEmpty()) Text(placeholder, style = T.body.copy(fontSize = 16.sp), color = c.muted)
         BasicTextField(value, onChange, Modifier.fillMaxWidth().semantics { contentDescription = "Playlist name" }, singleLine = true,
             textStyle = T.body.copy(fontSize = 16.sp, color = c.text), cursorBrush = SolidColor(c.accent))
@@ -435,6 +437,7 @@ fun CollectionScreen(
     val isGenre = key.startsWith("genre:")
     val counts by vm.playCounts.collectAsStateWithLifecycle()
     val albumList by vm.albums.collectAsStateWithLifecycle()
+    val favs by vm.favorites.collectAsStateWithLifecycle()
     // Your most played songs by this artist (or in this genre); only songs you have played.
     val popular = remember(col, counts) {
         if (!isArtist && !isGenre) emptyList()
@@ -565,7 +568,7 @@ fun CollectionScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         item { Pill("All", { genreFilter = null }, selected = genreFilter == null) }
-                        items(genreChoices, key = { "gf$it" }) { g -> Pill(g, { genreFilter = if (genreFilter == g) null else g }, selected = genreFilter == g) }
+                        items(genreChoices, key = { "gf$it" }, contentType = { "chip" }) { g -> Pill(g, { genreFilter = if (genreFilter == g) null else g }, selected = genreFilter == g) }
                     }
                 }
                 val g = genreFilter
@@ -583,8 +586,8 @@ fun CollectionScreen(
             if (isArtist || isGenre) {
                 if (popular.isNotEmpty()) {
                     item { PageSection("Popular") }
-                    itemsIndexed(popular, key = { i, s -> "pop$i-${s.id}" }) { i, s ->
-                        SongRow(s, s.id == now.songId, vm, onLongClick = { actionsFor = s }) { vm.play(popular, i, colTitle); onOpenNowPlaying() }
+                    itemsIndexed(popular, key = { i, s -> "pop$i-${s.id}" }, contentType = { _, _ -> "song" }) { i, s ->
+                        SongRow(s, s.id == now.songId, vm, favourite = s.id in favs, onLongClick = { actionsFor = s }) { vm.play(popular, i, colTitle); onOpenNowPlaying() }
                     }
                 }
                 if (pageAlbums.size > 1 || (pageAlbums.size == 1 && isGenre)) {
@@ -594,7 +597,7 @@ fun CollectionScreen(
                             contentPadding = PaddingValues(horizontal = 18.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            items(pageAlbums, key = { "pa" + it.id }) { g ->
+                            items(pageAlbums, key = { "pa" + it.id }, contentType = { "album" }) { g ->
                                 Box(Modifier.size(width = 160.dp, height = 214.dp)) {
                                     CoverTile(vm, g.songs.first(), key = "album:${g.id}", kicker = if (g.year > 0) "${g.year}" else "${g.songs.size} songs", title = g.title) {
                                         onOpenCollection("album:${g.id}")
@@ -611,15 +614,15 @@ fun CollectionScreen(
                             contentPadding = PaddingValues(horizontal = 18.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            items(pageArtists, key = { "ga$it" }) { name -> Pill(name, { onOpenCollection("artist:$name") }) }
+                            items(pageArtists, key = { "ga$it" }, contentType = { "chip" }) { name -> Pill(name, { onOpenCollection("artist:$name") }) }
                         }
                     }
                 }
                 if (list.isNotEmpty()) item { PageSection("All songs") }
             }
             if (list.isNotEmpty()) {
-                itemsIndexed(list, key = { i, s -> "$i-${s.id}" }) { i, s ->
-                    SongRow(s, s.id == now.songId, vm, number = if (isAlbum) (s.track.takeIf { it > 0 } ?: (i + 1)) else null, onLongClick = { actionIndex = i; actionsFor = s }) {
+                itemsIndexed(list, key = { i, s -> "$i-${s.id}" }, contentType = { _, _ -> "song" }) { i, s ->
+                    SongRow(s, s.id == now.songId, vm, favourite = s.id in favs, number = if (isAlbum) (s.track.takeIf { it > 0 } ?: (i + 1)) else null, onLongClick = { actionIndex = i; actionsFor = s }) {
                         vm.play(list, i, colTitle)
                         onOpenNowPlaying()
                     }
