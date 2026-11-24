@@ -37,10 +37,13 @@ jobs:
         with:
           name: kairos-apk
           path: app/build/outputs/apk/release/*.apk
+      # The Play bundle is for uploading to Google Play only; it is not attached to GitHub releases.
+      # Download it from this run's artifacts (kept 30 days).
       - uses: actions/upload-artifact@v4
         with:
           name: kairos-aab
           path: app/build/outputs/bundle/release/*.aab
+          retention-days: 30
 
   release:
     # Offline releases: publishes v<versionName> with the APK when main gets a version not yet
@@ -68,11 +71,6 @@ jobs:
         with:
           name: kairos-apk
           path: apk
-      - uses: actions/download-artifact@v4
-        if: steps.check.outputs.exists == 'false'
-        with:
-          name: kairos-aab
-          path: aab
       - name: Publish release
         if: steps.check.outputs.exists == 'false'
         env:
@@ -80,6 +78,5 @@ jobs:
         run: |
           V="${{ steps.v.outputs.name }}"
           mv apk/*.apk "Kairos-$V.apk"
-          mv aab/*.aab "Kairos-$V.aab"
-          gh release create "v$V" "Kairos-$V.apk" "Kairos-$V.aab" --target "$GITHUB_SHA" \
+          gh release create "v$V" "Kairos-$V.apk" --target "$GITHUB_SHA" \
             --title "Kairos $V (offline)" --generate-notes
