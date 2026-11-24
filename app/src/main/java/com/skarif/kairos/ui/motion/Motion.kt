@@ -105,10 +105,11 @@ object Motion {
 
     /** Tabs: a quick crossfade with a slight zoom, so switching never cuts. */
     val tabEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-        fadeIn(tween(200, delayMillis = 60, easing = EmphasizedDecelerate)) + scaleIn(ios(0.4f, 1f), initialScale = 0.97f)
+        fadeIn(tween(180, delayMillis = 90, easing = EmphasizedDecelerate)) + scaleIn(ios(0.45f, 1f), initialScale = 0.985f)
     }
+    /** Gone before the new tab starts to show, so two see-through pages never overlap. */
     val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-        fadeOut(tween(120, easing = EmphasizedAccelerate)) + scaleOut(ios(0.4f, 1f), targetScale = 1.01f)
+        fadeOut(tween(90, easing = EmphasizedAccelerate))
     }
 }
 

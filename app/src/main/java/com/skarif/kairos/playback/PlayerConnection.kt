@@ -40,6 +40,9 @@ data class NowPlaying(
     val usbConnected: Boolean = false,
     val outputNeedsRestart: Boolean = false,
     val speed: Float = 1f,
+    /** "25 of 2071" for the screens: the whole intended queue, even while it is still being added. */
+    val shownPosition: Int = 0,
+    val shownSize: Int = 0,
 )
 
 /** [index] is the player's media item index; [songId] the song. */
@@ -91,6 +94,11 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
     fun removeAutoTransition(listener: () -> Unit) { transitionListeners -= listener }
 
     private var fillJob: Job? = null
+    // While a long queue is being added: where the tapped song sits in the full list, how long
+    // the full list is, and how many songs have gone in before it so far.
+    private var fillStart = 0
+    private var fillTotal = 0
+    private var fillInsertedBefore = 0
     private val _filling = MutableStateFlow(false)
     /** True while a long queue is still being added in the background (see [play]). */
     val filling: StateFlow<Boolean> = _filling.asStateFlow()
@@ -113,9 +121,10 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
             c.prepare(); c.play()
             return
         }
+        fillStart = start; fillTotal = songs.size; fillInsertedBefore = 0
+        _filling.value = true
         c.setMediaItems(listOf(songs[start].toMediaItem()), 0, 0L)
         c.prepare(); c.play()
-        _filling.value = true
         fillJob = appScope.launch(Dispatchers.Main) {
             try {
                 delay(650) // the player's opening animation
@@ -123,9 +132,10 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
                 for (chunk in after.chunked(100)) { c.addMediaItems(chunk); delay(24) }
                 val before = withContext(Dispatchers.Default) { songs.subList(0, start).map { it.toMediaItem() } }
                 var at = 0
-                for (chunk in before.chunked(100)) { c.addMediaItems(at, chunk); at += chunk.size; delay(24) }
+                for (chunk in before.chunked(100)) { fillInsertedBefore = at + chunk.size; c.addMediaItems(at, chunk); at += chunk.size; delay(24) }
             } finally {
                 _filling.value = false
+                publish()
             }
         }
     }
@@ -225,6 +235,9 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
             usbConnected = extras.getBoolean(PlaybackService.EXTRA_USB),
             outputNeedsRestart = extras.getBoolean(PlaybackService.EXTRA_NEEDS_RESTART),
             speed = c.playbackParameters.speed,
+            shownPosition = if (_filling.value) fillStart - fillInsertedBefore + order.indexOf(c.currentMediaItemIndex).coerceAtLeast(0)
+            else order.indexOf(c.currentMediaItemIndex).coerceAtLeast(0),
+            shownSize = if (_filling.value) fillTotal else c.mediaItemCount,
         )
         if (next != _state.value) _state.value = next
         // Position only changes on its own while playing, so only tick then.

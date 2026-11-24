@@ -71,6 +71,7 @@ fun HomeScreen(
     val settings by vm.settings.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
     val mixes by vm.mixes.collectAsStateWithLifecycle()
+    val mixesReady by vm.mixesReady.collectAsStateWithLifecycle()
     val cont by vm.continueAlbum.collectAsStateWithLifecycle()
     val cur by vm.currentSong.collectAsStateWithLifecycle()
     val songs by vm.songs.collectAsStateWithLifecycle()
@@ -210,7 +211,7 @@ fun HomeScreen(
                         MixCard(vm, m, card, Modifier.width(300.dp), onOpen = { onOpenCollection(m.key) }, onPlay = { vm.play(m.songs, 0, m.title); onOpenNowPlaying() })
                     }
                 }
-            } else {
+            } else if (mixesReady) {
                 Text("Play a few songs and mixes made for you will appear here.", Modifier.padding(horizontal = 18.dp), style = T.body, color = c.muted)
             }
 

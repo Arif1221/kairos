@@ -249,7 +249,7 @@ fun NowPlayingPane(
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     InfoChip(Ic.Wave, now.output?.let { "${s.formatLabel()} $it" } ?: s.formatLabel())
                     InfoChip(Ic.Clock, formatTime(s.durationMs))
-                    if (now.queueSize > 0) InfoChip(Ic.Queue, "${now.queuePosition + 1} of ${now.queueSize}", onQueue)
+                    if (now.shownSize > 0) InfoChip(Ic.Queue, "${now.shownPosition + 1} of ${now.shownSize}", onQueue)
                     if (sleep.active) InfoChip(Ic.Clock, "Sleep timer on", onSleep)
                     if (kotlin.math.abs(now.speed - 1f) > 0.01f) InfoChip(Ic.Wave, speedLabel(now.speed)) { speedDialog = true }
                 }
@@ -304,7 +304,8 @@ fun NowPlayingPane(
             // The cards below the fold are composed after the player has finished opening, so the
             // opening animation's first frames only have the visible part of the player to build.
             var cardsReady by remember { androidx.compose.runtime.mutableStateOf(false) }
-            LaunchedEffect(Unit) { kotlinx.coroutines.delay(450); cardsReady = true }
+            val shown = LocalPlayerVisible.current.value
+            LaunchedEffect(shown) { if (shown && !cardsReady) { kotlinx.coroutines.delay(450); cardsReady = true } }
             if (cardsReady) NowPlayingCards(vm, s, onQueue = onQueue, onLyrics = onLyrics, onOpenCollection = onOpenCollection)
     }
 }

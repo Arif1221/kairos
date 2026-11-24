@@ -257,6 +257,8 @@ fun PlayerSheet(
         }
     }
 
+    var warmBackdrop by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(800); warmBackdrop = true }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
@@ -314,7 +316,8 @@ fun PlayerSheet(
                 },
         ) {
             Box(Modifier.fillMaxSize().drawBehind { drawRect(lerp(miniBg, c.bg, ctrl.progress.value)) })
-            if (open) {
+            // Also ready before opening, for the same reason as the pages below.
+            if (open || warmBackdrop) {
                 com.skarif.kairos.ui.components.Backdrop(art, settings.blurBackground, Modifier.graphicsLayer { alpha = ctrl.progress.value })
             }
         }
@@ -378,20 +381,34 @@ fun PlayerSheet(
                 if (img != null) Image(img, desc, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             }
         }
-        val pagerOn = ctrl.page == PlayerPage.MAIN && open
+        // Neighbours only once the cover has settled in the hero; during the move between pages
+        // they used to show up beside the shrinking cover.
+        val pagerOn = ctrl.page == PlayerPage.MAIN && open && !pageRect.isRunning
         if (pagerOn && prevSong != null) cover(prevImg, -1, null)
         if (pagerOn && nextSong != null) cover(nextImg, 1, null)
         cover(curImg ?: artImg, 0, "${s.album} cover")
 
         // 3. The full player's pages, fading in over the last part of the opening.
-        if (open) {
+        // Built ahead of time, a moment after a song is loaded, and only *placed* while the player
+        // is open. Building them on the first frame of opening is what froze the animation
+        // (it showed half-open, then fully open: "two frames").
+        var warm by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { kotlinx.coroutines.delay(800); warm = true }
+        if (open || warm) {
             Box(
-                Modifier.fillMaxSize().graphicsLayer {
+                Modifier.fillMaxSize()
+                    .layout { m, c ->
+                        val pl = m.measure(c)
+                        layout(pl.width, pl.height) { if (ctrl.progress.value > 0.001f) pl.place(0, 0) }
+                    }
+                    .graphicsLayer {
                     val p = ctrl.progress.value
                     alpha = ((p - 0.45f) / 0.55f).coerceIn(0f, 1f)
                     translationY = (1f - p) * 64.dp.toPx()
                 },
             ) {
+                val visibleState = remember { androidx.compose.runtime.derivedStateOf { ctrl.progress.value > 0.001f } }
+                androidx.compose.runtime.CompositionLocalProvider(com.skarif.kairos.ui.screens.LocalPlayerVisible provides visibleState) {
                 AnimatedContent(
                     ctrl.page,
                     // Player, lyrics and queue: the new page grows in from slightly smaller while the
@@ -434,6 +451,7 @@ fun PlayerSheet(
                             onOpenAlbum = { id -> ctrl.collapse(); onAlbum(id) },
                         )
                     }
+                }
                 }
             }
         }

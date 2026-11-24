@@ -125,7 +125,14 @@ private val tabExit = Motion.tabExit
 @Composable
 private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val album by vm.albumColors.collectAsStateWithLifecycle()
+    val albumNow by vm.albumColors.collectAsStateWithLifecycle()
+    // A new song's colours recolour the whole app, which is a big redraw. Applying them the moment
+    // you tap a song landed on the player's first opening frames; a short delay lets it open first.
+    var album by remember { mutableStateOf(albumNow) }
+    LaunchedEffect(albumNow) {
+        if (album != null && albumNow != null) kotlinx.coroutines.delay(520)
+        album = albumNow
+    }
     PlayerTheme(settings, album) {
         val context = LocalContext.current
         val nav = rememberNavController()

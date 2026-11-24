@@ -118,7 +118,7 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
                 CircleButton(Ic.Back, "Back to now playing", onBack, size = 48.dp)
                 Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
                     Text("Queue", style = T.h2, color = c.text)
-                    Text("${now.queuePosition + 1} of ${now.queue.size}, $left up next", style = T.small, color = c.muted)
+                    Text("${now.shownPosition + 1} of ${now.shownSize}, ${(now.shownSize - now.shownPosition - 1).coerceAtLeast(0)} up next", style = T.small, color = c.muted)
                 }
                 Box {
                     CircleButton(Ic.Menu, "Queue options", { overflow = true }, size = 48.dp)

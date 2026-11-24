@@ -225,6 +225,9 @@ fun DialogItem(text: String, onClick: () -> Unit) {
     }
 }
 
+/** Whether the full player is on screen (false while it is built but hidden). */
+val LocalPlayerVisible = androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.runtime.State<Boolean>> { androidx.compose.runtime.mutableStateOf(true) }
+
 /**
  * Playback position that moves every frame while playing. The player reports it every 200 ms;
  * in between it is extrapolated from the frame clock, so anything driven by it glides.
@@ -236,8 +239,10 @@ fun rememberLivePosition(vm: MainViewModel): androidx.compose.runtime.State<Long
     // When the player last reported, in the frame clock's time base (System.nanoTime).
     val reportedAt = androidx.compose.runtime.remember { longArrayOf(System.nanoTime()) }
     LaunchedEffect(reported.value) { reportedAt[0] = System.nanoTime() }
-    return produceState(reported.value, now.isPlaying) {
-        if (!now.isPlaying) {
+    // The player is built ahead of time while hidden; don't run a per-frame clock for it then.
+    val visible = LocalPlayerVisible.current.value
+    return produceState(reported.value, now.isPlaying, visible) {
+        if (!now.isPlaying || !visible) {
             androidx.compose.runtime.snapshotFlow { reported.value }.collect { value = it }
             return@produceState
         }

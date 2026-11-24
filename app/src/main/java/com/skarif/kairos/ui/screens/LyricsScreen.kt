@@ -82,9 +82,11 @@ import com.skarif.kairos.ui.theme.T
 import kotlin.math.abs
 
 // Follow the theme: light glass and dark text in the light theme, the reverse in the dark one.
-private val Glass: Color @Composable get() = if (P.colors.dark) Color(0x33FFFFFF) else Color(0x1F000000)
-private val Dim: Color @Composable get() = P.colors.muted
-private val Fg: Color @Composable get() = P.colors.text
+// Lyrics are always white on a dark, coloured background (as in Apple Music), in light theme
+// too: grey text on the pale light-theme background was hard to read.
+private val Glass: Color @Composable get() = Color(0x2EFFFFFF)
+private val Dim: Color @Composable get() = Color(0xB3FFFFFF)
+private val Fg: Color @Composable get() = Color.White
 
 /**
  * Immersive lyrics: the cover blurred behind a dark veil, white text, and a karaoke fill that
@@ -116,7 +118,7 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
         label = "driftClock",
     )
     val blob = c.accent
-    val blob2 = androidx.compose.ui.graphics.lerp(c.accent, if (c.dark) Color.Black else Color.White, 0.35f)
+    val blob2 = androidx.compose.ui.graphics.lerp(c.accent, Color(0xFF3A2A6A), 0.45f)
 
     Box(
         Modifier.fillMaxSize().drawBehind {
@@ -126,10 +128,12 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
                 Brush.radialGradient(listOf(color.copy(alpha = a), Color.Transparent), center = Offset(cx, cy), radius = r),
                 radius = r, center = Offset(cx, cy),
             )
+            // A dark, album-tinted base, then the drifting colour on top.
+            drawRect(androidx.compose.ui.graphics.lerp(Color(0xFF0E0E10), blob, 0.22f).copy(alpha = 0.86f))
             val tt = t
-            spot(blob, w * (0.3f + 0.2f * kotlin.math.sin(tt)), h * (0.3f + 0.15f * kotlin.math.cos(tt * 2)), w * 0.9f, 0.32f)
-            spot(blob2, w * (0.75f + 0.15f * kotlin.math.cos(tt)), h * (0.65f + 0.15f * kotlin.math.sin(tt * 1.5f)), w * 0.8f, 0.28f)
-            spot(blob, w * (0.5f + 0.3f * kotlin.math.sin(tt * 0.7f + 1f)), h * (0.9f + 0.1f * kotlin.math.cos(tt)), w * 0.7f, 0.2f)
+            spot(blob, w * (0.3f + 0.2f * kotlin.math.sin(tt)), h * (0.3f + 0.15f * kotlin.math.cos(tt * 2)), w * 0.9f, 0.55f)
+            spot(blob2, w * (0.75f + 0.15f * kotlin.math.cos(tt)), h * (0.65f + 0.15f * kotlin.math.sin(tt * 1.5f)), w * 0.8f, 0.45f)
+            spot(blob, w * (0.5f + 0.3f * kotlin.math.sin(tt * 0.7f + 1f)), h * (0.9f + 0.1f * kotlin.math.cos(tt)), w * 0.7f, 0.35f)
         },
     ) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
@@ -210,7 +214,7 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
                         CircleButton(Ic.Prev, "Previous song", vm::previous, size = 46.dp, container = Glass, content = Fg)
                         CircleButton(
                             if (now.isPlaying) Ic.Pause else Ic.Play, if (now.isPlaying) "Pause" else "Play", vm::toggle,
-                            size = 56.dp, container = c.ink, content = c.inkFg,
+                            size = 56.dp, container = Color.White, content = Color.Black,
                         )
                         CircleButton(Ic.Next, "Next song", vm::next, size = 46.dp, container = Glass, content = Fg)
                     }

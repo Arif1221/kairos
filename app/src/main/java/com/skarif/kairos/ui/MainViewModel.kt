@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -346,7 +347,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             Collection("quick", "Quick hits", "Under 3 minutes", quick),
             Collection("long", "Long listens", "6 minutes or more", longOnes),
         ) + artistMixes + genreMixes
-    }.flowOn(Dispatchers.Default).state(emptyList())
+    }.flowOn(Dispatchers.Default).onEach { _mixesReady.value = true }.state(emptyList())
+
+    private val _mixesReady = MutableStateFlow(false)
+    /** False until mixes have been worked out once, so Home doesn't flash its empty message. */
+    val mixesReady: StateFlow<Boolean> = _mixesReady.asStateFlow()
 
     /** Songs from the album you were last listening to, for the "Continue" card. */
     val continueAlbum: StateFlow<Collection?> = combine(currentSong, albumIndex) { cur, idx ->
