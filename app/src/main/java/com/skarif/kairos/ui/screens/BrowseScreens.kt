@@ -43,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -66,10 +67,13 @@ import com.skarif.kairos.ui.theme.T
 import com.skarif.kairos.ui.theme.mixedHeadline
 
 @Composable
-fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier) {
+fun SearchField(
+    value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier,
+    container: Color = P.colors.card, height: androidx.compose.ui.unit.Dp = 60.dp,
+) {
     val c = P.colors
     Row(
-        modifier.fillMaxWidth().height(60.dp).clip(RoundedCornerShape(30.dp)).background(c.card).padding(start = 20.dp, end = 8.dp),
+        modifier.fillMaxWidth().height(height).clip(RoundedCornerShape(height / 2)).background(container).padding(start = 20.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -80,8 +84,8 @@ fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String, 
                 singleLine = true, textStyle = T.body.copy(fontSize = 16.sp, color = c.text), cursorBrush = SolidColor(c.accent),
             )
         }
-        if (value.isNotEmpty()) CircleButton(Ic.Close, "Clear", { onChange("") }, size = 44.dp, container = c.tint)
-        else Box(Modifier.size(44.dp).clip(CircleShape).background(c.accent), contentAlignment = Alignment.Center) {
+        if (value.isNotEmpty()) CircleButton(Ic.Close, "Clear", { onChange("") }, size = height - 16.dp, container = c.tint)
+        else Box(Modifier.size(height - 16.dp).clip(CircleShape).background(c.accent), contentAlignment = Alignment.Center) {
             Icon(Ic.Search, null, tint = c.onAccent, modifier = Modifier.size(20.dp))
         }
     }
@@ -98,9 +102,8 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
     val art by vm.artwork.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     var tab by remember { mutableStateOf(0) }
-    val albums = remember(songs) {
-        songs.groupBy { it.albumId }.values.sortedByDescending { it.size }.take(60).map { it.first() }
-    }
+    val albumGroups by vm.albums.collectAsStateWithLifecycle()
+    val albums = remember(albumGroups) { albumGroups.sortedByDescending { it.songs.size }.take(60) }
     val artistList by vm.artists.collectAsStateWithLifecycle()
     val artists = remember(artistList) { artistList.sortedByDescending { it.songs.size }.take(60) }
 
@@ -137,7 +140,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                 }
             } else {
                 // (cover song, collection key, kicker, title)
-                val list = if (tab == 0) albums.map { Quad(it, "album:${it.albumId}", it.artist, it.album) }
+                val list = if (tab == 0) albums.map { Quad(it.songs.first(), "album:${it.id}", it.artist, it.title) }
                 else artists.map { Quad(it.songs.first(), "artist:${it.name}", "${it.songs.size} songs", it.name) }
                 items(list, key = { it.key }) { t ->
                     CoverTile(vm, t.song, key = t.key, kicker = t.kicker, title = t.title) { onOpenCollection(t.key) }
@@ -175,6 +178,9 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
     val art by vm.artwork.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     var smart by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val importM3u = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri -> if (uri != null) vm.importPlaylist(uri) }
     data class Tile(val key: String, val name: String, val sub: String, val songs: List<SongEntity>)
     val tiles = if (smart) mixes.map { Tile(it.key, it.title, "Smart, ${it.songs.size} songs", it.songs) }
     else {
@@ -197,7 +203,9 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircleButton(Ic.Back, "Back", onBack)
                         Box(Modifier.weight(1f))
-                        Pill("New playlist", onNew, icon = Ic.Plus)
+                        Pill("Import", { importM3u.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "application/x-mpegurl", "text/plain", "*/*")) }, icon = Ic.Down)
+                        Box(Modifier.size(8.dp))
+                        Pill("New", onNew, icon = Ic.Plus)
                     }
                     Text(mixedHeadline("Your " to false, "playlists" to true, ", made " to false, "your way" to true), style = T.h1, color = c.text)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -215,7 +223,7 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
                         .padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Mosaic(vm, t.songs, Modifier.fillMaxWidth().aspectRatio(1f))
+                    PlaylistArt(vm, t.key, t.songs, Modifier.fillMaxWidth().aspectRatio(1f))
                     Column(Modifier.padding(horizontal = 6.dp)) {
                         Text(t.name, style = T.title, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(t.sub, style = T.small, color = c.muted)
@@ -224,6 +232,21 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
             }
         }
     }
+}
+
+/** A playlist's own cover if you picked one, otherwise a grid of its album covers. */
+@Composable
+fun PlaylistArt(vm: MainViewModel, key: String, songs: List<SongEntity>, modifier: Modifier, corner: androidx.compose.ui.unit.Dp = 22.dp) {
+    val covers by vm.playlistCovers.collectAsStateWithLifecycle()
+    val file = key.removePrefix("playlist:").toLongOrNull()?.takeIf { key.startsWith("playlist:") }?.let { covers[it] }
+    val img by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, file) {
+        value = file?.let { f ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { android.graphics.BitmapFactory.decodeFile(f.path)?.asImageBitmap() }
+        }
+    }
+    val i = img
+    if (file != null && i != null) Image(i, null, modifier.clip(RoundedCornerShape(corner)), contentScale = ContentScale.Crop)
+    else Mosaic(vm, songs, modifier)
 }
 
 @Composable
@@ -260,7 +283,8 @@ fun NewPlaylistScreen(vm: MainViewModel, onDone: () -> Unit, initialSongs: List<
         val t = find.trim().lowercase()
         if (t.isEmpty()) songs.take(300) else songs.filter { it.title.lowercase().contains(t) || it.artist.lowercase().contains(t) }.take(300)
     }
-    val pickedSongs = picked.mapNotNull { vm.song(it) }
+    val songMap by vm.songMap.collectAsStateWithLifecycle()
+    val pickedSongs = picked.mapNotNull { songMap[it] }
 
     ScreenBackground(art, settings.blurBackground) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -311,7 +335,10 @@ private fun SearchFieldPlain(value: String, onChange: (String) -> Unit, placehol
 
 /** Album, playlist, artist and mix screen. Design reference: the hotel screen hero. */
 @Composable
-fun CollectionScreen(vm: MainViewModel, key: String, onBack: () -> Unit, onOpenNowPlaying: () -> Unit, onOpenAlbum: (Long) -> Unit) {
+fun CollectionScreen(
+    vm: MainViewModel, key: String, onBack: () -> Unit, onOpenNowPlaying: () -> Unit, onOpenAlbum: (Long) -> Unit,
+    onOpenCollection: (String) -> Unit = { k -> k.removePrefix("album:").toLongOrNull()?.let(onOpenAlbum) },
+) {
     val c = P.colors
     // Re-read when the library, playlists or mixes change.
     val songs by vm.songs.collectAsStateWithLifecycle()
@@ -321,13 +348,69 @@ fun CollectionScreen(vm: MainViewModel, key: String, onBack: () -> Unit, onOpenN
     val col = remember(key, songs, playlists, mixes) { vm.collection(key) }
     var actionsFor by remember { mutableStateOf<SongEntity?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    // Genre filter for favourites, playlists and mixes ("Liked songs by genre").
+    var genreFilter by androidx.compose.runtime.saveable.rememberSaveable(key) { mutableStateOf<String?>(null) }
     val first = col?.songs?.firstOrNull()
     val cover = rememberCover(vm, first)
     val isAlbum = key.startsWith("album:")
+    var actionIndex by remember { mutableStateOf(-1) }
+    val genreChoices = remember(col) {
+        if (isAlbum || key.startsWith("genre:")) emptyList()
+        else col?.songs.orEmpty().flatMap { com.skarif.kairos.data.splitGenres(it.genre) }
+            .groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(12).map { it.key }
+    }
+    val shown = remember(col, genreFilter) {
+        val g = genreFilter
+        val all = col?.songs.orEmpty()
+        if (g == null) all
+        else all.filter { s -> com.skarif.kairos.data.splitGenres(s.genre).any { com.skarif.kairos.data.genreKey(it) == com.skarif.kairos.data.genreKey(g) } }
+    }
+    val isArtist = key.startsWith("artist:")
+    val isGenre = key.startsWith("genre:")
+    val counts by vm.playCounts.collectAsStateWithLifecycle()
+    val albumList by vm.albums.collectAsStateWithLifecycle()
+    // Your most played songs by this artist (or in this genre); only songs you have played.
+    val popular = remember(col, counts) {
+        if (!isArtist && !isGenre) emptyList()
+        else col?.songs.orEmpty().filter { (counts[it.id] ?: 0) > 0 }.sortedByDescending { counts[it.id] ?: 0 }.take(5)
+    }
+    val pageAlbums = remember(col, albumList) {
+        if (!isArtist && !isGenre) emptyList()
+        else col?.songs.orEmpty().mapNotNull { vm.albumGroup(it.albumId) }.distinctBy { it.id }
+            .sortedWith(compareByDescending<com.skarif.kairos.data.AlbumGroup> { it.year }.thenBy { it.title.lowercase() })
+    }
+    val pageArtists = remember(col) {
+        if (!isGenre) emptyList()
+        else col?.songs.orEmpty().flatMap { com.skarif.kairos.data.splitArtists(it.artist) }
+            .groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(12).map { it.key }
+    }
 
-    actionsFor?.let { s -> SongActionsDialog(vm, s, onOpenAlbum) { actionsFor = null } }
     val pid = col?.playlistId
     val colTitle = col?.title ?: ""
+    actionsFor?.let { s ->
+        val pos = if (pid != null && genreFilter == null) actionIndex else -1
+        SongActionsDialog(vm, s, onOpenAlbum, inPlaylist = if (pos >= 0) pid!! to pos else null) { actionsFor = null }
+    }
+    val pickCover = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> if (uri != null && pid != null) vm.setPlaylistCover(pid, uri) }
+    val exportM3u = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("audio/x-mpegurl"),
+    ) { uri -> if (uri != null && pid != null) vm.exportPlaylist(pid, uri) }
+    if (renaming && pid != null) {
+        var name by remember { mutableStateOf(colTitle) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { renaming = false },
+            containerColor = c.sheet,
+            title = { Text("Rename playlist", style = T.h2, color = c.text) },
+            text = { SearchFieldPlain(name, { name = it }, "Playlist name") },
+            confirmButton = { Pill("Save", { vm.renamePlaylist(pid, name); renaming = false }, selected = true) },
+            dismissButton = { Pill("Cancel", { renaming = false }) },
+        )
+    }
     if (confirmDelete && pid != null) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmDelete = false },
@@ -348,20 +431,44 @@ fun CollectionScreen(vm: MainViewModel, key: String, onBack: () -> Unit, onOpenN
                             .sharedCard("col-$key", RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp))
                             .clip(RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp)).background(c.accent),
                     ) {
-                        if (cover != null) {
-                            if (isAlbum) Image(cover, "${col?.title} cover", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                            else Mosaic(vm, col?.songs.orEmpty(), Modifier.fillMaxSize())
+                        if (cover != null || pid != null) {
+                            if (isAlbum && cover != null) Image(cover, "${col?.title} cover", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                            else PlaylistArt(vm, key, col?.songs.orEmpty(), Modifier.fillMaxSize(), corner = 0.dp)
                         }
                         Box(Modifier.fillMaxWidth().height(200.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000)))))
                         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp)) {
                             CircleButton(Ic.Back, "Back", onBack, container = Color(0xE6FFFFFF), content = Color(0xFF151515))
                             Box(Modifier.weight(1f))
                             if (pid != null) {
-                                CircleButton(Ic.Trash, "Delete playlist", { confirmDelete = true }, container = Color(0x38FFFFFF), content = Color.White)
+                                Box {
+                                    CircleButton(Ic.Menu, "Playlist options", { menu = true }, container = Color(0x38FFFFFF), content = Color.White)
+                                    androidx.compose.material3.DropdownMenu(menu, { menu = false }, containerColor = c.sheet, shape = RoundedCornerShape(20.dp)) {
+                                        @Composable
+                                        fun item(label: String, action: () -> Unit) = androidx.compose.material3.DropdownMenuItem(
+                                            text = { Text(label, style = T.title, color = c.text) }, onClick = { menu = false; action() },
+                                        )
+                                        item("Rename") { renaming = true }
+                                        item("Change cover") {
+                                            pickCover.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                        }
+                                        item("Use album covers") { vm.removePlaylistCover(pid) }
+                                        item("Export as .m3u") { exportM3u.launch("$colTitle.m3u8") }
+                                        item("Delete playlist") { confirmDelete = true }
+                                    }
+                                }
                             }
                         }
                         Column(Modifier.align(Alignment.BottomStart).padding(start = 22.dp, end = 110.dp, bottom = 30.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (isAlbum && first != null) Text(first.artist, style = T.body.copy(fontWeight = FontWeight.SemiBold), color = Color.White)
+                            if (isAlbum && first != null) {
+                                val albumArtist = vm.albumGroup(first.albumId)?.artist ?: first.artist
+                                Text(
+                                    albumArtist,
+                                    Modifier.clickable(role = Role.Button, onClickLabel = "Open artist") {
+                                        onOpenCollection("artist:${com.skarif.kairos.data.splitArtists(albumArtist).first()}")
+                                    },
+                                    style = T.body.copy(fontWeight = FontWeight.SemiBold), color = Color.White,
+                                )
+                            }
                             Text(col?.title ?: "Not found", style = T.big.copy(fontSize = 38.sp, lineHeight = 40.sp), color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text(col?.subtitle ?: "", style = T.small, color = Color.White)
                         }
@@ -374,15 +481,82 @@ fun CollectionScreen(vm: MainViewModel, key: String, onBack: () -> Unit, onOpenN
                 }
             }
             item {
-                Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Pill("Play", { col?.songs?.let { if (it.isNotEmpty()) { vm.play(it, 0); onOpenNowPlaying() } } }, selected = true, big = true, icon = Ic.Play, modifier = Modifier.weight(1f))
-                    Pill("Shuffle", { col?.songs?.let { vm.shuffle(it); onOpenNowPlaying() } }, big = true, icon = Ic.Shuffle, modifier = Modifier.weight(1f))
+                Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Pill("Play", { if (shown.isNotEmpty()) { vm.play(shown, 0); onOpenNowPlaying() } }, selected = true, big = true, icon = Ic.Play, modifier = Modifier.weight(1f))
+                    Pill(
+                        if (settings.smartShuffle) "Smart shuffle" else "Shuffle", { vm.shuffle(shown); onOpenNowPlaying() },
+                        big = true, icon = Ic.Shuffle, modifier = Modifier.weight(1f),
+                    )
+                    // Smart Shuffle: mixes in a suggestion from your library every few songs.
+                    CircleButton(
+                        Ic.Wave, if (settings.smartShuffle) "Smart shuffle, on" else "Smart shuffle, off",
+                        { vm.updateSettings { it.copy(smartShuffle = !it.smartShuffle) } }, size = 52.dp,
+                        container = if (settings.smartShuffle) c.accent else c.card, content = if (settings.smartShuffle) c.onAccent else c.text,
+                    )
                 }
             }
-            val list = col?.songs.orEmpty()
+            if (genreChoices.size >= 2) {
+                item {
+                    androidx.compose.foundation.lazy.LazyRow(
+                        contentPadding = PaddingValues(horizontal = 18.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        item { Pill("All", { genreFilter = null }, selected = genreFilter == null) }
+                        items(genreChoices, key = { "gf$it" }) { g -> Pill(g, { genreFilter = if (genreFilter == g) null else g }, selected = genreFilter == g) }
+                    }
+                }
+                val g = genreFilter
+                if (g != null) {
+                    item {
+                        Pill(
+                            "Save ${shown.size} songs as a playlist", { vm.createPlaylist("$colTitle: $g", shown.map { it.id }) },
+                            icon = Ic.PlaylistAdd, modifier = Modifier.padding(start = 18.dp, top = 10.dp),
+                        )
+                    }
+                }
+            }
+            val list = shown
+            // Artist and genre pages: popular songs and albums first, then everything.
+            if (isArtist || isGenre) {
+                if (popular.isNotEmpty()) {
+                    item { PageSection("Popular") }
+                    itemsIndexed(popular, key = { i, s -> "pop$i-${s.id}" }) { i, s ->
+                        SongRow(s, s.id == now.songId, vm, onLongClick = { actionsFor = s }) { vm.play(popular, i); onOpenNowPlaying() }
+                    }
+                }
+                if (pageAlbums.size > 1 || (pageAlbums.size == 1 && isGenre)) {
+                    item { PageSection(if (isArtist) "Albums" else "Albums in ${col?.title}") }
+                    item {
+                        androidx.compose.foundation.lazy.LazyRow(
+                            contentPadding = PaddingValues(horizontal = 18.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            items(pageAlbums, key = { "pa" + it.id }) { g ->
+                                Box(Modifier.size(width = 160.dp, height = 214.dp)) {
+                                    CoverTile(vm, g.songs.first(), key = "album:${g.id}", kicker = if (g.year > 0) "${g.year}" else "${g.songs.size} songs", title = g.title) {
+                                        onOpenCollection("album:${g.id}")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (isGenre && pageArtists.isNotEmpty()) {
+                    item { PageSection("Artists") }
+                    item {
+                        androidx.compose.foundation.lazy.LazyRow(
+                            contentPadding = PaddingValues(horizontal = 18.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(pageArtists, key = { "ga$it" }) { name -> Pill(name, { onOpenCollection("artist:$name") }) }
+                        }
+                    }
+                }
+                if (list.isNotEmpty()) item { PageSection("All songs") }
+            }
             if (list.isNotEmpty()) {
                 itemsIndexed(list, key = { i, s -> "$i-${s.id}" }) { i, s ->
-                    SongRow(s, s.id == now.songId, vm, number = if (isAlbum) (s.track.takeIf { it > 0 } ?: (i + 1)) else null, onLongClick = { actionsFor = s }) {
+                    SongRow(s, s.id == now.songId, vm, number = if (isAlbum) (s.track.takeIf { it > 0 } ?: (i + 1)) else null, onLongClick = { actionIndex = i; actionsFor = s }) {
                         vm.play(list, i)
                         onOpenNowPlaying()
                     }
@@ -390,6 +564,11 @@ fun CollectionScreen(vm: MainViewModel, key: String, onBack: () -> Unit, onOpenN
             }
         }
     }
+}
+
+@Composable
+private fun PageSection(title: String) {
+    Text(title, Modifier.padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 8.dp), style = T.h2, color = P.colors.text)
 }
 
 private data class Quad(val song: SongEntity, val key: String, val kicker: String, val title: String)

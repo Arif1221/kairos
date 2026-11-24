@@ -174,6 +174,31 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 })
             }
 
+            Card {
+                Text("Playback and suggestions", style = T.h2, color = c.text)
+                ToggleRow(
+                    "Autoplay", s.autoplay, { v -> vm.updateSettings { it.copy(autoplay = v) } },
+                    "When the queue ends, keep playing similar songs from your library",
+                )
+                ToggleRow(
+                    "Smart Shuffle", s.smartShuffle, { v -> vm.updateSettings { it.copy(smartShuffle = v) } },
+                    "Shuffling a playlist or album adds a similar song after every three",
+                )
+                val hiddenCount = s.hiddenSongs.size + s.snoozedSongs.size
+                Text(
+                    if (hiddenCount == 0) "No hidden or snoozed songs. Hold a song to hide or snooze it."
+                    else "$hiddenCount hidden or snoozed songs are kept out of mixes, shuffle-all and autoplay.",
+                    style = T.small, color = c.muted,
+                )
+                if (hiddenCount > 0) Pill("Show them all again", vm::clearHiddenAndSnoozed, icon = Ic.Refresh)
+                Text(
+                    if (s.tasteExcluded.isEmpty()) "Every song you play shapes your mixes. Hold a song to leave it out."
+                    else "${s.tasteExcluded.size} songs don't shape your mixes (Stats still count them).",
+                    style = T.small, color = c.muted,
+                )
+                if (s.tasteExcluded.isNotEmpty()) Pill("Use them all again", vm::clearTasteExclusions, icon = Ic.Refresh)
+            }
+
             Pill("Music folders", onFolders, icon = Ic.Folder, big = true, modifier = Modifier.fillMaxWidth())
             Pill("Equalizer", onEqualizer, icon = Ic.Sliders, big = true, modifier = Modifier.fillMaxWidth())
         }

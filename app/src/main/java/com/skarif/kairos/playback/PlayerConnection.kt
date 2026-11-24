@@ -131,6 +131,9 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
     fun setVolume(v: Float) = controller?.run { volume = v.coerceIn(0f, 1f) }
     val volume: Float get() = controller?.volume ?: 1f
 
+    /** Adds songs at the end of the queue (autoplay). */
+    fun append(songs: List<SongEntity>) = controller?.run { if (songs.isNotEmpty()) addMediaItems(songs.map { it.toMediaItem() }) }
+
     /** Adds songs right after the current one. */
     fun playNext(songs: List<SongEntity>) = controller?.run {
         addMediaItems((currentMediaItemIndex + 1).coerceAtMost(mediaItemCount), songs.map { it.toMediaItem() })

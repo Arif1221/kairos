@@ -78,6 +78,8 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
     val cur by vm.currentSong.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
+    // Collected, not read once: rows redraw with the real title and cover as soon as the library loads.
+    val songMap by vm.songMap.collectAsStateWithLifecycle()
     var menuFor by remember { mutableStateOf<Pair<Int, com.skarif.kairos.data.db.SongEntity>?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     var overflow by remember { mutableStateOf(false) }
@@ -187,7 +189,7 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     itemsIndexed(now.queue, key = { _, e -> e.index }) { pos, e ->
-                        val song = vm.song(e.songId)
+                        val song = songMap[e.songId]
                         val playing = pos == now.queuePosition
                         val played = pos < now.queuePosition
                         Box(Modifier.animateItem()) {
@@ -213,7 +215,7 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
                                     SongArt(vm, song, 44.dp, corner = 12.dp)
                                     Column(Modifier.weight(1f)) {
                                         Text(
-                                            song?.title ?: "Unknown", style = T.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            song?.title ?: "Not on this phone any more", style = T.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                             color = c.text.copy(alpha = if (played) 0.5f else 1f),
                                         )
                                         Text(song?.artist ?: "", style = T.small, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)

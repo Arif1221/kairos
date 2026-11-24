@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.SongSort
+import com.skarif.kairos.data.matchesQuery
 import com.skarif.kairos.data.db.SongEntity
 import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.ScanState
@@ -74,6 +75,8 @@ import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
+
+private class LetterRun(val letter: Char?, val start: Int, val songs: List<SongEntity>)
 
 private enum class LibTab(val label: String) { SONGS("Songs"), ALBUMS("Albums"), ARTISTS("Artists"), GENRES("Genres") }
 
@@ -117,12 +120,17 @@ fun LibraryScreen(
     val scope = rememberCoroutineScope()
     val fmt = remember { NumberFormat.getIntegerInstance() }
 
-    val albums = remember(songs) {
-        songs.groupBy { it.albumId }.values.map { it.first() }.sortedBy { it.album.lowercase() }
-    }
-    val artists by vm.artists.collectAsStateWithLifecycle()
-    val genres by vm.genres.collectAsStateWithLifecycle()
-    val count = when (tab) { LibTab.SONGS -> songs.size; LibTab.ALBUMS -> albums.size; LibTab.ARTISTS -> artists.size; LibTab.GENRES -> genres.size }
+    var filter by rememberSaveable { mutableStateOf("") }
+    val allAlbums by vm.albums.collectAsStateWithLifecycle()
+    val allArtists by vm.artists.collectAsStateWithLifecycle()
+    val allGenres by vm.genres.collectAsStateWithLifecycle()
+    val allSongs = songs
+    // The search box filters whichever tab is open; every word must match, accents ignored.
+    val shownSongs = remember(allSongs, filter) { if (filter.isBlank()) allSongs else allSongs.filter { matchesQuery("${it.title} ${it.artist} ${it.album}", filter) } }
+    val albums = remember(allAlbums, filter) { allAlbums.filter { matchesQuery("${it.title} ${it.artist}", filter) } }
+    val artists = remember(allArtists, filter) { allArtists.filter { matchesQuery(it.name, filter) } }
+    val genres = remember(allGenres, filter) { allGenres.filter { matchesQuery(it.name, filter) } }
+    val count = when (tab) { LibTab.SONGS -> shownSongs.size; LibTab.ALBUMS -> albums.size; LibTab.ARTISTS -> artists.size; LibTab.GENRES -> genres.size }
     val noun = when (tab) { LibTab.SONGS -> "songs"; LibTab.ALBUMS -> "albums"; LibTab.ARTISTS -> "artists"; LibTab.GENRES -> "genres" }
     val summary = remember(songs) {
         val gb = songs.sumOf { it.sizeBytes } / 1_000_000_000.0
@@ -131,10 +139,27 @@ fun LibraryScreen(
     }
     val collapsed by remember { derivedStateOf { grid.firstVisibleItemIndex > 0 } }
     val letterSorted = settings.songSort in setOf(SongSort.TITLE, SongSort.ARTIST, SongSort.ALBUM)
-    val letters = remember(songs, settings.songSort) {
-        if (!letterSorted) emptyList()
-        // A-Z order with # first, each pointing at its first song, whatever the list's quirks.
-        else songs.mapIndexed { i, s -> letterOf(s, settings.songSort) to i }.distinctBy { it.first }
+    // Songs sorted by title/artist/album are shown in runs under a letter header ("A", "B", ...).
+    val runs = remember(shownSongs, settings.songSort, filter) {
+        if (!letterSorted || filter.isNotBlank()) listOf(LetterRun(null, 0, shownSongs))
+        else {
+            val out = ArrayList<LetterRun>()
+            var start = 0
+            while (start < shownSongs.size) {
+                val l = letterOf(shownSongs[start], settings.songSort)
+                var end = start + 1
+                while (end < shownSongs.size && letterOf(shownSongs[end], settings.songSort) == l) end++
+                out += LetterRun(l, start, shownSongs.subList(start, end))
+                start = end
+            }
+            out
+        }
+    }
+    // A-Z order with # first, each pointing at the grid row of its first header.
+    val letters = remember(runs) {
+        var row = HEADER_ITEMS
+        runs.map { r -> val at = row; row += r.songs.size + (if (r.letter != null) 1 else 0); r.letter to at }
+            .mapNotNull { (l, at) -> l?.let { it to at } }.distinctBy { it.first }
             .sortedBy { if (it.first == '#') ' ' else it.first }
     }
 
@@ -180,6 +205,7 @@ fun LibraryScreen(
                             color = soft, style = T.small,
                         )
                     }
+                    SearchField(filter, { filter = it; scope.launch { grid.scrollToItem(0) } }, "Filter ${tab.label.lowercase()}", container = chip, height = 52.dp)
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(chip).padding(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -207,7 +233,7 @@ fun LibraryScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Pill("Shuffle", { vm.shuffle(songs); onOpenNowPlaying() }, accent = true, icon = Ic.Shuffle)
+                    Pill("Shuffle", { vm.shuffleAll(shownSongs); onOpenNowPlaying() }, accent = true, icon = Ic.Shuffle)
                     if (tab == LibTab.SONGS) {
                         Pill(settings.songSort.label, onSort, icon = Ic.Sort)
                     }
@@ -217,7 +243,9 @@ fun LibraryScreen(
 
             when (tab) {
                 LibTab.SONGS -> {
-                    if (songs.isEmpty()) {
+                    if (shownSongs.isEmpty() && filter.isNotBlank()) {
+                        item(span = { GridItemSpan(2) }) { Text("Nothing matches \"$filter\".", Modifier.padding(18.dp), style = T.body, color = c.muted) }
+                    } else if (shownSongs.isEmpty()) {
                         item(span = { GridItemSpan(2) }) {
                             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(
@@ -229,19 +257,29 @@ fun LibraryScreen(
                             }
                         }
                     }
-                    itemsIndexed(songs, key = { _, s -> s.id }, span = { _, _ -> GridItemSpan(2) }, contentType = { _, _ -> "song" }) { i, s ->
-                        Box(Modifier.padding(end = if (letters.isNotEmpty()) 22.dp else 0.dp)) {
-                            SongRow(s, playing = s.id == now.songId, vm, onLongClick = { actionsFor = s }) {
-                                vm.play(songs, i)
-                                onOpenNowPlaying()
+                    runs.forEach { run ->
+                        if (run.letter != null) {
+                            item(span = { GridItemSpan(2) }, key = "h${run.start}", contentType = "letter") {
+                                Text(
+                                    "${run.letter}", Modifier.padding(start = 22.dp, top = 14.dp, bottom = 4.dp),
+                                    style = T.title.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold), color = c.accent,
+                                )
+                            }
+                        }
+                        itemsIndexed(run.songs, key = { _, s -> s.id }, span = { _, _ -> GridItemSpan(2) }, contentType = { _, _ -> "song" }) { i, s ->
+                            Box(Modifier.padding(end = if (letters.isNotEmpty()) 22.dp else 0.dp)) {
+                                SongRow(s, playing = s.id == now.songId, vm, onLongClick = { actionsFor = s }) {
+                                    vm.play(shownSongs, run.start + i)
+                                    onOpenNowPlaying()
+                                }
                             }
                         }
                     }
                 }
                 LibTab.ALBUMS -> {
-                    itemsIndexed(albums, key = { _, s -> "al" + s.albumId }, contentType = { _, _ -> "album" }) { i, s ->
+                    itemsIndexed(albums, key = { _, g -> "al" + g.id }, contentType = { _, _ -> "album" }) { i, g ->
                         Box(Modifier.padding(start = if (i % 2 == 0) 18.dp else 0.dp, end = if (i % 2 == 1) 18.dp else 0.dp)) {
-                            CoverTile(vm, s, key = "album:${s.albumId}", kicker = s.artist, title = s.album) { onOpenCollection("album:${s.albumId}") }
+                            CoverTile(vm, g.songs.first(), key = "album:${g.id}", kicker = g.artist, title = g.title) { onOpenCollection("album:${g.id}") }
                         }
                     }
                 }
@@ -259,7 +297,7 @@ fun LibraryScreen(
                             SongArt(vm, list.first(), 52.dp, corner = 26.dp)
                             Column(Modifier.weight(1f)) {
                                 Text(name, style = T.title, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("${list.size} songs, ${list.distinctBy { it.albumId }.size} albums", style = T.small, color = c.muted)
+                                Text("${list.size} songs, ${list.distinctBy { vm.albumGroup(it.albumId)?.id ?: it.albumId }.size} albums", style = T.small, color = c.muted)
                             }
                             CircleButton(Ic.Play, "Play $name", { vm.play(list, 0); onOpenNowPlaying() }, size = 44.dp, container = c.card)
                         }
@@ -306,10 +344,10 @@ fun LibraryScreen(
             }
         }
 
-        if (tab == LibTab.SONGS && letters.size > 3 && songs.size > 40) {
+        if (tab == LibTab.SONGS && letters.size > 3 && shownSongs.size > 40) {
             FastScroller(
                 letters = letters.map { it.first },
-                onPick = { idx -> scope.launch { grid.scrollToItem(HEADER_ITEMS + letters[idx].second) } },
+                onPick = { idx -> scope.launch { grid.scrollToItem(letters[idx].second) } },
                 modifier = Modifier.align(Alignment.CenterEnd).padding(end = 2.dp, top = 120.dp, bottom = 200.dp),
             )
         }

@@ -3,6 +3,24 @@ package com.skarif.kairos.ui
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
 import com.skarif.kairos.data.splitArtists
+import com.skarif.kairos.data.AlbumGroup
+import com.skarif.kairos.data.Taste
+import com.skarif.kairos.data.genreKey
+import com.skarif.kairos.data.groupAlbums
+import com.skarif.kairos.data.groupGenres
+import com.skarif.kairos.data.normalize
+import com.skarif.kairos.data.searchSongs
+import com.skarif.kairos.data.sortKey
+import com.skarif.kairos.data.splitGenres
+import com.skarif.kairos.data.spreadShuffle
+import com.skarif.kairos.data.weightedSample
+import com.skarif.kairos.data.Recap
+import com.skarif.kairos.data.dayPart
+import com.skarif.kairos.data.parseM3u
+import com.skarif.kairos.data.similarSongs
+import com.skarif.kairos.data.smartShuffle
+import com.skarif.kairos.data.toM3u
+import com.skarif.kairos.data.yearRecap
 import android.app.Application
 import android.content.Intent
 import android.graphics.Bitmap
@@ -86,17 +104,33 @@ data class StatsUi(
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val ct = (app as PlayerApp).container
     private fun <T> Flow<T>.state(initial: T) = stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), initial)
+    /** For indexes that are read with `.value` (queue rows, album lookups): always kept up to date. */
+    private fun <T> Flow<T>.always(initial: T) = stateIn(viewModelScope, SharingStarted.Eagerly, initial)
 
     val settings: StateFlow<Settings> = ct.settings.settings
     val now: StateFlow<NowPlaying> = ct.player.state
     val position: StateFlow<Long> = ct.player.position
     val sleep: StateFlow<SleepState> = ct.sleep.state
-    val songs: StateFlow<List<SongEntity>> = ct.db.songs().observeAll().state(emptyList())
+    val songs: StateFlow<List<SongEntity>> = ct.db.songs().observeAll().always(emptyList())
     private val events: StateFlow<List<PlayEventEntity>> = ct.db.playEvents().observeAll().state(emptyList())
-    val favorites: StateFlow<Set<Long>> = ct.db.favorites().observeIds().map { it.toSet() }.state(emptySet())
+    val favorites: StateFlow<Set<Long>> = ct.db.favorites().observeIds().map { it.toSet() }.always(emptySet())
 
-    private val songById: StateFlow<Map<Long, SongEntity>> = songs.map { l -> l.associateBy { it.id } }.state(emptyMap())
-    private val playCounts: StateFlow<Map<Long, Int>> = events.map { e -> e.groupingBy { it.songId }.eachCount() }.state(emptyMap())
+    /**
+     * Song lookup by id. Shared eagerly: the queue reads it for every row, and while it was only
+     * started by other screens it could still be empty when the queue opened, so every row showed
+     * "Unknown" with no cover. Screens should collect [songMap] so they redraw when it fills.
+     */
+    private val songById: StateFlow<Map<Long, SongEntity>> = songs.map { l -> l.associateBy { it.id } }
+        .flowOn(Dispatchers.Default).always(emptyMap())
+    val songMap: StateFlow<Map<Long, SongEntity>> get() = songById
+    val playCounts: StateFlow<Map<Long, Int>> = events.map { e -> e.groupingBy { it.songId }.eachCount() }.state(emptyMap())
+
+    /** Albums merged across MediaStore ids; see [groupAlbums]. */
+    val albums: StateFlow<List<AlbumGroup>> = songs.map { groupAlbums(it) }.flowOn(Dispatchers.Default).always(emptyList())
+    private val albumIndex: StateFlow<Map<Long, AlbumGroup>> = albums.map { l ->
+        HashMap<Long, AlbumGroup>().apply { l.forEach { g -> g.albumIds.forEach { put(it, g) } } }
+    }.always(emptyMap())
+    fun albumGroup(albumId: Long): AlbumGroup? = albumIndex.value[albumId]
 
     private val sortKey = settings.map { it.songSort to it.sortDescending }.distinctUntilChanged()
     val sortedSongs: StateFlow<List<SongEntity>> = combine(songs, sortKey, playCounts) { list, (sort, desc), counts ->
@@ -164,52 +198,123 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         for (song in all) for (a in splitArtists(song.artist)) {
             acc.getOrPut(a.lowercase()) { a to ArrayList() }.second += song
         }
-        acc.values.map { (name, l) -> ArtistUi(name, l.sortedBy { it.title.lowercase() }) }.sortedBy { it.name.lowercase() }
-    }.flowOn(Dispatchers.Default).state(emptyList())
+        acc.values.map { (name, l) -> ArtistUi(name, l.sortedBy { it.title.lowercase() }) }.sortedBy { sortKey(it.name) }
+    }.flowOn(Dispatchers.Default).always(emptyList())
 
-    val genres: StateFlow<List<GenreUi>> = songs.map { all ->
-        all.filter { it.genre.isNotEmpty() }.groupBy { it.genre.lowercase() }
-            .map { (_, l) -> GenreUi(l.first().genre, l.sortedBy { it.title.lowercase() }) }
-            .sortedByDescending { it.songs.size }
-    }.flowOn(Dispatchers.Default).state(emptyList())
+    /** "Pop; Rock" counts for both, and "Hip-Hop" / "hip hop" are one genre. */
+    val genres: StateFlow<List<GenreUi>> = songs.map { all -> groupGenres(all).map { GenreUi(it.name, it.songs) } }
+        .flowOn(Dispatchers.Default).always(emptyList())
+
+    /** Hidden songs plus songs snoozed until a time still ahead. Re-checked every few minutes. */
+    private val clock: Flow<Long> = kotlinx.coroutines.flow.flow {
+        while (true) { emit(System.currentTimeMillis()); kotlinx.coroutines.delay(5 * 60_000L) }
+    }
+    val blocked: StateFlow<Set<Long>> = combine(settings, clock) { s, t ->
+        s.hiddenSongs.mapNotNullTo(HashSet()) { it.toLongOrNull() } +
+            s.snoozedSongs.mapNotNull { e -> e.split(':').takeIf { it.size == 2 && (it[1].toLongOrNull() ?: 0L) > t }?.get(0)?.toLongOrNull() }
+    }.distinctUntilChanged().always(emptySet())
+    val hiddenIds: StateFlow<Set<Long>> = settings.map { s -> s.hiddenSongs.mapNotNullTo(HashSet()) { it.toLongOrNull() } }.always(emptySet())
+    val snoozedIds: StateFlow<Set<Long>> = combine(blocked, hiddenIds) { b, h -> b - h }.always(emptySet())
+    val tasteExcluded: StateFlow<Set<Long>> = settings.map { s -> s.tasteExcluded.mapNotNullTo(HashSet()) { it.toLongOrNull() } }
+        .distinctUntilChanged().always(emptySet())
+    /** The hour, so the daylist changes through the day. */
+    private val hour: Flow<Int> = clock.map { java.time.LocalTime.now().hour }.distinctUntilChanged()
+
+    /** Real listens (30 s, or half a short song) and skips, minus songs kept out of your taste. */
+    private class History(val plays: List<PlayEventEntity>, val skips: List<PlayEventEntity>, val taste: Taste)
+    private data class MixIn(
+        val songs: List<SongEntity>, val events: List<PlayEventEntity>, val history: History, val byId: Map<Long, SongEntity>, val genres: List<GenreUi>,
+    )
+
+    private fun history(ev: List<PlayEventEntity>, byId: Map<Long, SongEntity>, favs: Set<Long>, excluded: Set<Long>): History {
+        val (plays, skips) = ev.filter { it.songId !in excluded }.partition { e ->
+            val d = byId[e.songId]?.durationMs ?: 0L
+            e.listenedMs >= minOf(30_000L, if (d > 0) d / 2 else 30_000L)
+        }
+        val artistMs = HashMap<String, Long>()
+        plays.forEach { e -> byId[e.songId]?.let { s -> splitArtists(s.artist).forEach { a -> artistMs.merge(normalize(a), e.listenedMs, Long::plus) } } }
+        return History(plays, skips, Taste(plays.groupingBy { it.songId }.eachCount(), skips.groupingBy { it.songId }.eachCount(), favs, artistMs))
+    }
+
+    private val historyFlow: StateFlow<History> = combine(events, songById, favorites, tasteExcluded) { ev, byId, favs, ex -> history(ev, byId, favs, ex) }
+        .flowOn(Dispatchers.Default).always(History(emptyList(), emptyList(), Taste(emptyMap(), emptyMap(), emptySet(), emptyMap())))
 
     /**
      * Auto playlists, rebuilt whenever the library or listening history changes. The first four
      * show on Home; all of them are under Playlists, Smart.
      */
-    val mixes: StateFlow<List<Collection>> = combine(songs, events, favorites, songById, genres) { all, ev, favs, byId, gens ->
-        // Only real listens count: 30 s, or half of a short song. Skips don't make a song "most played".
-        val plays = ev.filter { e ->
-            val d = byId[e.songId]?.durationMs ?: 0L
-            e.listenedMs >= minOf(30_000L, if (d > 0) d / 2 else 30_000L)
-        }
-        val counts = plays.groupingBy { it.songId }.eachCount()
+    val mixes: StateFlow<List<Collection>> = combine(
+        combine(songs, events, historyFlow, songById, genres) { a, b, c, d, e -> MixIn(a, b, c, d, e) },
+        blocked, hour,
+    ) { (allSongs, ev, hist, byId, gens), block, hr ->
+        val all = allSongs
+        // Generated mixes leave out hidden and snoozed songs; your own lists (favourites, most played) don't.
+        val open = all.filter { it.id !in block }
+        val plays = hist.plays
+        val taste = hist.taste
+        val counts = taste.plays
         val anyPlay = ev.mapTo(HashSet()) { it.songId }
         val lastAt = plays.groupBy { it.songId }.mapValues { (_, l) -> l.maxOf { it.startedAt } }
         val now = System.currentTimeMillis()
         val monthAgo = now - 30L * 24 * 3600 * 1000
-        val daily = java.util.Random(LocalDate.now().toEpochDay())
-        // Ties broken by listening time, then by how recently it was played.
-        val time = plays.groupBy { it.songId }.mapValues { (_, l) -> l.sumOf { it.listenedMs } }
-        val mostPlayed = counts.entries
-            .sortedWith(compareByDescending<Map.Entry<Long, Int>> { it.value }.thenByDescending { time[it.key] ?: 0L }.thenByDescending { lastAt[it.key] ?: 0L })
-            .take(50).mapNotNull { byId[it.key] }
+        val artistMs = taste.artistMs
+        // New every day, and stable within the day: each mix has its own seed, so a play being
+        // saved (every 15 s) only nudges the weights instead of reshuffling every mix.
+        val day = LocalDate.now().toEpochDay()
+        fun rng(key: String) = kotlin.random.Random(day * 31 + key.hashCode())
+        fun pick(key: String, pool: List<SongEntity>, n: Int, w: (SongEntity) -> Double = taste::score): List<SongEntity> {
+            val r = rng(key)
+            return spreadShuffle(weightedSample(pool, n, r, w), r)
+        }
+
+        // Recent plays count more: a play loses half its weight every 30 days.
+        val decayed = HashMap<Long, Double>()
+        plays.forEach { e -> decayed.merge(e.songId, Math.pow(0.5, (now - e.startedAt) / (30.0 * 24 * 3600 * 1000)), Double::plus) }
+        val mostPlayed = counts.keys
+            .sortedWith(compareByDescending<Long> { counts[it] ?: 0 }.thenByDescending { decayed[it] ?: 0.0 })
+            .take(50).mapNotNull { byId[it] }
         val recent = all.sortedByDescending { it.dateAddedSec }.take(50)
-        val favourites = all.filter { it.id in favs }
-        // Loved once (2+ plays) but not played for a month. Empty until that is true.
-        val forgotten = counts.filter { (id, n) -> n >= 2 && (lastAt[id] ?: 0L) < monthAgo }
+        val favourites = all.filter { it.id in favorites.value }
+        // Loved once (3+ plays) but not played for a month. Empty until that is true.
+        val forgotten = counts.filter { (id, n) -> n >= 3 && (lastAt[id] ?: 0L) < monthAgo }
             .keys.sortedByDescending { counts[it] }.take(40).mapNotNull { byId[it] }
         val onRepeat = plays.filter { it.startedAt >= monthAgo }.groupingBy { it.songId }.eachCount()
             .filter { it.value >= 3 }.entries.sortedByDescending { it.value }.take(40).mapNotNull { byId[it.key] }
         val lastPlayed = plays.sortedByDescending { it.startedAt }.map { it.songId }.distinct().take(50).mapNotNull { byId[it] }
-        // Never started at all, not even skipped.
-        val neverPlayed = all.filter { it.id !in anyPlay }.shuffled(daily).take(60)
-        val quick = all.filter { it.durationMs in 60_000..180_000 }.shuffled(daily).take(40)
-        val longOnes = all.filter { it.durationMs >= 6 * 60_000 }.sortedByDescending { it.durationMs }.take(40)
-        val genreMixes = gens.take(6).map { g ->
-            Collection("mix-genre:${g.name}", "${g.name} mix", "${minOf(g.songs.size, 50)} songs, new every day", g.songs.shuffled(daily).take(50))
+        // Never started at all; artists you already like come up first.
+        val neverPlayed = pick("never", open.filter { it.id !in anyPlay }, 60, taste::discoveryScore)
+        val quick = pick("quick", open.filter { it.durationMs in 60_000..180_000 }, 40)
+        val longOnes = open.filter { it.durationMs >= 6 * 60_000 }.sortedByDescending { it.durationMs }.take(40)
+        // Your top artists, plus songs that share their genres: like a radio station for each.
+        val topArtists = artistMs.entries.sortedByDescending { it.value }.take(3).map { it.key }
+        val artistMixes = topArtists.mapNotNull { key ->
+            val own = open.filter { s -> splitArtists(s.artist).any { normalize(it) == key } }
+            if (own.size < 3) return@mapNotNull null
+            val name = splitArtists(own.first().artist).first { normalize(it) == key }
+            val genreKeys = own.flatMap { splitGenres(it.genre) }.map(::genreKey).toSet()
+            val related = if (genreKeys.isEmpty()) emptyList()
+            else open.filter { s -> s !in own && splitGenres(s.genre).any { genreKey(it) in genreKeys } }
+            val r = rng("artist:$key")
+            val songs = spreadShuffle(weightedSample(own, 20, r, taste::score) + weightedSample(related, 30, r, taste::score), r)
+            Collection("mix-artist:$name", "$name radio", "$name and similar songs, new every day", songs)
         }
-        listOf(
+        val genreMixes = gens.take(6).map { g ->
+            val songs = pick("genre:${g.name}", g.songs.filter { it.id !in block }, 50)
+            Collection("mix-genre:${g.name}", "${g.name} mix", "${songs.size} songs, new every day", songs)
+        }
+        // daylist: what you play at this time of day, plus songs like it. Changes through the day.
+        val part = dayPart(hr)
+        val zone = ZoneId.systemDefault()
+        val partCounts = plays.filter { dayPart(Instant.ofEpochMilli(it.startedAt).atZone(zone).hour) == part }
+            .groupingBy { it.songId }.eachCount().filterKeys { it !in block }
+        val daylist = if (partCounts.size < 3) emptyList() else {
+            val r = rng("day:${part.name}")
+            val usual = weightedSample(partCounts.keys.mapNotNull { byId[it] }, 25, r) { s -> (partCounts[s.id] ?: 1) * taste.score(s) }
+            spreadShuffle(usual + similarSongs(usual.take(15), open, taste, 20, r, usual.mapTo(HashSet()) { it.id }), r)
+        }
+        listOfNotNull(
+            Collection("daylist", "Your ${part.label} mix", "What you play around this time, changes through the day", daylist).takeIf { daylist.isNotEmpty() },
+        ) + listOf(
             Collection("most", "Most played", "Your most listened songs", mostPlayed),
             Collection("recent", "Recently added", "${recent.size} songs", recent),
             Collection("favourites", "Favourites", "${favourites.size} songs", favourites),
@@ -219,13 +324,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             Collection("never", "Never played", "Something new from your library", neverPlayed),
             Collection("quick", "Quick hits", "Under 3 minutes", quick),
             Collection("long", "Long listens", "6 minutes or more", longOnes),
-        ) + genreMixes
-    }.state(emptyList())
+        ) + artistMixes + genreMixes
+    }.flowOn(Dispatchers.Default).state(emptyList())
 
     /** Songs from the album you were last listening to, for the "Continue" card. */
-    val continueAlbum: StateFlow<Collection?> = combine(currentSong, songs) { cur, all ->
-        cur?.let { c -> albumOf(c.albumId, all) }
+    val continueAlbum: StateFlow<Collection?> = combine(currentSong, albumIndex) { cur, idx ->
+        cur?.let { c -> idx[c.albumId]?.toCollection() }
     }.state(null)
+
+    /** This year's recap; in January, last year's until this year has some listening. */
+    val recap: StateFlow<Recap?> = combine(events, songById) { ev, byId ->
+        val y = LocalDate.now().year
+        yearRecap(y, ev, byId, ZoneId.systemDefault())?.takeIf { it.minutes >= 30 || LocalDate.now().monthValue > 1 }
+            ?: yearRecap(y - 1, ev, byId, ZoneId.systemDefault())
+    }.flowOn(Dispatchers.Default).state(null)
+
+    /** Custom playlist covers, kept as files: playlist id -> image file. */
+    private val coverDir = java.io.File(app.filesDir, "playlist-covers").apply { mkdirs() }
+    private val _covers = MutableStateFlow(readCovers())
+    val playlistCovers: StateFlow<Map<Long, java.io.File>> = _covers.asStateFlow()
+    private fun readCovers(): Map<Long, java.io.File> =
+        coverDir.listFiles().orEmpty().mapNotNull { f -> f.nameWithoutExtension.substringBefore('-').toLongOrNull()?.let { it to f } }.toMap()
 
     private val _statsRange = MutableStateFlow(StatsRange.WEEK)
     val statsRange: StateFlow<StatsRange> = _statsRange.asStateFlow()
@@ -237,11 +356,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
-    val searchResults: StateFlow<List<SongEntity>> = combine(songs, _query) { all, q ->
-        val t = q.trim().lowercase()
-        if (t.isEmpty()) emptyList()
-        else all.filter { it.title.lowercase().contains(t) || it.artist.lowercase().contains(t) || it.album.lowercase().contains(t) }.take(200)
-    }.state(emptyList())
+    val searchResults: StateFlow<List<SongEntity>> = combine(songs, _query) { all, q -> searchSongs(all, q, 200) }
+        .flowOn(Dispatchers.Default).state(emptyList())
 
     private val _folders = MutableStateFlow<List<FolderInfo>>(emptyList())
     val folders: StateFlow<List<FolderInfo>> = _folders.asStateFlow()
@@ -249,18 +365,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _scan = MutableStateFlow<ScanState>(ScanState.Idle)
     val scan: StateFlow<ScanState> = _scan.asStateFlow()
 
+    /** The song autoplay last added songs for, so it adds only once per "end of queue". */
+    private var autoplayedAfter: Long? = null
+
     init {
         ct.player.connect()
+        // Autoplay: when the last song in the queue starts, add similar songs from your library.
+        viewModelScope.launch {
+            now.map { Triple(it.songId, it.queuePosition == it.queue.lastIndex, it.repeatMode) }.distinctUntilChanged().collect { (id, last, repeat) ->
+                if (id == null || !last || repeat != androidx.media3.common.Player.REPEAT_MODE_OFF || !settings.value.autoplay) return@collect
+                if (autoplayedAfter == id) return@collect
+                autoplayedAfter = id
+                val queued = now.value.queue.mapNotNull { songById.value[it.songId] }
+                val more = kotlinx.coroutines.withContext(Dispatchers.Default) {
+                    similarSongs(queued.takeLast(10), songs.value, historyFlow.value.taste, 10, kotlin.random.Random.Default, blocked.value + queued.map { it.id })
+                }
+                ct.player.append(more)
+            }
+        }
     }
 
     // ---------------------------------------------------------------- collections
 
-    fun albumOf(albumId: Long, all: List<SongEntity> = songs.value): Collection? {
-        val list = all.filter { it.albumId == albumId }.sortedWith(compareBy({ it.track }, { it.title.lowercase() }))
-        val first = list.firstOrNull() ?: return null
-        val mins = list.sumOf { it.durationMs } / 60_000
-        val year = list.firstOrNull { it.year > 0 }?.year
-        return Collection("album:$albumId", first.album, listOfNotNull(year?.toString(), "${list.size} songs", "$mins min").joinToString(", "), list)
+    fun albumOf(albumId: Long): Collection? = albumIndex.value[albumId]?.toCollection()
+
+    private fun AlbumGroup.toCollection(): Collection {
+        val mins = songs.sumOf { it.durationMs } / 60_000
+        return Collection("album:$id", title, listOfNotNull(year.takeIf { it > 0 }?.toString(), "${songs.size} songs", "$mins min").joinToString(", "), songs)
     }
 
     fun collection(key: String): Collection? = when {
@@ -274,7 +405,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             Collection(key, name, "${l.size} songs, ${l.distinctBy { it.albumId }.size} albums", l)
         }
         key.startsWith("genre:") -> key.removePrefix("genre:").let { name ->
-            val l = genres.value.firstOrNull { it.name.equals(name, true) }?.songs.orEmpty()
+            val l = genres.value.firstOrNull { genreKey(it.name) == genreKey(name) }?.songs.orEmpty()
             Collection(key, name, "${l.size} songs", l)
         }
         else -> mixes.value.firstOrNull { it.key == key }
@@ -378,7 +509,112 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setQuery(q: String) { _query.value = q }
 
     fun play(list: List<SongEntity>, index: Int) = ct.player.play(list, index)
-    fun shuffle(list: List<SongEntity>) { if (list.isNotEmpty()) ct.player.play(list, 0, shuffle = true) }
+    /**
+     * Shuffles with artists spread out, then plays that order with the player's own shuffle off.
+     * The queue shows exactly what will play, and play next / reorder keep working.
+     */
+    fun shuffle(list: List<SongEntity>, smart: Boolean = settings.value.smartShuffle) {
+        if (list.isEmpty()) return
+        val r = kotlin.random.Random.Default
+        val order = if (smart) smartShuffle(list, songs.value, historyFlow.value.taste, r, blocked.value) else spreadShuffle(list, r)
+        ct.player.play(order, 0)
+    }
+
+    /** Shuffle the whole library (or a big list), leaving out hidden and snoozed songs. */
+    fun shuffleAll(list: List<SongEntity>) = shuffle(list.filter { it.id !in blocked.value }.ifEmpty { list }, smart = false)
+
+    // ---------------------------------------------------------------- hide, snooze, taste
+
+    fun setHidden(songId: Long, hidden: Boolean) = updateSettings { s ->
+        s.copy(hiddenSongs = if (hidden) s.hiddenSongs + "$songId" else s.hiddenSongs - "$songId")
+    }
+
+    /** Keeps a song out of mixes and autoplay for [days] days. */
+    fun snooze(songId: Long, days: Int = 30) = updateSettings { s ->
+        val until = System.currentTimeMillis() + days * 24L * 3600 * 1000
+        s.copy(snoozedSongs = s.snoozedSongs.filterNot { it.startsWith("$songId:") }.toSet() + "$songId:$until")
+    }
+
+    fun unsnooze(songId: Long) = updateSettings { s -> s.copy(snoozedSongs = s.snoozedSongs.filterNot { it.startsWith("$songId:") }.toSet()) }
+
+    fun setTasteExcluded(songId: Long, excluded: Boolean) = updateSettings { s ->
+        s.copy(tasteExcluded = if (excluded) s.tasteExcluded + "$songId" else s.tasteExcluded - "$songId")
+    }
+
+    fun clearHiddenAndSnoozed() = updateSettings { it.copy(hiddenSongs = emptySet(), snoozedSongs = emptySet()) }
+    fun clearTasteExclusions() = updateSettings { it.copy(tasteExcluded = emptySet()) }
+
+    // ---------------------------------------------------------------- playlist tools
+
+    fun renamePlaylist(id: Long, name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch { ct.db.playlists().rename(id, name.trim()) }
+    }
+
+    fun removeFromPlaylist(id: Long, index: Int) {
+        val p = playlists.value.firstOrNull { it.id == id } ?: return
+        if (index !in p.songs.indices) return
+        viewModelScope.launch { ct.db.playlists().replaceSongs(id, p.songs.map { it.id }.toMutableList().apply { removeAt(index) }) }
+    }
+
+    fun moveInPlaylist(id: Long, from: Int, to: Int) {
+        val p = playlists.value.firstOrNull { it.id == id } ?: return
+        if (from !in p.songs.indices || to !in p.songs.indices || from == to) return
+        val ids = p.songs.map { it.id }.toMutableList().apply { add(to, removeAt(from)) }
+        viewModelScope.launch { ct.db.playlists().replaceSongs(id, ids) }
+    }
+
+    /** Copies the picked image into app storage, scaled down, as the playlist's cover. */
+    fun setPlaylistCover(id: Long, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ctx = getApplication<Application>()
+            runCatching {
+                val src = ctx.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) } ?: return@runCatching
+                val side = minOf(src.width, src.height)
+                val square = Bitmap.createBitmap(src, (src.width - side) / 2, (src.height - side) / 2, side, side)
+                val scaled = Bitmap.createScaledBitmap(square, 720.coerceAtMost(side), 720.coerceAtMost(side), true)
+                coverDir.listFiles().orEmpty().filter { it.name.startsWith("$id-") }.forEach { it.delete() }
+                // A new file name each time, so screens that cached the old image reload it.
+                java.io.File(coverDir, "$id-${System.currentTimeMillis()}.jpg").outputStream().use { scaled.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+            }.onFailure { toast("Couldn't use that image") }
+            _covers.value = readCovers()
+        }
+    }
+
+    fun removePlaylistCover(id: Long) {
+        coverDir.listFiles().orEmpty().filter { it.name.startsWith("$id-") }.forEach { it.delete() }
+        _covers.value = readCovers()
+    }
+
+    fun exportPlaylist(id: Long, uri: Uri) {
+        val p = playlists.value.firstOrNull { it.id == id } ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                getApplication<Application>().contentResolver.openOutputStream(uri, "wt")!!.use { it.write(toM3u(p.songs).toByteArray()) }
+            }.onSuccess { toast("Saved ${p.name} (${p.songs.size} songs)") }.onFailure { toast("Couldn't save the playlist") }
+        }
+    }
+
+    /** Reads an .m3u/.m3u8 file and makes a playlist from the songs found on this phone. */
+    fun importPlaylist(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ctx = getApplication<Application>()
+            runCatching {
+                val text = ctx.contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+                val name = ctx.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                    if (c.moveToFirst()) c.getString(0) else null
+                }?.substringBeforeLast('.') ?: "Imported playlist"
+                val (found, missing) = parseM3u(text, songs.value)
+                if (found.isEmpty()) { toast("None of those songs are on this phone"); return@runCatching }
+                ct.db.playlists().create(name, found.map { it.id })
+                toast("Imported $name: ${found.size} songs" + if (missing > 0) ", $missing not found" else "")
+            }.onFailure { toast("Couldn't read that file") }
+        }
+    }
+
+    private suspend fun toast(text: String) = kotlinx.coroutines.withContext(Dispatchers.Main) {
+        android.widget.Toast.makeText(getApplication(), text, android.widget.Toast.LENGTH_SHORT).show()
+    }
     fun playNext(list: List<SongEntity>) { ct.player.playNext(list) }
     fun toggle() { ct.player.toggle() }
     fun next() { ct.player.next() }

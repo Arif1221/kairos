@@ -54,6 +54,16 @@ data class Settings(
     val onboarded: Boolean = false,
     val songSort: SongSort = SongSort.TITLE,
     val sortDescending: Boolean = false,
+    /** Keep playing similar songs from your library when the queue runs out. */
+    val autoplay: Boolean = true,
+    /** Shuffle adds a suggestion from your library after every few songs. */
+    val smartShuffle: Boolean = false,
+    /** Song ids kept out of mixes, shuffle-all, Smart Shuffle and autoplay. */
+    val hiddenSongs: Set<String> = emptySet(),
+    /** "songId:untilEpochMs": hidden like [hiddenSongs] until that time. */
+    val snoozedSongs: Set<String> = emptySet(),
+    /** Song ids whose plays don't shape mixes and suggestions (Stats still count them). */
+    val tasteExcluded: Set<String> = emptySet(),
 ) {
     val minDurationMs: Long get() = if (skipShortFiles) 30_000L else 0L
 }
@@ -84,6 +94,11 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
         val onboarded = booleanPreferencesKey("onboarded")
         val sort = stringPreferencesKey("song_sort")
         val sortDesc = booleanPreferencesKey("sort_desc")
+        val autoplay = booleanPreferencesKey("autoplay")
+        val smartShuffle = booleanPreferencesKey("smart_shuffle")
+        val hidden = stringSetPreferencesKey("hidden_songs")
+        val snoozed = stringSetPreferencesKey("snoozed_songs")
+        val tasteExcluded = stringSetPreferencesKey("taste_excluded")
     }
 
     val settings: StateFlow<Settings> = ds.data
@@ -120,6 +135,11 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
             onboarded = p[K.onboarded] ?: d.onboarded,
             songSort = enumOr(p[K.sort], d.songSort),
             sortDescending = p[K.sortDesc] ?: d.sortDescending,
+            autoplay = p[K.autoplay] ?: d.autoplay,
+            smartShuffle = p[K.smartShuffle] ?: d.smartShuffle,
+            hiddenSongs = p[K.hidden] ?: d.hiddenSongs,
+            snoozedSongs = p[K.snoozed] ?: d.snoozedSongs,
+            tasteExcluded = p[K.tasteExcluded] ?: d.tasteExcluded,
         )
     }
 
@@ -144,6 +164,11 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
         p[K.onboarded] = s.onboarded
         p[K.sort] = s.songSort.name
         p[K.sortDesc] = s.sortDescending
+        p[K.autoplay] = s.autoplay
+        p[K.smartShuffle] = s.smartShuffle
+        p[K.hidden] = s.hiddenSongs
+        p[K.snoozed] = s.snoozedSongs
+        p[K.tasteExcluded] = s.tasteExcluded
     }
 
     private inline fun <reified E : Enum<E>> enumOr(name: String?, default: E): E =

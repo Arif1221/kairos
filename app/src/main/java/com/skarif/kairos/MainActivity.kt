@@ -232,7 +232,7 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 }
                 screen("collection/{key}") { e ->
                     val key = Uri.decode(e.arguments?.getString("key") ?: "")
-                    CollectionScreen(vm, key, onBack = { nav.popBackStack() }, onOpenNowPlaying = openPlayer, onOpenAlbum = ::openAlbum)
+                    CollectionScreen(vm, key, onBack = { nav.popBackStack() }, onOpenNowPlaying = openPlayer, onOpenAlbum = ::openAlbum, onOpenCollection = ::openCollection)
                 }
                 screen("settings") {
                     SettingsScreen(vm, onBack = { nav.popBackStack() }, onFolders = { nav.navigate("folders") }, onEqualizer = { tool = Tool.EQ })

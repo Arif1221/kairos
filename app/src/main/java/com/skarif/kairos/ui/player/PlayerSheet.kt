@@ -197,8 +197,9 @@ fun PlayerSheet(
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
 
-    val prevSong = now.queue.getOrNull(now.queuePosition - 1)?.let { vm.song(it.songId) }
-    val nextSong = now.queue.getOrNull(now.queuePosition + 1)?.let { vm.song(it.songId) }
+    val songMap by vm.songMap.collectAsStateWithLifecycle()
+    val prevSong = now.queue.getOrNull(now.queuePosition - 1)?.let { songMap[it.songId] }
+    val nextSong = now.queue.getOrNull(now.queuePosition + 1)?.let { songMap[it.songId] }
     val curImg = rememberCoverNow(vm, s)
     val artImg = remember(art) { art?.asImageBitmap() }
     val prevImg = rememberCoverNow(vm, prevSong)

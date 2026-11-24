@@ -138,6 +138,19 @@ abstract class PlaylistDao {
     @Query("DELETE FROM playlists WHERE id = :playlistId")
     abstract suspend fun delete(playlistId: Long)
 
+    @Query("UPDATE playlists SET name = :name WHERE id = :playlistId")
+    abstract suspend fun rename(playlistId: Long, name: String)
+
+    @Query("DELETE FROM playlist_songs WHERE playlistId = :playlistId")
+    abstract suspend fun clear(playlistId: Long)
+
+    /** Rewrites the whole order; positions are the primary key, so they can't be shifted in place. */
+    @Transaction
+    open suspend fun replaceSongs(playlistId: Long, songIds: List<Long>) {
+        clear(playlistId)
+        insertSongs(songIds.mapIndexed { i, s -> PlaylistSongEntity(playlistId, i, s) })
+    }
+
     @Transaction
     open suspend fun append(playlistId: Long, songIds: List<Long>) {
         val start = nextPosition(playlistId)

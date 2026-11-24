@@ -59,6 +59,7 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
     val sel by vm.selectedBar.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val recap by vm.recap.collectAsStateWithLifecycle()
     val selected = if (sel in st.bars.indices) sel else st.bars.indices.maxByOrNull { st.bars[it].listenedMs } ?: -1
     val max = (st.bars.maxOfOrNull { it.listenedMs } ?: 0L).coerceAtLeast(1L)
 
@@ -143,8 +144,51 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
                     }
                 }
             }
+            recap?.let { RecapCard(vm, it) }
             Text("Stats update while you listen.", style = T.small, color = c.muted)
         }
+    }
+}
+
+/** Wrapped-style "your year in music", from your own listening on this phone. */
+@Composable
+private fun RecapCard(vm: MainViewModel, r: com.skarif.kairos.data.Recap) {
+    val c = P.colors
+    val month = java.time.Month.of(r.topMonth).getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault())
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(c.ink).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text("Your ${r.year} in music", style = T.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = c.inkFg.copy(alpha = 0.7f))
+        Text("${java.text.NumberFormat.getIntegerInstance().format(r.minutes)} minutes", style = T.big.copy(fontSize = 36.sp, lineHeight = 38.sp), color = c.inkFg)
+        Text(
+            "${plural(r.plays, "play")} of ${plural(r.songs, "song")} by ${plural(r.artists, "artist")}" +
+                (if (r.newArtists > 0) ", ${r.newArtists} of them new to you" else "") + ". You listened most in $month.",
+            style = T.body, color = c.inkFg.copy(alpha = 0.85f),
+        )
+        r.topArtists.firstOrNull()?.let { (name, _) -> RecapLine("Top artist", name) }
+        r.topGenre?.let { RecapLine("Top genre", it) }
+        Text("Top songs", style = T.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = c.inkFg.copy(alpha = 0.7f))
+        r.topSongs.forEachIndexed { i, (song, ms) ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("${i + 1}", Modifier.width(18.dp), style = T.title, color = c.inkFg.copy(alpha = 0.6f))
+                SongArt(vm, song, 44.dp, corner = 14.dp)
+                Column(Modifier.weight(1f)) {
+                    Text(song.title, style = T.title, color = c.inkFg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(song.artist, style = T.small, color = c.inkFg.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Text(hoursText(ms), style = T.small, color = c.inkFg)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecapLine(label: String, value: String) {
+    val c = P.colors
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), style = T.body, color = c.inkFg.copy(alpha = 0.7f))
+        Text(value, style = T.title.copy(fontSize = 18.sp), color = c.inkFg, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

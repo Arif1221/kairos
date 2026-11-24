@@ -2,6 +2,21 @@
 
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
+## Unreleased
+- Fixed: the queue sometimes showed every song as "Unknown" with no covers
+- Home redesigned to match Library: same header, plain cards, no empty "0 songs" tiles
+- Library filter box on every tab, letter headers in the song list, accent-insensitive search
+- Albums split by Android are merged; compilations stay one album; "Pop; Rock" genres split, "Hip-Hop"/"hip hop" merge
+- Artist pages with Popular songs and Albums; genre pages with albums and artists
+- Shuffle spreads artists out, and the queue shows the real order
+- Smart Shuffle: adds a similar song from your library after every three
+- Autoplay: when the queue ends, similar songs keep playing
+- Hide a song, snooze it for 30 days, or keep it out of recommendations
+- Mixes weighted by what you play, favourite and skip; Artist radio for your top artists; a daylist that changes through the day
+- Your year in music in Stats
+- Playlists: rename, remove and reorder songs, custom cover, import and export .m3u
+- Filter Favourites and playlists by genre and save the result as a playlist
+
 ## 0.7.6
 - New app icon, with a themed icon on Android 13+
 - Releases signed with a private key; a Play Store bundle (.aab) with every release

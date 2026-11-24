@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -46,7 +47,11 @@ import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 import com.skarif.kairos.ui.theme.mixedHeadline
 
-/** Design reference: the automation app (headline, big-number cards, pill meters). */
+/**
+ * Home uses the same building blocks as Library and Search: the frosted header panel with round
+ * chip buttons, neutral cards, and cover tiles. It used to tint every card with album-art colours
+ * and show empty "0 songs" tiles, which made it look like a different app from the other tabs.
+ */
 @Composable
 fun HomeScreen(
     vm: MainViewModel,
@@ -69,37 +74,52 @@ fun HomeScreen(
     val byKey = remember(mixes) { mixes.associateBy { it.key } }
     val hour = remember { java.time.LocalTime.now().hour }
     val part = when (hour) { in 5..11 -> "morning"; in 12..16 -> "afternoon"; in 17..21 -> "evening"; else -> "night" }
+    // Same panel and chip colours as the Library header.
+    val panel = if (c.dark) androidx.compose.ui.graphics.Color(0xE6121212) else c.card.copy(alpha = 0.92f)
+    val chip = if (c.dark) androidx.compose.ui.graphics.Color(0xFF2A2A2A) else c.bg
+    val card = c.card.copy(alpha = if (c.dark) 0.85f else 0.92f)
 
     ScreenBackground(art, settings.blurBackground) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).statusBarsPadding()
-                .padding(top = 12.dp, bottom = 230.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 230.dp),
             verticalArrangement = Arrangement.spacedBy(22.dp),
         ) {
-            Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    CircleButton(Ic.Menu, "Menu", onMenu, container = c.ink, content = c.inkFg)
-                    Box(Modifier.weight(1f))
-                    CircleButton(Ic.Search, "Search", onSearch)
-                    Box(Modifier.size(8.dp))
-                    Pill("Shuffle all", { vm.shuffle(songs); onOpenNowPlaying() }, icon = Ic.Shuffle)
+            Column(
+                Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
+                    .background(panel)
+                    .statusBarsPadding()
+                    .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircleButton(Ic.Menu, "Menu", onMenu, container = chip, content = c.text)
+                    Text("Home", Modifier.weight(1f), color = c.text, style = T.title, textAlign = TextAlign.Center)
+                    CircleButton(Ic.Search, "Search", onSearch, container = chip, content = c.text)
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(mixedHeadline("Good " to false, part to true), style = T.h1.copy(fontSize = 40.sp, lineHeight = 44.sp), color = c.text)
                     Text(
-                        mixedHeadline("Good " to false, part to true),
-                        style = T.h1.copy(fontSize = 40.sp, lineHeight = 44.sp, letterSpacing = (-0.8).sp), color = c.text,
-                    )
-                    Text(
-                        "${java.text.NumberFormat.getIntegerInstance().format(songs.size)} songs and ${playlists.size} playlists on this phone",
-                        style = T.body, color = c.muted,
+                        "${java.text.NumberFormat.getIntegerInstance().format(songs.size)} songs, ${playlists.size} playlists",
+                        style = T.small, color = c.muted,
                     )
                 }
-                // Quick picks: the auto playlists you reach for most, one tap away.
-                val picks = listOf("favourites", "most", "recent", "onrepeat", "lastplayed", "never").mapNotNull { byKey[it] }
-                picks.chunked(2).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        row.forEach { m -> QuickPick(vm, m, Modifier.weight(1f)) { onOpenCollection(m.key) } }
-                        if (row.size == 1) Box(Modifier.weight(1f))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill("Shuffle all", { vm.shuffleAll(songs); onOpenNowPlaying() }, accent = true, icon = Ic.Shuffle)
+                    Pill("Playlists", onPlaylists, icon = Ic.Queue)
+                }
+            }
+
+            // Quick picks: only the ones that have songs, so a new install isn't a wall of "0 songs".
+            val picks = listOf("favourites", "most", "onrepeat", "recent", "lastplayed", "never")
+                .mapNotNull { byKey[it] }.filter { it.songs.isNotEmpty() }.take(6)
+            if (picks.isNotEmpty()) {
+                Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    picks.chunked(2).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            row.forEach { m -> QuickPick(vm, m, card, Modifier.weight(1f)) { onOpenCollection(m.key) } }
+                            if (row.size == 1) Box(Modifier.weight(1f))
+                        }
                     }
                 }
             }
@@ -111,23 +131,21 @@ fun HomeScreen(
                 val idx = album.songs.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
                 Column(
                     Modifier.padding(horizontal = 18.dp).fillMaxWidth().cardClick("Open player", onOpenNowPlaying)
-                        .clip(RoundedCornerShape(34.dp)).background(c.tint).padding(16.dp),
+                        .clip(RoundedCornerShape(30.dp)).background(card).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        SongArt(vm, song, 96.dp, corner = 26.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        SongArt(vm, song, 80.dp, corner = 22.dp)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text("Continue listening", style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.muted)
-                            Text(song.title, style = T.h2, color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(song.artist, style = T.body, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(song.title, style = T.title.copy(fontSize = 18.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(song.artist, style = T.small, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
+                        CircleButton(Ic.Play, "Resume", onOpenNowPlaying, size = 52.dp, container = c.accent, content = c.onAccent)
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("${album.title}, song ${idx + 1} of ${album.songs.size}", style = T.small, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            PillMeter(idx + 1, album.songs.size.coerceIn(1, 12), c.accent, height = 18.dp)
-                        }
-                        Pill("Resume", onOpenNowPlaying, accent = true, icon = Ic.Play)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("${album.title}, song ${idx + 1} of ${album.songs.size}", style = T.small, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        PillMeter(idx + 1, album.songs.size.coerceIn(1, 12), c.accent, height = 14.dp)
                     }
                 }
             }
@@ -135,7 +153,7 @@ fun HomeScreen(
             // Jump back in: what you played lately.
             val recent = byKey["lastplayed"]?.songs.orEmpty().take(15)
             if (recent.isNotEmpty()) {
-                Section("Jump back in")
+                Section("Jump back in", "See all") { onOpenCollection("lastplayed") }
                 androidx.compose.foundation.lazy.LazyRow(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -143,51 +161,48 @@ fun HomeScreen(
                     items(recent.size, key = { recent[it].id }) { i ->
                         val s2 = recent[i]
                         Column(
-                            Modifier.width(168.dp).cardClick("Play ${s2.title}") { vm.play(recent, i); onOpenNowPlaying() },
+                            Modifier.width(150.dp).cardClick("Play ${s2.title}") { vm.play(recent, i); onOpenNowPlaying() },
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            SongArt(vm, s2, 168.dp, corner = 30.dp)
-                            Text(s2.title, style = T.title.copy(fontSize = 16.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(s2.artist, style = T.small, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            SongArt(vm, s2, 150.dp, corner = 30.dp)
+                            Column(Modifier.padding(horizontal = 4.dp)) {
+                                Text(s2.title, style = T.title.copy(fontSize = 15.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(s2.artist, style = T.small, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
                 }
             }
 
             // Your mixes, made from what you play.
-            val more = mixes.filter { it.songs.isNotEmpty() && it.key !in setOf("favourites", "lastplayed", "never") }
+            val more = mixes.filter { it.songs.isNotEmpty() && it.key !in setOf("favourites", "lastplayed", "recent", "most") }
             if (more.isNotEmpty()) {
-                Section("Your mixes")
+                Section("Made for you", "All") { onPlaylists() }
                 androidx.compose.foundation.lazy.LazyRow(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(more.size, key = { more[it].key }) { i ->
                         val m = more[i]
-                        MixCard(vm, m, Modifier.width(320.dp), onOpen = { onOpenCollection(m.key) }, onPlay = { vm.play(m.songs, 0); onOpenNowPlaying() })
+                        MixCard(vm, m, card, Modifier.width(300.dp), onOpen = { onOpenCollection(m.key) }, onPlay = { vm.play(m.songs, 0); onOpenNowPlaying() })
                     }
                 }
             } else {
-                Text("Play a few songs and your mixes will appear here.", Modifier.padding(horizontal = 18.dp), style = T.body, color = c.muted)
+                Text("Play a few songs and mixes made for you will appear here.", Modifier.padding(horizontal = 18.dp), style = T.body, color = c.muted)
             }
 
-            // Fresh in your library: newest albums.
+            // Fresh in your library: newest albums, as the same cover tiles Library and Search use.
             val fresh = remember(byKey["recent"]) { byKey["recent"]?.songs.orEmpty().distinctBy { it.albumId }.take(12) }
             if (fresh.isNotEmpty()) {
-                Section("Fresh in your library")
+                Section("Fresh in your library", "Library") { onLibrary() }
                 androidx.compose.foundation.lazy.LazyRow(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     items(fresh.size, key = { "fa" + fresh[it].albumId }) { i ->
                         val s2 = fresh[i]
-                        Column(
-                            Modifier.width(150.dp).cardClick("Open ${s2.album}") { onOpenCollection("album:${s2.albumId}") },
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            SongArt(vm, s2, 150.dp, corner = 75.dp)
-                            Text(s2.album, style = T.title.copy(fontSize = 15.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(s2.artist, style = T.small.copy(fontSize = 12.sp), color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Box(Modifier.width(170.dp)) {
+                            CoverTile(vm, s2, key = "album:${s2.albumId}", kicker = s2.artist, title = s2.album) { onOpenCollection("album:${s2.albumId}") }
                         }
                     }
                 }
@@ -197,64 +212,57 @@ fun HomeScreen(
 }
 
 @Composable
-private fun Section(title: String) {
-    Text(title, Modifier.padding(horizontal = 18.dp), style = T.h2.copy(fontSize = 24.sp), color = P.colors.text)
+private fun Section(title: String, action: String? = null, onAction: () -> Unit = {}) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, Modifier.weight(1f), style = T.h2.copy(fontSize = 22.sp), color = P.colors.text)
+        if (action != null) {
+            Text(
+                action,
+                Modifier.clip(RoundedCornerShape(16.dp)).clickable(role = Role.Button, onClick = onAction).padding(horizontal = 10.dp, vertical = 6.dp),
+                style = T.small.copy(fontWeight = FontWeight.SemiBold), color = P.colors.muted,
+            )
+        }
+    }
 }
 
 /** Compact two-up tile: cover, name, count. */
 @Composable
-private fun QuickPick(vm: MainViewModel, m: Collection, modifier: Modifier, onOpen: () -> Unit) {
+private fun QuickPick(vm: MainViewModel, m: Collection, card: androidx.compose.ui.graphics.Color, modifier: Modifier, onOpen: () -> Unit) {
     val c = P.colors
-    val accent = artColor(vm, m.songs.firstOrNull())
     Row(
-        modifier.height(84.dp).cardClick("Open ${m.title}", onOpen)
-            .clip(RoundedCornerShape(26.dp)).background(tintOf(c.card, accent, c.dark)).padding(10.dp),
+        modifier.height(72.dp).cardClick("Open ${m.title}", onOpen)
+            .clip(RoundedCornerShape(24.dp)).background(card).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (m.songs.isNotEmpty()) SongArt(vm, m.songs.first(), 64.dp, corner = 18.dp)
-        else Box(Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)).background(c.tint), contentAlignment = Alignment.Center) {
-            androidx.compose.material3.Icon(Ic.Music, null, tint = c.muted, modifier = Modifier.size(22.dp))
-        }
+        SongArt(vm, m.songs.firstOrNull(), 56.dp, corner = 18.dp)
         Column(Modifier.weight(1f)) {
-            Text(m.title, style = T.title.copy(fontSize = 16.sp, lineHeight = 19.sp), color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(m.title, style = T.title.copy(fontSize = 15.sp, lineHeight = 18.sp), color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text("${m.songs.size} songs", style = T.small, color = c.muted, maxLines = 1)
         }
     }
 }
 
 @Composable
-private fun MixCard(vm: MainViewModel, m: Collection, modifier: Modifier = Modifier, onOpen: () -> Unit, onPlay: () -> Unit) {
+private fun MixCard(vm: MainViewModel, m: Collection, card: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier, onOpen: () -> Unit, onPlay: () -> Unit) {
     val c = P.colors
-    val accent = artColor(vm, m.songs.firstOrNull())
     Row(
         modifier
-            .sharedCard("col-${m.key}", RoundedCornerShape(34.dp))
+            .sharedCard("col-${m.key}", RoundedCornerShape(30.dp))
             .cardClick("Open ${m.title}", onOpen)
-            .clip(RoundedCornerShape(34.dp)).background(tintOf(c.card, accent, c.dark)).padding(18.dp),
+            .clip(RoundedCornerShape(30.dp)).background(card).padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(68.dp).clip(CircleShape).background(c.card), contentAlignment = Alignment.Center) {
-                SongArt(vm, m.songs.getOrNull(0), 46.dp, corner = 23.dp)
-            }
-            Box(Modifier.offset(y = (-14).dp).size(68.dp).clip(CircleShape).background(c.card), contentAlignment = Alignment.Center) {
-                SongArt(vm, m.songs.getOrNull(1) ?: m.songs.getOrNull(0), 46.dp, corner = 23.dp)
-            }
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(m.title, style = T.h2.copy(fontWeight = FontWeight.SemiBold), color = c.text)
+        Mosaic(vm, m.songs, Modifier.size(112.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(m.title, style = T.title.copy(fontSize = 17.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                m.songs.take(3).joinToString(", ") { it.title },
+                m.songs.take(3).joinToString(", ") { it.artist }.ifEmpty { m.subtitle },
                 style = T.small, color = c.muted, maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(52.dp).border(1.5.dp, c.muted.copy(alpha = 0.6f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("${m.songs.size}", style = T.small.copy(fontWeight = FontWeight.Bold), color = c.text)
-                }
-                Pill("Play", onPlay, icon = Ic.Play)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${m.songs.size} songs", Modifier.weight(1f), style = T.small.copy(fontWeight = FontWeight.SemiBold), color = c.text)
+                CircleButton(Ic.Play, "Play ${m.title}", onPlay, size = 44.dp, container = c.accent, content = c.onAccent)
             }
         }
     }

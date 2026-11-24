@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -153,16 +154,31 @@ private fun SongRowContent(song: SongEntity, playing: Boolean, vm: MainViewModel
  * queue entry instead: play it now, move it up next, or remove it.
  */
 @Composable
-fun SongActionsDialog(vm: MainViewModel, song: SongEntity, onOpenAlbum: (Long) -> Unit, queueIndex: Int? = null, onDismiss: () -> Unit) {
+fun SongActionsDialog(
+    vm: MainViewModel, song: SongEntity, onOpenAlbum: (Long) -> Unit, queueIndex: Int? = null,
+    /** Set when opened from a playlist: (playlist id, position of this song in it). */
+    inPlaylist: Pair<Long, Int>? = null,
+    onDismiss: () -> Unit,
+) {
     val c = P.colors
     val playlists by vm.playlists.collectAsStateWithLifecycle()
     val favs by vm.favorites.collectAsStateWithLifecycle()
+    val hidden by vm.hiddenIds.collectAsStateWithLifecycle()
+    val snoozed by vm.snoozedIds.collectAsStateWithLifecycle()
+    val excluded by vm.tasteExcluded.collectAsStateWithLifecycle()
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = c.sheet,
         title = { Text(song.title, style = T.h2, color = c.text, maxLines = 2) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (inPlaylist != null) {
+                    val (pid, pos) = inPlaylist
+                    val size = playlists.firstOrNull { it.id == pid }?.songs?.size ?: 0
+                    DialogItem("Remove from this playlist") { vm.removeFromPlaylist(pid, pos); onDismiss() }
+                    if (pos > 0) DialogItem("Move up") { vm.moveInPlaylist(pid, pos, pos - 1); onDismiss() }
+                    if (pos < size - 1) DialogItem("Move down") { vm.moveInPlaylist(pid, pos, pos + 1); onDismiss() }
+                }
                 if (queueIndex != null) {
                     DialogItem("Play now") { vm.playQueueItem(queueIndex); onDismiss() }
                     // Reordering follows the unshuffled order, so it is only offered with shuffle off.
@@ -176,6 +192,13 @@ fun SongActionsDialog(vm: MainViewModel, song: SongEntity, onOpenAlbum: (Long) -
                 }
                 DialogItem(if (song.id in favs) "Remove from favourites" else "Add to favourites") { vm.toggleFavorite(song.id); onDismiss() }
                 DialogItem("Go to album") { onOpenAlbum(song.albumId); onDismiss() }
+                // Like Spotify's hide and snooze: keeps the song out of mixes, shuffle-all and autoplay.
+                if (song.id in hidden) DialogItem("Show in mixes again") { vm.setHidden(song.id, false); onDismiss() }
+                else DialogItem("Hide from mixes and autoplay") { vm.setHidden(song.id, true); onDismiss() }
+                if (song.id in snoozed) DialogItem("Stop snoozing") { vm.unsnooze(song.id); onDismiss() }
+                else if (song.id !in hidden) DialogItem("Snooze for 30 days") { vm.snooze(song.id); onDismiss() }
+                if (song.id in excluded) DialogItem("Use for recommendations again") { vm.setTasteExcluded(song.id, false); onDismiss() }
+                else DialogItem("Don't use for recommendations") { vm.setTasteExcluded(song.id, true); onDismiss() }
                 if (playlists.isNotEmpty()) Text("Add to playlist", Modifier.padding(top = 10.dp, bottom = 4.dp), style = T.small, color = c.muted)
                 playlists.forEach { p -> DialogItem(p.name) { vm.addToPlaylist(p.id, listOf(song.id)); onDismiss() } }
             }
