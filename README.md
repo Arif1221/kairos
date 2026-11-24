@@ -17,8 +17,12 @@
 
 Kairos plays the music already on your phone: MP3, FLAC, M4A/AAC, OGG, Opus and WAV. No account, no ads, no tracking, and no internet permission at all. It is built with Jetpack Compose and Media3 (ExoPlayer).
 
-<!-- Screenshots: add phone screenshots to docs/screenshots/ and list them here, e.g.
-<p align="center"><img src="docs/screenshots/player.png" width="22%" alt="Now playing" /></p> -->
+<p align="center">
+  <img src="docs/screenshots/home.webp" width="23%" alt="Home: greeting, smart playlists and a Continue listening card" />
+  <img src="docs/screenshots/player.webp" width="23%" alt="Now playing: album art, format chip (M4A 16-bit / 44.1 kHz) and waveform seek bar" />
+  <img src="docs/screenshots/library.webp" width="23%" alt="Library: 2,071 songs with A–Z index, shuffle and sort" />
+  <img src="docs/screenshots/settings.webp" width="23%" alt="Settings: theme, colour from album art, blurred background and lyrics options" />
+</p>
 
 ## Features
 
