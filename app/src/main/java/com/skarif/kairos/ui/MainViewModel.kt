@@ -10,6 +10,7 @@ import com.skarif.kairos.data.groupAlbums
 import com.skarif.kairos.data.groupGenres
 import com.skarif.kairos.data.normalize
 import com.skarif.kairos.data.searchSongs
+import com.skarif.kairos.data.matchesQuery
 import com.skarif.kairos.data.sortKey
 import com.skarif.kairos.data.splitGenres
 import com.skarif.kairos.data.spreadShuffle
@@ -79,6 +80,12 @@ data class Collection(val key: String, val title: String, val subtitle: String, 
 data class ArtistUi(val name: String, val songs: List<SongEntity>)
 
 data class GenreUi(val name: String, val songs: List<SongEntity>)
+
+data class SearchHits(
+    val artists: List<ArtistUi> = emptyList(),
+    val albums: List<AlbumGroup> = emptyList(),
+    val genres: List<GenreUi> = emptyList(),
+)
 
 data class PlaylistUi(val id: Long, val name: String, val songs: List<SongEntity>)
 
@@ -358,6 +365,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val query: StateFlow<String> = _query.asStateFlow()
     val searchResults: StateFlow<List<SongEntity>> = combine(songs, _query) { all, q -> searchSongs(all, q, 200) }
         .flowOn(Dispatchers.Default).state(emptyList())
+
+    /** Artists, albums and genres matching the search, names starting with it first. */
+    val searchHits: StateFlow<SearchHits> = combine(_query, artists, albums, genres) { q, ar, al, ge ->
+        if (q.isBlank()) SearchHits() else {
+            val n = normalize(q)
+            fun rank(name: String) = if (normalize(name).startsWith(n)) 0 else 1
+            SearchHits(
+                artists = ar.filter { matchesQuery(it.name, q) }.sortedWith(compareBy({ rank(it.name) }, { -it.songs.size })).take(20),
+                albums = al.filter { matchesQuery("${it.title} ${it.artist}", q) }.sortedWith(compareBy({ rank(it.title) }, { -it.songs.size })).take(20),
+                genres = ge.filter { matchesQuery(it.name, q) }.sortedWith(compareBy({ rank(it.name) }, { -it.songs.size })).take(12),
+            )
+        }
+    }.flowOn(Dispatchers.Default).state(SearchHits())
 
     private val _folders = MutableStateFlow<List<FolderInfo>>(emptyList())
     val folders: StateFlow<List<FolderInfo>> = _folders.asStateFlow()

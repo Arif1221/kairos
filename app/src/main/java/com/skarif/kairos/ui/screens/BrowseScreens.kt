@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -91,21 +92,28 @@ fun SearchField(
     }
 }
 
-/** Design reference: the travel "select destination" screen: chips and a photo grid. */
+/**
+ * Search. Typing shows matching artists, albums, genres and songs together; with nothing typed,
+ * browse albums, artists or genres as cover tiles.
+ */
 @Composable
 fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (String) -> Unit, onOpenNowPlaying: () -> Unit) {
     val c = P.colors
     val q by vm.query.collectAsStateWithLifecycle()
     val results by vm.searchResults.collectAsStateWithLifecycle()
-    val songs by vm.songs.collectAsStateWithLifecycle()
+    val hits by vm.searchHits.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
-    var tab by remember { mutableStateOf(0) }
+    var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
+    var actionsFor by remember { mutableStateOf<SongEntity?>(null) }
     val albumGroups by vm.albums.collectAsStateWithLifecycle()
     val albums = remember(albumGroups) { albumGroups.sortedByDescending { it.songs.size }.take(60) }
     val artistList by vm.artists.collectAsStateWithLifecycle()
     val artists = remember(artistList) { artistList.sortedByDescending { it.songs.size }.take(60) }
+    val genres by vm.genres.collectAsStateWithLifecycle()
+
+    actionsFor?.let { s -> SongActionsDialog(vm, s, { onOpenCollection("album:$it") }) { actionsFor = null } }
 
     ScreenBackground(art, settings.blurBackground) {
         LazyVerticalGrid(
@@ -119,35 +127,90 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                 Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     CircleButton(Ic.Menu, "Menu", onMenu, container = c.ink, content = c.inkFg)
                     Text(mixedHeadline("Explore\n" to false, "your music" to true), style = T.h1, color = c.text)
-                    SearchField(q, vm::setQuery, "Songs, artists, albums")
+                    SearchField(q, vm::setQuery, "Songs, artists, albums, genres")
                     if (q.isEmpty()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Pill("Albums", { tab = 0 }, selected = tab == 0, icon = Ic.Music)
                             Pill("Artists", { tab = 1 }, selected = tab == 1, icon = Ic.Home)
+                            Pill("Genres", { tab = 2 }, selected = tab == 2, icon = Ic.Wave)
                         }
                     }
                 }
             }
             if (q.isNotEmpty()) {
-                item(span = { GridItemSpan(2) }) {
-                    Text(if (results.isEmpty()) "No songs match \"$q\"." else "${results.size} songs", style = T.small, color = c.muted)
+                val nothing = results.isEmpty() && hits.artists.isEmpty() && hits.albums.isEmpty() && hits.genres.isEmpty()
+                if (nothing) {
+                    item(span = { GridItemSpan(2) }) { Text("Nothing matches \"$q\".", style = T.body, color = c.muted) }
                 }
-                items(results, key = { it.id }, span = { GridItemSpan(2) }) { s ->
-                    SongRow(s, s.id == now.songId, vm) {
-                        vm.play(results, results.indexOf(s))
-                        onOpenNowPlaying()
+                if (hits.artists.isNotEmpty()) {
+                    item(span = { GridItemSpan(2) }, key = "h-artists") { SearchSection("Artists") }
+                    item(span = { GridItemSpan(2) }, key = "artists") {
+                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            items(hits.artists, key = { "sa" + it.name.lowercase() }) { a ->
+                                Column(
+                                    Modifier.width(92.dp).cardClick("Open ${a.name}") { onOpenCollection("artist:${a.name}") },
+                                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    SongArt(vm, a.songs.first(), 84.dp, corner = 42.dp)
+                                    Text(a.name, style = T.title.copy(fontSize = 14.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("${a.songs.size} songs", style = T.small.copy(fontSize = 11.sp), color = c.muted, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
+                if (hits.albums.isNotEmpty()) {
+                    item(span = { GridItemSpan(2) }, key = "h-albums") { SearchSection("Albums") }
+                    item(span = { GridItemSpan(2) }, key = "albums") {
+                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(hits.albums, key = { "sal" + it.id }) { g ->
+                                Box(Modifier.size(width = 160.dp, height = 214.dp)) {
+                                    CoverTile(vm, g.songs.first(), key = "album:${g.id}", kicker = g.artist, title = g.title) { onOpenCollection("album:${g.id}") }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (hits.genres.isNotEmpty()) {
+                    item(span = { GridItemSpan(2) }, key = "h-genres") { SearchSection("Genres") }
+                    item(span = { GridItemSpan(2) }, key = "genres") {
+                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(hits.genres, key = { "sg" + it.name.lowercase() }) { g ->
+                                Pill("${g.name}  ${g.songs.size}", { onOpenCollection("genre:${g.name}") })
+                            }
+                        }
+                    }
+                }
+                if (results.isNotEmpty()) {
+                    item(span = { GridItemSpan(2) }, key = "h-songs") { SearchSection("Songs  ${results.size}") }
+                    items(results, key = { it.id }, span = { GridItemSpan(2) }) { s ->
+                        SongRow(s, s.id == now.songId, vm, onLongClick = { actionsFor = s }) {
+                            vm.play(results, results.indexOf(s))
+                            onOpenNowPlaying()
+                        }
                     }
                 }
             } else {
                 // (cover song, collection key, kicker, title)
-                val list = if (tab == 0) albums.map { Quad(it.songs.first(), "album:${it.id}", it.artist, it.title) }
-                else artists.map { Quad(it.songs.first(), "artist:${it.name}", "${it.songs.size} songs", it.name) }
+                val list = when (tab) {
+                    0 -> albums.map { Quad(it.songs.first(), "album:${it.id}", it.artist, it.title) }
+                    1 -> artists.map { Quad(it.songs.first(), "artist:${it.name}", "${it.songs.size} songs", it.name) }
+                    else -> genres.map { Quad(it.songs.first(), "genre:${it.name}", "${it.songs.size} songs", it.name) }
+                }
+                if (list.isEmpty() && tab == 2) {
+                    item(span = { GridItemSpan(2) }) { Text("No genre tags found in your music.", style = T.body, color = c.muted) }
+                }
                 items(list, key = { it.key }) { t ->
                     CoverTile(vm, t.song, key = t.key, kicker = t.kicker, title = t.title) { onOpenCollection(t.key) }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun SearchSection(title: String) {
+    Text(title, Modifier.padding(top = 8.dp), style = T.h2, color = P.colors.text)
 }
 
 /** Cover card that grows into the album/artist page when tapped. */
