@@ -2,7 +2,7 @@
 
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
-## Unreleased
+## 0.8.0
 - Fixed: the queue sometimes showed every song as "Unknown" with no covers
 - Home redesigned to match Library: same header, plain cards, no empty "0 songs" tiles
 - Library filter box on every tab, letter headers in the song list, accent-insensitive search
