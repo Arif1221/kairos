@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -97,7 +96,7 @@ fun PlayerMenu(
 fun SpeedDialog(vm: MainViewModel, onDismiss: () -> Unit) {
     val c = P.colors
     val now by vm.now.collectAsStateWithLifecycle()
-    AlertDialog(
+    com.skarif.kairos.ui.components.KairosDialog(
         onDismissRequest = onDismiss,
         containerColor = c.sheet,
         title = { Text("Playback speed", style = T.h2, color = c.text) },
@@ -123,7 +122,7 @@ fun speedLabel(v: Float): String = (if (v == v.toInt().toFloat()) "${v.toInt()}"
 @Composable
 fun SongInfoDialog(vm: MainViewModel, song: SongEntity, onDismiss: () -> Unit) {
     val c = P.colors
-    AlertDialog(
+    com.skarif.kairos.ui.components.KairosDialog(
         onDismissRequest = onDismiss,
         containerColor = c.sheet,
         title = { Text(song.title, style = T.h2, color = c.text, maxLines = 2) },
@@ -203,7 +202,7 @@ fun NowPlayingCards(
     val songMap by vm.songMap.collectAsStateWithLifecycle()
     val lyrics by vm.lyrics.collectAsStateWithLifecycle()
     val offset by vm.lyricsOffset.collectAsStateWithLifecycle()
-    val artists by vm.artists.collectAsStateWithLifecycle()
+    val artists by vm.artistByKey.collectAsStateWithLifecycle()
     val counts by vm.playCounts.collectAsStateWithLifecycle()
     val autoplay = vm.settings.collectAsStateWithLifecycle().value.autoplay
 
@@ -247,7 +246,7 @@ fun NowPlayingCards(
 
         // About the artist, with your own numbers, and more of their songs.
         val main = splitArtists(song.artist).first()
-        val artist = remember(artists, main) { artists.firstOrNull { normalize(it.name) == normalize(main) } }
+        val artist = remember(artists, main) { artists[normalize(main)] }
         if (artist != null) {
             val plays = artist.songs.sumOf { counts[it.id] ?: 0 }
             val albums = artist.songs.distinctBy { vm.albumGroup(it.albumId)?.id ?: it.albumId }.size

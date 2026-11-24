@@ -394,7 +394,14 @@ fun PlayerSheet(
             ) {
                 AnimatedContent(
                     ctrl.page,
-                    transitionSpec = { fadeIn(Motion.fadeIn()) togetherWith fadeOut(Motion.fadeOut()) },
+                    // Player, lyrics and queue: the new page grows in from slightly smaller while the
+                    // old one grows past and fades, on springs, so switching feels like depth.
+                    transitionSpec = {
+                        (fadeIn(androidx.compose.animation.core.tween(200, delayMillis = 50)) +
+                            androidx.compose.animation.scaleIn(Motion.ios(0.45f, 0.9f), initialScale = 0.94f)) togetherWith
+                            (fadeOut(androidx.compose.animation.core.tween(140)) +
+                                androidx.compose.animation.scaleOut(Motion.ios(0.45f, 1f), targetScale = 1.04f))
+                    },
                     label = "playerPage",
                 ) { page ->
                     when (page) {

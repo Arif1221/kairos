@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -46,9 +47,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
@@ -103,8 +107,31 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
         onDispose { view.keepScreenOn = false }
     }
     var options by rememberSaveable { mutableStateOf(false) }
+    // Apple Music's living background: soft blobs of the album's colour drifting slowly behind the
+    // words. One slow clock, read only while drawing, so it costs no recomposition.
+    val drift = androidx.compose.animation.core.rememberInfiniteTransition(label = "drift")
+    val t by drift.animateFloat(
+        0f, (2 * Math.PI).toFloat(),
+        androidx.compose.animation.core.infiniteRepeatable(tween(24_000, easing = androidx.compose.animation.core.LinearEasing)),
+        label = "driftClock",
+    )
+    val blob = c.accent
+    val blob2 = androidx.compose.ui.graphics.lerp(c.accent, if (c.dark) Color.Black else Color.White, 0.35f)
 
-    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier.fillMaxSize().drawBehind {
+            val w = size.width
+            val h = size.height
+            fun spot(color: Color, cx: Float, cy: Float, r: Float, a: Float) = drawCircle(
+                Brush.radialGradient(listOf(color.copy(alpha = a), Color.Transparent), center = Offset(cx, cy), radius = r),
+                radius = r, center = Offset(cx, cy),
+            )
+            val tt = t
+            spot(blob, w * (0.3f + 0.2f * kotlin.math.sin(tt)), h * (0.3f + 0.15f * kotlin.math.cos(tt * 2)), w * 0.9f, 0.32f)
+            spot(blob2, w * (0.75f + 0.15f * kotlin.math.cos(tt)), h * (0.65f + 0.15f * kotlin.math.sin(tt * 1.5f)), w * 0.8f, 0.28f)
+            spot(blob, w * (0.5f + 0.3f * kotlin.math.sin(tt * 0.7f + 1f)), h * (0.9f + 0.1f * kotlin.math.cos(tt)), w * 0.7f, 0.2f)
+        },
+    ) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
@@ -193,7 +220,35 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
     }
 }
 
-/** Synced: centres the current line and fills it as it is sung; tap a line to jump there. */
+/**
+ * The staggered "wave" when lyrics move on, as in Apple Music: the list jumps to the new line
+ * at once, then every line is drawn where it was and springs into place, each a little later
+ * than the one above it. One frame clock drives all lines; each reads it in its draw phase.
+ */
+@androidx.compose.runtime.Stable
+private class Cascade {
+    var distance by androidx.compose.runtime.mutableFloatStateOf(0f)
+    var startNanos by androidx.compose.runtime.mutableLongStateOf(0L)
+    var nowNanos by androidx.compose.runtime.mutableLongStateOf(0L)
+    var anchor by androidx.compose.runtime.mutableIntStateOf(0)
+
+    /** Critically damped spring (no overshoot), response 0.6 s, delayed per line below [anchor]. */
+    fun offsetFor(index: Int): Float {
+        if (distance == 0f) return 0f
+        val delayMs = ((index - anchor).coerceIn(0, 10)) * 45L
+        val t = ((nowNanos - startNanos) / 1_000_000L - delayMs).coerceAtLeast(0L) / 1000f
+        val w = (2 * Math.PI / 0.6).toFloat()
+        return distance * (1 + w * t) * kotlin.math.exp(-w * t)
+    }
+}
+
+/**
+ * Apple Music-style lyrics: big bold lines, the current one bright, the rest dimmed and blurred
+ * more the further they are from it. Lines move in a staggered wave, the current line fills as
+ * it is sung, and instrumental breaks show three breathing dots. Scroll by hand to read ahead:
+ * following pauses and every line comes into focus until you stop for a few seconds.
+ * Tap any line to play from there.
+ */
 @Composable
 private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent: Color, onSeek: (Long) -> Unit) {
     val list = rememberLazyListState()
@@ -203,54 +258,150 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
         derivedStateOf { if (lyrics.synced) lyrics.indexAt(position.value - offsetMs) else -1 }
     }
     var viewport by remember { mutableIntStateOf(0) }
-    LaunchedEffect(current) {
-        if (current < 0) return@LaunchedEffect
-        // Glide to the new line with one eased motion when it is on screen; jump only when it isn't.
-        val info = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == current + if (lyrics.synced) 0 else 1 }
-        if (info != null) list.animateScrollBy((info.offset - viewport / 3).toFloat(), tween(600, easing = FastOutSlowInEasing))
-        else list.animateScrollToItem(current, scrollOffset = -(viewport / 3))
+    val cascade = remember { Cascade() }
+    // One item above the lines: the intro dots (synced) or the "not synced" note.
+    val header = 1
+
+    // Reading ahead: a drag pauses following and unblurs; 3 s after the last touch it resumes.
+    val dragged by list.interactionSource.collectIsDraggedAsState()
+    var browsing by remember { mutableStateOf(false) }
+    LaunchedEffect(dragged) {
+        if (dragged) browsing = true
+        else if (browsing) { kotlinx.coroutines.delay(3000); browsing = false }
     }
+
+    LaunchedEffect(current, browsing, viewport) {
+        if (current < 0 || browsing || viewport == 0) return@LaunchedEffect
+        val target = current + header
+        val info = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
+        if (info == null) {
+            list.scrollToItem(target, -(viewport / 3))
+            return@LaunchedEffect
+        }
+        val d = (info.offset - viewport / 3).toFloat()
+        if (abs(d) < 1f) return@LaunchedEffect
+        list.scrollBy(d)
+        // Lines are now in place; draw them where they were and let the wave carry them there.
+        cascade.anchor = target
+        cascade.distance = d
+        cascade.startNanos = androidx.compose.runtime.withFrameNanos { it }
+        cascade.nowNanos = cascade.startNanos
+        val until = cascade.startNanos + 1_400_000_000L
+        while (cascade.nowNanos < until) androidx.compose.runtime.withFrameNanos { cascade.nowNanos = it }
+        cascade.distance = 0f
+    }
+
     LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().onSizeChanged { viewport = it.height },
-        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 64.dp, bottom = 220.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
+        contentPadding = PaddingValues(start = 26.dp, end = 26.dp, top = 64.dp, bottom = 260.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        if (!lyrics.synced) {
-            item { Text("These lyrics aren't time-synced.", style = T.small, color = Dim) }
-        }
-        itemsIndexed(lyrics.lines, contentType = { _, _ -> "line" }) { i, line ->
-            val text = line.text.ifEmpty { "♪" }
+        item(key = "header", contentType = "header") {
             if (!lyrics.synced) {
-                Text(text, Modifier.fillMaxWidth(), style = T.body.copy(fontSize = 21.sp, lineHeight = 30.sp), color = Fg)
+                Text("These lyrics aren't time-synced.", style = T.small, color = Dim)
+            } else {
+                // Intro: dots until the first line, if the song starts with music only.
+                val first = lyrics.lines.firstOrNull()?.timeMs?.plus(offsetMs) ?: 0L
+                val intro = first > 3_000 && current < 0
+                AnimatedVisibility(intro, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                    BreathingDots(position, 0L, first, Modifier.padding(vertical = 8.dp))
+                }
+            }
+        }
+        itemsIndexed(lyrics.lines, key = { i, _ -> i }, contentType = { _, l -> if (l.text.isBlank()) "break" else "line" }) { i, line ->
+            if (!lyrics.synced) {
+                Text(line.text.ifEmpty { " " }, Modifier.fillMaxWidth(), style = T.body.copy(fontSize = 22.sp, lineHeight = 31.sp, fontWeight = FontWeight.SemiBold), color = Fg)
                 return@itemsIndexed
             }
-            val isCur = i == current
-            val alpha by animateFloatAsState(when { isCur -> 1f; i < current -> 0.35f; else -> 0.55f }, tween(500, easing = FastOutSlowInEasing), label = "lineAlpha")
-            val scale by animateFloatAsState(if (isCur) 1f else 0.78f, tween(500, easing = FastOutSlowInEasing), label = "lineScale")
-            var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
             val start = line.timeMs + offsetMs
             val end = lyrics.lines.getOrNull(i + 1)?.timeMs?.plus(offsetMs) ?: (start + 4000)
-            Text(
-                text,
-                Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        scaleX = scale; scaleY = scale
-                        transformOrigin = TransformOrigin(0f, 0.5f)
-                        this.alpha = alpha
-                        if (isCur) compositingStrategy = CompositingStrategy.Offscreen
+            val isCur = i == current
+            val distance = abs(i - current)
+            // Brightness and blur by distance from the current line; everything sharp while browsing.
+            val alpha by animateFloatAsState(
+                when { browsing -> 0.8f; isCur -> 1f; i < current -> 0.3f; else -> (0.55f - 0.06f * (distance - 1)).coerceAtLeast(0.25f) },
+                com.skarif.kairos.ui.motion.Motion.ios(0.5f, 1f), label = "lineAlpha",
+            )
+            val blur by androidx.compose.animation.core.animateDpAsState(
+                if (browsing || isCur) 0.dp else (distance.coerceAtMost(4) * 1.1f).dp,
+                com.skarif.kairos.ui.motion.Motion.ios(0.5f, 1f), label = "lineBlur",
+            )
+            val scale by animateFloatAsState(if (isCur) 1f else 0.94f, com.skarif.kairos.ui.motion.Motion.ios(0.55f, 0.8f), label = "lineScale")
+            val itemIndex = i + header
+            val lineMod = Modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    translationY = cascade.offsetFor(itemIndex)
+                    scaleX = scale; scaleY = scale
+                    transformOrigin = TransformOrigin(0f, 0.5f)
+                    this.alpha = alpha
+                }
+                .then(if (blur > 0.2.dp) Modifier.blur(blur, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded) else Modifier)
+                .clip(RoundedCornerShape(14.dp))
+                .clickable(role = Role.Button, onClickLabel = "Play from this line") { onSeek(start) }
+                .padding(vertical = 6.dp)
+                .then(if (isCur) Modifier.semantics { heading() } else Modifier)
+
+            if (line.text.isBlank()) {
+                // An instrumental break: dots while it lasts, a small gap otherwise.
+                Box(lineMod) {
+                    AnimatedVisibility(isCur, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                        BreathingDots(position, start, end)
                     }
-                    .then(if (isCur) Modifier.karaoke(position, start, end) { layout } else Modifier)
-                    .clickable(role = Role.Button, onClickLabel = "Play from this line") { onSeek(start) }
-                    .then(if (isCur) Modifier.semantics { heading() } else Modifier),
+                }
+                return@itemsIndexed
+            }
+            var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+            Text(
+                line.text,
+                lineMod
+                    .graphicsLayer { if (isCur) compositingStrategy = CompositingStrategy.Offscreen }
+                    .then(if (isCur) Modifier.karaoke(position, start, end) { layout } else Modifier),
                 // One weight for every line: switching weight re-wraps the text and makes it jump.
-                style = T.h1.copy(fontSize = 35.sp, lineHeight = 41.sp, fontWeight = FontWeight.ExtraBold),
+                style = T.h1.copy(fontSize = 34.sp, lineHeight = 40.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.6).sp),
                 color = Fg,
                 onTextLayout = { layout = it },
             )
         }
     }
+}
+
+/**
+ * Apple Music's interlude: three dots that light up one by one over the break and breathe
+ * gently, then swell and fade just before the singing comes back.
+ */
+@Composable
+private fun BreathingDots(position: State<Long>, startMs: Long, endMs: Long, modifier: Modifier = Modifier) {
+    val breathe = androidx.compose.animation.core.rememberInfiniteTransition(label = "breathe")
+    val b by breathe.animateFloat(
+        0.92f, 1.08f,
+        androidx.compose.animation.core.infiniteRepeatable(tween(1400, easing = FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "breatheScale",
+    )
+    val color = Fg
+    Box(
+        modifier.size(width = 88.dp, height = 34.dp).graphicsLayer {
+            val span = (endMs - startMs).coerceAtLeast(1).toFloat()
+            val p = ((position.value - startMs) / span).coerceIn(0f, 1f)
+            // Last 10%: swell up and fade out, handing over to the next line.
+            val outro = ((p - 0.9f) / 0.1f).coerceIn(0f, 1f)
+            val s = b * (1f + 0.25f * outro)
+            scaleX = s; scaleY = s
+            alpha = 1f - outro
+            transformOrigin = TransformOrigin(0f, 0.5f)
+        }.drawWithContent {
+            val span = (endMs - startMs).coerceAtLeast(1).toFloat()
+            val p = ((position.value - startMs) / span).coerceIn(0f, 1f)
+            val r = 7.dp.toPx()
+            for (k in 0..2) {
+                // Each dot fills over its third of the break.
+                val lit = ((p * 3f) - k).coerceIn(0f, 1f)
+                drawCircle(color.copy(alpha = 0.25f + 0.75f * lit), r, Offset(r + k * (r * 2 + 8.dp.toPx()), size.height / 2))
+            }
+        },
+    )
 }
 
 /**

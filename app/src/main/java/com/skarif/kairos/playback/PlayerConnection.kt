@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class NowPlaying(
     val songId: Long? = null,
@@ -89,12 +90,44 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
     fun onAutoTransition(listener: () -> Unit) { transitionListeners += listener }
     fun removeAutoTransition(listener: () -> Unit) { transitionListeners -= listener }
 
+    private var fillJob: Job? = null
+    private val _filling = MutableStateFlow(false)
+    /** True while a long queue is still being added in the background (see [play]). */
+    val filling: StateFlow<Boolean> = _filling.asStateFlow()
+
+    /**
+     * Plays [songs] from [startIndex]. A long list (a whole library) is not sent to the
+     * playback service in one go: that one call bundles every song across processes on the main
+     * thread and froze the player's opening animation for a moment. The tapped song starts at
+     * once on its own; the rest is added in small batches once the player has opened.
+     */
     fun play(songs: List<SongEntity>, startIndex: Int, shuffle: Boolean = false) {
         val c = controller ?: return
+        if (songs.isEmpty()) return
+        fillJob?.cancel()
+        val start = if (shuffle) songs.indices.random() else startIndex.coerceIn(0, songs.lastIndex)
         c.shuffleModeEnabled = shuffle
-        c.setMediaItems(songs.map { it.toMediaItem() }, if (shuffle) (songs.indices).random() else startIndex, 0L)
-        c.prepare()
-        c.play()
+        if (songs.size <= 40) {
+            _filling.value = false
+            c.setMediaItems(songs.map { it.toMediaItem() }, start, 0L)
+            c.prepare(); c.play()
+            return
+        }
+        c.setMediaItems(listOf(songs[start].toMediaItem()), 0, 0L)
+        c.prepare(); c.play()
+        _filling.value = true
+        fillJob = appScope.launch(Dispatchers.Main) {
+            try {
+                delay(650) // the player's opening animation
+                val after = withContext(Dispatchers.Default) { songs.subList(start + 1, songs.size).map { it.toMediaItem() } }
+                for (chunk in after.chunked(100)) { c.addMediaItems(chunk); delay(24) }
+                val before = withContext(Dispatchers.Default) { songs.subList(0, start).map { it.toMediaItem() } }
+                var at = 0
+                for (chunk in before.chunked(100)) { c.addMediaItems(at, chunk); at += chunk.size; delay(24) }
+            } finally {
+                _filling.value = false
+            }
+        }
     }
 
     /**
@@ -160,6 +193,7 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
 
     /** Adds songs right after the current one. */
     fun playNext(songs: List<SongEntity>) = controller?.run {
+        fillJob?.let { if (it.isActive) { it.cancel(); _filling.value = false } }
         addMediaItems((currentMediaItemIndex + 1).coerceAtMost(mediaItemCount), songs.map { it.toMediaItem() })
     }
 

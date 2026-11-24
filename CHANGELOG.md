@@ -14,6 +14,10 @@ Offline builds. Each version is on the [Releases](https://github.com/Arif1221/ka
 - Large titles grow slightly as you pull down, and a small title bar slides in once they scroll away (Home, Search, Stats; Library already had one)
 - Album, artist and playlist headers scroll with parallax and stretch to fill the space when pulled down
 - Tap the current tab again to spring back to the top
+- Fixed: tapping a song in a big library made the player jump open in a couple of frames. The tapped song now starts on its own and the rest of the queue is added after the player has opened
+- Fixed: the very first play opened the player before it had a song, so it appeared halfway through
+- Lyrics like Apple Music: lines move in a staggered wave, lines away from the current one are dimmed and blurred, instrumental breaks show breathing dots, scrolling by hand pauses following and brings every line into focus, and album colours drift slowly behind the words
+- Dialogs pop in like iOS alerts; player, lyrics and queue switch with depth; sheets push the app back; pages build in from top to bottom when they open
 
 ## 0.8.0
 - Fixed: the queue sometimes showed every song as "Unknown" with no covers

@@ -38,6 +38,8 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -131,13 +133,22 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
         val player = remember { PlayerController(scope) }
         var menuOpen by remember { mutableStateOf(false) }
         var tool by remember { mutableStateOf<Tool?>(null) }
+        val sheetDepth = androidx.compose.animation.core.animateFloatAsState(if (tool != null) 1f else 0f, Motion.sheet(), label = "sheetDepth")
         val song by vm.currentSong.collectAsStateWithLifecycle()
         // MediaStore may have changed since last time; a rescan is cheap.
         LaunchedEffect(Unit) { if (hasAudioPermission(context)) vm.scanNow() }
         fun openCollection(key: String) = nav.navigate("collection/" + Uri.encode(key))
         fun openAlbum(id: Long) = openCollection("album:$id")
         val openMenu = { menuOpen = true }
-        val openPlayer = { player.expand() }
+        val openScope = androidx.compose.runtime.rememberCoroutineScope()
+        // Open only once there is a song to show: the very first play used to start the opening
+        // animation before the player existed, so it popped in halfway through.
+        val openPlayer: () -> Unit = {
+            openScope.launch {
+                kotlinx.coroutines.withTimeoutOrNull(1500) { vm.currentSong.first { it != null } }
+                player.expand()
+            }
+        }
 
         val entry by nav.currentBackStackEntryAsState()
         val route = entry?.destination?.route
@@ -162,7 +173,7 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
         var crash by remember { mutableStateOf(java.io.File(context.filesDir, PlayerApp.CRASH_FILE).takeIf { it.exists() }?.readText()) }
         crash?.let { text ->
             val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
-            androidx.compose.material3.AlertDialog(
+            com.skarif.kairos.ui.components.KairosDialog(
                 onDismissRequest = { java.io.File(context.filesDir, PlayerApp.CRASH_FILE).delete(); crash = null },
                 containerColor = P.colors.sheet,
                 title = { Text("Kairos stopped last time", color = P.colors.text) },
@@ -201,7 +212,8 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 // iOS sheet depth: as the player opens, the app behind it sinks back, rounds its
                 // corners and dims. Read in the draw phase, so dragging the player never recomposes.
                 modifier = Modifier.graphicsLayer {
-                    val p = player.progress.value.coerceIn(0f, 1f)
+                    // Sheets (sleep timer, equalizer, sort) push the app back too, a little less.
+                    val p = maxOf(player.progress.value.coerceIn(0f, 1f), sheetDepth.value * 0.6f)
                     if (p > 0f) {
                         val s = 1f - 0.07f * p
                         scaleX = s; scaleY = s

@@ -98,7 +98,7 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
 
     menuFor?.let { (i, song) -> SongActionsDialog(vm, song, onOpenAlbum, queueIndex = i) { menuFor = null } }
     if (confirmClear) {
-        androidx.compose.material3.AlertDialog(
+        com.skarif.kairos.ui.components.KairosDialog(
             onDismissRequest = { confirmClear = false },
             containerColor = c.sheet,
             title = { Text("Clear up next?", style = T.h2, color = c.text) },

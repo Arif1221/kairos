@@ -632,3 +632,62 @@ fun Modifier.stretchTitle(pull: () -> Float): Modifier = graphicsLayer {
     scaleX = s; scaleY = s
     transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
 }
+
+/**
+ * Every dialog in the app. Same slots as Material's AlertDialog, but it pops in like an iOS
+ * alert: from slightly larger and transparent to its size, on a spring with a touch of life.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun KairosDialog(
+    onDismissRequest: () -> Unit,
+    confirmButton: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    dismissButton: (@Composable () -> Unit)? = null,
+    title: (@Composable () -> Unit)? = null,
+    text: (@Composable () -> Unit)? = null,
+    containerColor: Color = P.colors.sheet,
+) {
+    androidx.compose.material3.BasicAlertDialog(onDismissRequest = onDismissRequest, modifier = modifier) {
+        val appear = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+        androidx.compose.runtime.LaunchedEffect(Unit) { appear.animateTo(1f, com.skarif.kairos.ui.motion.Motion.ios(0.38f, 0.78f)) }
+        Column(
+            Modifier
+                .graphicsLayer {
+                    val v = appear.value
+                    val s = 1.1f - 0.1f * v
+                    scaleX = s; scaleY = s
+                    alpha = v.coerceIn(0f, 1f)
+                }
+                .heightIn(max = 620.dp)
+                .clip(RoundedCornerShape(30.dp)).background(containerColor)
+                .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            title?.invoke()
+            if (text != null) Box(Modifier.weight(1f, fill = false)) { text() }
+            Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                dismissButton?.invoke()
+                confirmButton()
+            }
+        }
+    }
+}
+
+/**
+ * Content arriving on a page: rises a little and fades in, each block [order] × 45 ms after the
+ * one before, so a page builds itself top to bottom instead of popping in at once.
+ */
+@Composable
+fun Modifier.appear(order: Int): Modifier {
+    val a = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(order.coerceIn(0, 12) * 45L)
+        a.animateTo(1f, com.skarif.kairos.ui.motion.Motion.ios(0.55f, 0.88f))
+    }
+    return graphicsLayer {
+        val v = a.value
+        alpha = v.coerceIn(0f, 1f)
+        translationY = (1f - v) * 26.dp.toPx()
+    }
+}

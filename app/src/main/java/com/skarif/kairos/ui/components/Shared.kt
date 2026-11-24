@@ -29,7 +29,8 @@ val LocalNavScope = staticCompositionLocalOf<AnimatedVisibilityScope?> { null }
 fun ProvideNavScope(scope: AnimatedVisibilityScope, content: @Composable () -> Unit) =
     CompositionLocalProvider(LocalNavScope provides scope, content = content)
 
-private val CardSpring = BoundsTransform { _, _ -> spring(dampingRatio = 0.86f, stiffness = 360f) }
+/** Same response as page pushes (Motion), with a hint of overshoot so the card lands. */
+private val CardSpring = BoundsTransform { _, _ -> com.skarif.kairos.ui.motion.Motion.ios(0.42f, 0.88f, androidx.compose.ui.geometry.Rect(0.5f, 0.5f, 0.5f, 0.5f)) }
 
 /**
  * Container transform: an element with the same [key] on the old and the new screen morphs

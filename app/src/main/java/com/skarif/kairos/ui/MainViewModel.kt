@@ -219,6 +219,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }.flowOn(Dispatchers.Default).always(emptyList())
 
     /** "Pop; Rock" counts for both, and "Hip-Hop" / "hip hop" are one genre. */
+    /** Artist by normalized name, so the player can find "about the artist" without scanning. */
+    val artistByKey: StateFlow<Map<String, ArtistUi>> = artists.map { l -> l.associateBy { normalize(it.name) } }
+        .flowOn(Dispatchers.Default).always(emptyMap())
+
     val genres: StateFlow<List<GenreUi>> = songs.map { all -> groupGenres(all).map { GenreUi(it.name, it.songs) } }
         .flowOn(Dispatchers.Default).always(emptyList())
 
@@ -451,7 +455,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun saveQueue() {
         val n = now.value
-        if (n.queue.isEmpty() || !settings.value.resumeQueue) return
+        if (n.queue.isEmpty() || !settings.value.resumeQueue || ct.player.filling.value) return
         // Play order, so a shuffled queue comes back in the order you were hearing it.
         val ids = n.queue.map { it.songId }
         val text = "${n.queuePosition}\n${position.value}\n${playingFrom.value.orEmpty()}\n${ids.joinToString(",")}"
@@ -479,13 +483,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             now.map { Triple(it.queue, it.queuePosition, it.isPlaying) }.distinctUntilChanged().collect { saveQueue() }
         }
+        viewModelScope.launch { ct.player.filling.collect { if (!it) saveQueue() } }
         viewModelScope.launch {
             while (true) { kotlinx.coroutines.delay(10_000); if (now.value.isPlaying) saveQueue() }
         }
         // Autoplay: when the last song in the queue starts, add similar songs from your library.
         viewModelScope.launch {
-            now.map { Triple(it.songId, it.queuePosition == it.queue.lastIndex, it.repeatMode) }.distinctUntilChanged().collect { (id, last, repeat) ->
+            combine(now, ct.player.filling) { n, f -> Triple(n.songId, n.queuePosition == n.queue.lastIndex && !f, n.repeatMode) }.distinctUntilChanged().collect { (id, last, repeat) ->
                 if (id == null || !last || repeat != androidx.media3.common.Player.REPEAT_MODE_OFF || !settings.value.autoplay) return@collect
+                // A long queue is still being added; the "last" song isn't really the last.
+                if (ct.player.filling.value) return@collect
                 if (autoplayedAfter == id) return@collect
                 autoplayedAfter = id
                 val queued = now.value.queue.mapNotNull { songById.value[it.songId] }

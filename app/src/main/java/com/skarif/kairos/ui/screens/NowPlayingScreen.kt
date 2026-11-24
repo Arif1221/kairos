@@ -301,7 +301,11 @@ fun NowPlayingPane(
                     CircleButton(Ic.Share, "Share", { shareSong(ctx, s, file = false) }, size = 48.dp)
                 }
             }
-            NowPlayingCards(vm, s, onQueue = onQueue, onLyrics = onLyrics, onOpenCollection = onOpenCollection)
+            // The cards below the fold are composed after the player has finished opening, so the
+            // opening animation's first frames only have the visible part of the player to build.
+            var cardsReady by remember { androidx.compose.runtime.mutableStateOf(false) }
+            LaunchedEffect(Unit) { kotlinx.coroutines.delay(450); cardsReady = true }
+            if (cardsReady) NowPlayingCards(vm, s, onQueue = onQueue, onLyrics = onLyrics, onOpenCollection = onOpenCollection)
     }
 }
 

@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -174,7 +173,7 @@ fun SongActionsDialog(
     val hidden by vm.hiddenIds.collectAsStateWithLifecycle()
     val snoozed by vm.snoozedIds.collectAsStateWithLifecycle()
     val excluded by vm.tasteExcluded.collectAsStateWithLifecycle()
-    AlertDialog(
+    com.skarif.kairos.ui.components.KairosDialog(
         onDismissRequest = onDismiss,
         containerColor = c.sheet,
         title = { Text(song.title, style = T.h2, color = c.text, maxLines = 2) },

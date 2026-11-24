@@ -53,6 +53,7 @@ import com.skarif.kairos.ui.components.RadioCard
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.components.Segmented
 import com.skarif.kairos.ui.components.ToggleRow
+import com.skarif.kairos.ui.components.appear
 import com.skarif.kairos.ui.motion.rubberBand
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
@@ -95,7 +96,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
     val ctx = androidx.compose.ui.platform.LocalContext.current
     var confirmClear by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     if (confirmClear) {
-        androidx.compose.material3.AlertDialog(
+        com.skarif.kairos.ui.components.KairosDialog(
             onDismissRequest = { confirmClear = false },
             containerColor = c.sheet,
             title = { Text("Clear listening history?", style = T.h2, color = c.text) },
@@ -114,7 +115,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
             Header("Settings", onBack)
             Text(mixedHeadline("Make it " to false, "yours" to true), style = T.h1, color = c.text)
 
-            Card {
+            Card(Modifier.appear(1)) {
                 Text("Theme", style = T.h2, color = c.text)
                 Segmented(listOf("Light", "Dark", "System"), s.themeMode.ordinal, { i ->
                     vm.updateSettings { it.copy(themeMode = ThemeMode.entries[i]) }
@@ -143,7 +144,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 ToggleRow("Pure black in dark mode", s.pureBlack, { v -> vm.updateSettings { it.copy(pureBlack = v) } }, "Saves battery on AMOLED screens")
             }
 
-            Card {
+            Card(Modifier.appear(2)) {
                 Text("Lyrics", style = T.h2, color = c.text)
                 ToggleRow(
                     "Read embedded lyrics", s.readEmbeddedLyrics, { v -> vm.updateSettings { it.copy(readEmbeddedLyrics = v) } },
@@ -170,7 +171,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 Pill("Allow a folder", { pickFolder.launch(null) }, icon = Ic.Plus, selected = true)
             }
 
-            Card {
+            Card(Modifier.appear(3)) {
                 Text("Audio quality", style = T.h2, color = c.text)
                 now.output?.let { Text("Output now: $it", style = T.title, color = c.text) }
                 RadioCard(
@@ -198,7 +199,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 })
             }
 
-            Card {
+            Card(Modifier.appear(4)) {
                 Text("Playback and suggestions", style = T.h2, color = c.text)
                 ToggleRow(
                     "Resume where you left off", s.resumeQueue, { v -> vm.updateSettings { it.copy(resumeQueue = v) } },
@@ -231,7 +232,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 if (s.tasteExcluded.isNotEmpty()) Pill("Use them all again", vm::clearTasteExclusions, icon = Ic.Refresh)
             }
 
-            Card {
+            Card(Modifier.appear(5)) {
                 Text("Library", style = T.h2, color = c.text)
                 Text(
                     "${songs.size} songs, ${playlists.size} playlists, ${favs.size} favourites",
@@ -251,7 +252,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 }
             }
 
-            Card {
+            Card(Modifier.appear(6)) {
                 Text("Backup and restore", style = T.h2, color = c.text)
                 Text(
                     "Saves favourites, playlists, listening history, lyrics timing, hidden songs and settings to one file. " +
@@ -266,7 +267,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 Pill("Clear history…", { confirmClear = true }, icon = Ic.Trash)
             }
 
-            Card {
+            Card(Modifier.appear(7)) {
                 Text("About", style = T.h2, color = c.text)
                 val version = androidx.compose.runtime.remember {
                     runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""

@@ -63,6 +63,7 @@ import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.Pill
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.components.CompactTitleBar
+import com.skarif.kairos.ui.components.appear
 import com.skarif.kairos.ui.components.stretchTitle
 import com.skarif.kairos.ui.motion.rubberBand
 import kotlinx.coroutines.launch
@@ -489,7 +490,7 @@ fun CollectionScreen(
     ) { uri -> if (uri != null && pid != null) vm.exportPlaylist(pid, uri) }
     if (renaming && pid != null) {
         var name by remember { mutableStateOf(colTitle) }
-        androidx.compose.material3.AlertDialog(
+        com.skarif.kairos.ui.components.KairosDialog(
             onDismissRequest = { renaming = false },
             containerColor = c.sheet,
             title = { Text("Rename playlist", style = T.h2, color = c.text) },
@@ -499,7 +500,7 @@ fun CollectionScreen(
         )
     }
     if (confirmDelete && pid != null) {
-        androidx.compose.material3.AlertDialog(
+        com.skarif.kairos.ui.components.KairosDialog(
             onDismissRequest = { confirmDelete = false },
             containerColor = c.sheet,
             title = { Text("Delete $colTitle?", style = T.h2, color = c.text) },
@@ -510,6 +511,8 @@ fun CollectionScreen(
     }
 
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    var settled by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(1200); settled = true }
     val band = com.skarif.kairos.ui.motion.rememberRubberBand()
     Box(Modifier.fillMaxSize().background(c.bg)) {
         LazyColumn(
@@ -598,7 +601,7 @@ fun CollectionScreen(
                 }
             }
             item {
-                Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.appear(2).fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Pill("Play", { if (shown.isNotEmpty()) { vm.play(shown, 0, colTitle); onOpenNowPlaying() } }, selected = true, big = true, icon = Ic.Play, modifier = Modifier.weight(1f))
                     Pill(
                         if (settings.smartShuffle) "Smart shuffle" else "Shuffle", { vm.shuffle(shown, from = colTitle); onOpenNowPlaying() },
@@ -673,9 +676,12 @@ fun CollectionScreen(
             }
             if (list.isNotEmpty()) {
                 itemsIndexed(list, key = { i, s -> "$i-${s.id}" }, contentType = { _, _ -> "song" }) { i, s ->
+                    // The first screenful of songs rises in one after another when the page opens.
+                    Box(if (i < 10 && !settled) Modifier.appear(3 + i) else Modifier) {
                     SongRow(s, s.id == now.songId, vm, favourite = s.id in favs, number = if (isAlbum) (s.track.takeIf { it > 0 } ?: (i + 1)) else null, onLongClick = { actionIndex = i; actionsFor = s }) {
                         vm.play(list, i, colTitle)
                         onOpenNowPlaying()
+                    }
                     }
                 }
             }
