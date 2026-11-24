@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
@@ -61,6 +62,10 @@ import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.Pill
 import com.skarif.kairos.ui.components.ScreenBackground
+import com.skarif.kairos.ui.components.CompactTitleBar
+import com.skarif.kairos.ui.components.stretchTitle
+import com.skarif.kairos.ui.motion.rubberBand
+import kotlinx.coroutines.launch
 import com.skarif.kairos.ui.components.ScreenHeader
 import com.skarif.kairos.ui.components.sharedCard
 import com.skarif.kairos.ui.components.cardClick
@@ -117,10 +122,20 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
 
     actionsFor?.let { s -> SongActionsDialog(vm, s, { onOpenCollection("album:$it") }) { actionsFor = null } }
 
+    val searchGrid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    val band = com.skarif.kairos.ui.motion.rememberRubberBand()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        vm.tabReselected.collect { if (it == "search") searchGrid.animateScrollToItem(0) }
+    }
+    val pastTitle by remember { androidx.compose.runtime.derivedStateOf { searchGrid.firstVisibleItemIndex > 0 } }
+
     ScreenBackground(art, settings.blurBackground) {
         LazyVerticalGrid(
             GridCells.Fixed(2),
-            Modifier.fillMaxSize().statusBarsPadding(),
+            Modifier.fillMaxSize().statusBarsPadding().rubberBand(band),
+            state = searchGrid,
+            flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 230.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -128,7 +143,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
             item(span = { GridItemSpan(2) }) {
                 Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     CircleButton(Ic.Menu, "Menu", onMenu, container = c.ink, content = c.inkFg)
-                    Text(mixedHeadline("Explore\n" to false, "your music" to true), style = T.h1, color = c.text)
+                    Text(mixedHeadline("Explore\n" to false, "your music" to true), Modifier.stretchTitle { band.pull }, style = T.h1, color = c.text)
                     SearchField(q, vm::setQuery, "Songs, artists, albums, genres")
                     if (q.isEmpty()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -209,6 +224,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                 }
             }
         }
+        CompactTitleBar("Search", pastTitle) { scope.launch { searchGrid.animateScrollToItem(0) } }
     }
 }
 
@@ -257,10 +273,13 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
             playlists.map { Tile("playlist:${it.id}", it.name, "${it.songs.size} songs", it.songs) }
     }
 
+    val band = com.skarif.kairos.ui.motion.rememberRubberBand()
+
     ScreenBackground(art, settings.blurBackground) {
         LazyVerticalGrid(
             GridCells.Fixed(2),
-            Modifier.fillMaxSize().statusBarsPadding(),
+            Modifier.fillMaxSize().statusBarsPadding().rubberBand(band),
+            flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -274,7 +293,7 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
                         Box(Modifier.size(8.dp))
                         Pill("New", onNew, icon = Ic.Plus)
                     }
-                    Text(mixedHeadline("Your " to false, "playlists" to true, ", made " to false, "your way" to true), style = T.h1, color = c.text)
+                    Text(mixedHeadline("Your " to false, "playlists" to true, ", made " to false, "your way" to true), Modifier.stretchTitle { band.pull }, style = T.h1, color = c.text)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Pill("Made by you  ${playlists.size + 1}", { smart = false }, selected = !smart)
                         Pill("Smart  ${mixes.size}", { smart = true }, selected = smart)
@@ -490,13 +509,31 @@ fun CollectionScreen(
         )
     }
 
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val band = com.skarif.kairos.ui.motion.rememberRubberBand()
     Box(Modifier.fillMaxSize().background(c.bg)) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
+        LazyColumn(
+            Modifier.fillMaxSize().rubberBand(band), state = listState,
+            flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
+            contentPadding = PaddingValues(bottom = 40.dp),
+        ) {
             item {
                 Box(Modifier.fillMaxWidth().height(400.dp)) {
                     Box(
                         Modifier.fillMaxWidth().height(380.dp)
                             .sharedCard("col-$key", RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp))
+                            // Apple Music header: scrolls up slower than the list (parallax), and when
+                            // pulled down at the top it stretches to fill the gap instead of leaving one.
+                            .graphicsLayer {
+                                val pull = band.pull
+                                if (pull > 0f) {
+                                    val s = (size.height + pull) / size.height
+                                    scaleX = s; scaleY = s
+                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                                } else if (listState.firstVisibleItemIndex == 0) {
+                                    translationY = listState.firstVisibleItemScrollOffset * 0.45f
+                                }
+                            }
                             .clip(RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp)).background(c.accent),
                     ) {
                         if (cover != null || pid != null) {
@@ -504,7 +541,19 @@ fun CollectionScreen(
                             else PlaylistArt(vm, key, col?.songs.orEmpty(), Modifier.fillMaxSize(), corner = 0.dp)
                         }
                         Box(Modifier.fillMaxWidth().height(200.dp).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0x99000000)))))
-                        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth()
+                                // Undo the stretch for the buttons, so they keep their size and place.
+                                .graphicsLayer {
+                                    val pull = band.pull
+                                    if (pull > 0f) {
+                                        val s = 380.dp.toPx() / (380.dp.toPx() + pull)
+                                        scaleX = s; scaleY = s
+                                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
+                                    }
+                                }
+                                .statusBarsPadding().padding(horizontal = 18.dp, vertical = 12.dp),
+                        ) {
                             CircleButton(Ic.Back, "Back", onBack, container = Color(0xE6FFFFFF), content = Color(0xFF151515))
                             Box(Modifier.weight(1f))
                             if (pid != null) {

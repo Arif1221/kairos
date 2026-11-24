@@ -63,6 +63,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.SongSort
 import com.skarif.kairos.ui.motion.Motion
+import com.skarif.kairos.ui.motion.rubberBand
+import com.skarif.kairos.ui.components.stretchTitle
 import com.skarif.kairos.data.matchesQuery
 import com.skarif.kairos.data.db.SongEntity
 import com.skarif.kairos.ui.MainViewModel
@@ -179,11 +181,17 @@ fun LibraryScreen(
     val fg = c.text
     val soft = c.muted
 
+    val band = com.skarif.kairos.ui.motion.rememberRubberBand()
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        vm.tabReselected.collect { if (it == "library") grid.animateScrollToItem(0) }
+    }
+
     ScreenBackground(art, settings.blurBackground) {
         LazyVerticalGrid(
             GridCells.Fixed(2),
-            Modifier.fillMaxSize(),
+            Modifier.fillMaxSize().rubberBand(band),
             state = grid,
+            flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
             contentPadding = PaddingValues(bottom = 230.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(if (tab == LibTab.ALBUMS || tab == LibTab.GENRES) 10.dp else 0.dp),
@@ -206,7 +214,7 @@ fun LibraryScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Your collection", color = soft, style = T.body)
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("${fmt.format(count)} $noun", Modifier.weight(1f), color = fg, style = T.big)
+                            Text("${fmt.format(count)} $noun", Modifier.weight(1f).stretchTitle { band.pull }, color = fg, style = T.big)
                             CircleButton(Ic.Refresh, "Scan again", vm::scanNow, size = 44.dp, container = Color.Transparent, content = fg)
                         }
                         Text(

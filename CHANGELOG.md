@@ -10,6 +10,10 @@ Offline builds. Each version is on the [Releases](https://github.com/Arif1221/ka
 - Buttons and cards press down instantly, dim slightly, and spring back with a small bounce
 - Tabs crossfade with a slight zoom; Library and Search rows glide when filtering or sorting
 - Fixed: the queue's now-playing card didn't show the song's cover
+- iOS scrolling: lists glide longer and slow down evenly; pulling past either end stretches like a rubber band and springs back, and a fling that hits the end bounces
+- Large titles grow slightly as you pull down, and a small title bar slides in once they scroll away (Home, Search, Stats; Library already had one)
+- Album, artist and playlist headers scroll with parallax and stretch to fill the space when pulled down
+- Tap the current tab again to spring back to the top
 
 ## 0.8.0
 - Fixed: the queue sometimes showed every song as "Unknown" with no covers

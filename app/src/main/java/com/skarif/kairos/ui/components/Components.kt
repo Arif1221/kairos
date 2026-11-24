@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -596,4 +597,38 @@ fun KairosSheet(onDismiss: () -> Unit, content: @Composable androidx.compose.fou
             Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(40.dp, 5.dp).clip(RoundedCornerShape(3.dp)).background(c.muted.copy(alpha = 0.5f)))
         },
     ) { content(close) }
+}
+
+/**
+ * iOS large-title behaviour: once the page's big title has scrolled away, a small bar with the
+ * title fades and slides in at the top. Tapping it scrolls back to the top.
+ */
+@Composable
+fun BoxScope.CompactTitleBar(title: String, visible: Boolean, onTop: () -> Unit) {
+    val c = P.colors
+    val panel = if (c.dark) Color(0xE6121212) else c.card.copy(alpha = 0.94f)
+    androidx.compose.animation.AnimatedVisibility(
+        visible,
+        modifier = Modifier.align(Alignment.TopCenter),
+        enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(160)) +
+            androidx.compose.animation.slideInVertically(com.skarif.kairos.ui.motion.Motion.snappy()) { -it / 2 },
+        exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)) +
+            androidx.compose.animation.slideOutVertically(com.skarif.kairos.ui.motion.Motion.snappy()) { -it / 2 },
+    ) {
+        Box(
+            Modifier.fillMaxWidth().background(panel)
+                .clickable(onClickLabel = "Scroll to top", role = Role.Button, onClick = onTop)
+                .statusBarsPadding().padding(vertical = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(title, style = T.title, color = c.text, maxLines = 1)
+        }
+    }
+}
+
+/** Grows a large title a little while the page is pulled down past the top (iOS). Draw phase only. */
+fun Modifier.stretchTitle(pull: () -> Float): Modifier = graphicsLayer {
+    val s = 1f + (pull().coerceAtLeast(0f) / 1400f).coerceAtMost(0.1f)
+    scaleX = s; scaleY = s
+    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
 }

@@ -53,6 +53,7 @@ import com.skarif.kairos.ui.components.RadioCard
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.components.Segmented
 import com.skarif.kairos.ui.components.ToggleRow
+import com.skarif.kairos.ui.motion.rubberBand
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 import com.skarif.kairos.ui.theme.mixedHeadline
@@ -106,7 +107,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
 
     ScreenBackground(art, s.blurBackground) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding()
+            Modifier.fillMaxSize().rubberBand(com.skarif.kairos.ui.motion.rememberRubberBand()).verticalScroll(rememberScrollState(), flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling()).statusBarsPadding().navigationBarsPadding()
                 .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
@@ -303,7 +304,7 @@ fun FoldersScreen(vm: MainViewModel, onBack: () -> Unit) {
 
     ScreenBackground(art, s.blurBackground) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding()
+            Modifier.fillMaxSize().rubberBand(com.skarif.kairos.ui.motion.rememberRubberBand()).verticalScroll(rememberScrollState(), flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling()).statusBarsPadding().navigationBarsPadding()
                 .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {

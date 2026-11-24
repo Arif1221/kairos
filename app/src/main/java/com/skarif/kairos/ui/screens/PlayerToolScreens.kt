@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import com.skarif.kairos.data.OutputMode
+import com.skarif.kairos.ui.motion.rubberBand
 import com.skarif.kairos.data.SongSort
 import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.components.Card
@@ -184,7 +185,8 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
 
             Box(Modifier.weight(1f)) {
                 LazyColumn(
-                    Modifier.fillMaxSize(), state = list,
+                    Modifier.fillMaxSize().rubberBand(com.skarif.kairos.ui.motion.rememberRubberBand()), state = list,
+                    flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
                     contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 2.dp, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -280,7 +282,7 @@ fun EqualizerSheet(vm: MainViewModel, onBack: () -> Unit) {
 
     KairosSheet(onBack) { close ->
         Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding()
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState(), flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling()).navigationBarsPadding()
                 .padding(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
@@ -453,7 +455,7 @@ fun MenuDrawer(vm: MainViewModel, onClose: () -> Unit, onNavigate: (String) -> U
         Box(Modifier.fillMaxSize().background(Color(0x61000000)).clickable(onClickLabel = "Close menu", onClick = onClose))
         Column(
             Modifier.fillMaxSize().padding(end = 70.dp).clip(RoundedCornerShape(topEnd = 38.dp, bottomEnd = 38.dp)).background(c.sheet)
-                .verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding().padding(18.dp),
+                .verticalScroll(rememberScrollState(), flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling()).statusBarsPadding().navigationBarsPadding().padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             CircleButton(Ic.Close, "Close menu", onClose, container = c.ink, content = c.inkFg)

@@ -139,7 +139,7 @@ fun NowPlayingPane(
             }
         }
     }
-    Column(Modifier.fillMaxSize().nestedScroll(pullToClose).verticalScroll(ctrl.mainScroll).navigationBarsPadding()) {
+    Column(Modifier.fillMaxSize().nestedScroll(pullToClose).verticalScroll(ctrl.mainScroll, flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling()).navigationBarsPadding()) {
         Box(Modifier.fillMaxWidth().height(heroHeight + 38.dp)) {
             Box(Modifier.fillMaxWidth().height(heroHeight).clip(RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp))) {
                 Box(

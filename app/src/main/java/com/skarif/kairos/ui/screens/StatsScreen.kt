@@ -34,6 +34,10 @@ import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.HatchedBars
 import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.ScreenBackground
+import com.skarif.kairos.ui.components.CompactTitleBar
+import com.skarif.kairos.ui.components.stretchTitle
+import com.skarif.kairos.ui.motion.rubberBand
+import kotlinx.coroutines.launch
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 
@@ -63,9 +67,19 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
     val selected = if (sel in st.bars.indices) sel else st.bars.indices.maxByOrNull { st.bars[it].listenedMs } ?: -1
     val max = (st.bars.maxOfOrNull { it.listenedMs } ?: 0L).coerceAtLeast(1L)
 
+    val scroll = rememberScrollState()
+    val band = com.skarif.kairos.ui.motion.rememberRubberBand()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        vm.tabReselected.collect { if (it == "stats") scroll.animateScrollTo(0, com.skarif.kairos.ui.motion.Motion.sheet()) }
+    }
+    val pastTitle by androidx.compose.runtime.remember { androidx.compose.runtime.derivedStateOf { scroll.value > with(density) { 140.dp.toPx() } } }
+
     ScreenBackground(art, settings.blurBackground) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).statusBarsPadding()
+            Modifier.fillMaxSize().rubberBand(band)
+                .verticalScroll(scroll, flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling()).statusBarsPadding()
                 .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 230.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
@@ -75,7 +89,7 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
                 CircleButton(Ic.Settings, "Settings", onSettings)
             }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(hoursText(st.totalMs) + " listened", style = T.big, color = c.text)
+                Text(hoursText(st.totalMs) + " listened", Modifier.stretchTitle { band.pull }, style = T.big, color = c.text)
                 Text(st.change, style = T.body, color = c.muted)
             }
             Column(
@@ -147,6 +161,7 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
             recap?.let { RecapCard(vm, it) }
             Text("Stats update while you listen.", style = T.small, color = c.muted)
         }
+        CompactTitleBar("Statistics", pastTitle) { scope.launch { scroll.animateScrollTo(0, com.skarif.kairos.ui.motion.Motion.sheet()) } }
     }
 }
 

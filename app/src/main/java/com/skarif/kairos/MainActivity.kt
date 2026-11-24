@@ -185,7 +185,12 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
             )
         }
 
-        CompositionLocalProvider(LocalPlayer provides player, com.skarif.kairos.ui.components.LocalBackdrop provides true) {
+        // Android's stretch at the ends of lists is replaced by an iOS rubber band (ui/motion/Scroll.kt).
+        @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+        CompositionLocalProvider(
+            LocalPlayer provides player, com.skarif.kairos.ui.components.LocalBackdrop provides true,
+            androidx.compose.foundation.LocalOverscrollConfiguration provides null,
+        ) {
         Box(Modifier.fillMaxSize()) {
             // One shared background behind every page: pages slide over it instead of each
             // drawing (and blurring) its own copy, which is what made transitions heavy.
@@ -312,7 +317,7 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     if (song != null) Spacer(Modifier.height(74.dp)) // room for the mini player
-                    Dock(route = route, onTab = { nav.tab(it) }, onNow = openPlayer)
+                    Dock(route = route, onTab = { if (it == route) vm.reselectTab(it) else nav.tab(it) }, onNow = openPlayer)
                 }
             }
 

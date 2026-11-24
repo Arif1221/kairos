@@ -743,6 +743,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private val _reselect = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+    /** A tab that was tapped while already open: its page scrolls back to the top. */
+    val tabReselected: kotlinx.coroutines.flow.SharedFlow<String> = _reselect
+    fun reselectTab(route: String) { _reselect.tryEmit(route) }
+
     private val _notice = MutableStateFlow<Notice?>(null)
     val notice: StateFlow<Notice?> = _notice.asStateFlow()
     fun notify(text: String, undo: (() -> Unit)? = null) { _notice.value = Notice(text, undo) }

@@ -41,6 +41,10 @@ import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.Pill
 import com.skarif.kairos.ui.components.PillMeter
 import com.skarif.kairos.ui.components.ScreenBackground
+import com.skarif.kairos.ui.components.CompactTitleBar
+import com.skarif.kairos.ui.components.stretchTitle
+import com.skarif.kairos.ui.motion.rubberBand
+import kotlinx.coroutines.launch
 import com.skarif.kairos.ui.components.sharedCard
 import com.skarif.kairos.ui.components.cardClick
 import com.skarif.kairos.ui.theme.P
@@ -79,9 +83,22 @@ fun HomeScreen(
     val chip = if (c.dark) androidx.compose.ui.graphics.Color(0xFF2A2A2A) else c.bg
     val card = c.card.copy(alpha = if (c.dark) 0.85f else 0.92f)
 
+    val scroll = rememberScrollState()
+    val band = com.skarif.kairos.ui.motion.rememberRubberBand()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    // Tapping Home again in the dock springs back to the top.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        vm.tabReselected.collect { if (it == "home") scroll.animateScrollTo(0, com.skarif.kairos.ui.motion.Motion.sheet()) }
+    }
+    val pastTitle by androidx.compose.runtime.remember { androidx.compose.runtime.derivedStateOf { scroll.value > with(density) { 150.dp.toPx() } } }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
     ScreenBackground(art, settings.blurBackground) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 230.dp),
+            Modifier.fillMaxSize()
+                .rubberBand(band)
+                .verticalScroll(scroll, flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling())
+                .padding(bottom = 230.dp),
             verticalArrangement = Arrangement.spacedBy(22.dp),
         ) {
             Column(
@@ -98,7 +115,10 @@ fun HomeScreen(
                     CircleButton(Ic.Search, "Search", onSearch, container = chip, content = c.text)
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(mixedHeadline("Good " to false, part to true), style = T.h1.copy(fontSize = 40.sp, lineHeight = 44.sp), color = c.text)
+                    Text(
+                        mixedHeadline("Good " to false, part to true), Modifier.stretchTitle { band.pull },
+                        style = T.h1.copy(fontSize = 40.sp, lineHeight = 44.sp), color = c.text,
+                    )
                     Text(
                         "${java.text.NumberFormat.getIntegerInstance().format(songs.size)} songs, ${playlists.size} playlists",
                         style = T.small, color = c.muted,
@@ -208,6 +228,7 @@ fun HomeScreen(
                 }
             }
         }
+        CompactTitleBar("Good $part", pastTitle) { scope.launch { scroll.animateScrollTo(0, com.skarif.kairos.ui.motion.Motion.sheet()) } }
     }
 }
 
