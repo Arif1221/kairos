@@ -13,8 +13,8 @@ android {
         applicationId = "com.skarif.kairos"
         minSdk = 28 // DynamicsProcessing (10-band EQ) needs Android 9
         targetSdk = 35
-        versionCode = 24
-        versionName = "0.8.1"
+        versionCode = 25
+        versionName = "0.8.2"
     }
 
     // Release signing comes from the environment (GitHub secrets in CI), never from the repo.

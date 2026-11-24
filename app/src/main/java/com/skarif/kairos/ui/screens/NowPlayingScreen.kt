@@ -259,13 +259,15 @@ fun NowPlayingPane(
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     CircleButton(Ic.Prev, "Previous song", vm::previous, size = 64.dp, iconSize = 22.dp)
+                    val playPress = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                     Row(
                         Modifier
                             .weight(1f)
                             .height(64.dp)
+                            .then(com.skarif.kairos.ui.components.PressScaleHolder.modifier(playPress, 0.95f))
                             .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card))
                             .background(c.ink)
-                            .clickable(role = Role.Button, onClick = vm::toggle),
+                            .clickable(interactionSource = playPress, indication = androidx.compose.material3.ripple(), role = Role.Button, onClick = vm::toggle),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
                     ) {
@@ -313,9 +315,12 @@ fun NowPlayingPane(
 @Composable
 private fun InfoChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, onClick: (() -> Unit)? = null) {
     val c = P.colors
+    val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Row(
-        Modifier.height(44.dp).clip(RoundedCornerShape(22.dp)).background(c.card)
-            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+        Modifier.height(44.dp)
+            .then(if (onClick != null) com.skarif.kairos.ui.components.PressScaleHolder.modifier(press, 0.94f) else Modifier)
+            .clip(RoundedCornerShape(22.dp)).background(c.card)
+            .then(if (onClick != null) Modifier.clickable(interactionSource = press, indication = androidx.compose.material3.ripple(), role = Role.Button, onClick = onClick) else Modifier)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),

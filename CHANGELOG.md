@@ -2,13 +2,16 @@
 
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
-## Unreleased
+## 0.8.2
 - Fixed: the player still froze half-open, then jumped open, when you tapped a song. The full player is now built in the background as soon as a song is loaded, and the new album colours are applied just after it opens instead of on its first frames
 - Fixed: the queue count showed "1 of 1", then "1 of 1601", while a long queue was being added; it now shows the real position and total from the start
 - Fixed: the next and previous covers appeared beside the cover while it moved between the player, lyrics and queue
 - Fixed: switching tabs briefly showed both pages on top of each other
 - Fixed: Home flashed "Play a few songs…" on launch before the mixes were ready
 - Lyrics are white on a dark, album-tinted background in light theme too, like Apple Music (grey on pale pink was hard to read)
+- Fixed: lyrics jumped when the singing started or a break ended (the dots' space collapsed), and snapped when lines changed quickly
+- Song rows, queue rows, the big play button and the info chips press and bounce like every other button
+- Search and Statistics use the same header as Home and Library; buttons inside headers no longer blend into the panel
 
 ## 0.8.1
 - New motion system on iOS-style springs: every movement keeps your finger's speed and can be interrupted

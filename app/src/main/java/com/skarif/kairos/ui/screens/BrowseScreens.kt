@@ -134,18 +134,22 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
     ScreenBackground(art, settings.blurBackground) {
         LazyVerticalGrid(
             GridCells.Fixed(2),
-            Modifier.fillMaxSize().statusBarsPadding().rubberBand(band),
+            Modifier.fillMaxSize().rubberBand(band),
             state = searchGrid,
             flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
-            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 230.dp),
+            contentPadding = PaddingValues(bottom = 230.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(span = { GridItemSpan(2) }) {
-                Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                    CircleButton(Ic.Menu, "Menu", onMenu, container = c.ink, content = c.inkFg)
-                    Text(mixedHeadline("Explore\n" to false, "your music" to true), Modifier.stretchTitle { band.pull }, style = T.h1, color = c.text)
-                    SearchField(q, vm::setQuery, "Songs, artists, albums, genres")
+                // Same header as Home, Library and Statistics.
+                com.skarif.kairos.ui.components.TabHeader(
+                    "Search",
+                    left = { chip -> CircleButton(Ic.Menu, "Menu", onMenu, container = chip, content = c.text) },
+                    right = { chip -> Box(Modifier.size(52.dp)) },
+                ) { chip ->
+                    Text(mixedHeadline("Explore " to false, "your music" to true), Modifier.stretchTitle { band.pull }, style = T.h1.copy(fontSize = 34.sp, lineHeight = 38.sp), color = c.text)
+                    SearchField(q, vm::setQuery, "Songs, artists, albums, genres", container = chip, height = 52.dp)
                     if (q.isEmpty()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Pill("Albums", { tab = 0 }, selected = tab == 0, icon = Ic.Music)
@@ -158,12 +162,12 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
             if (q.isNotEmpty()) {
                 val nothing = results.isEmpty() && hits.artists.isEmpty() && hits.albums.isEmpty() && hits.genres.isEmpty()
                 if (nothing) {
-                    item(span = { GridItemSpan(2) }) { Text("Nothing matches \"$q\".", style = T.body, color = c.muted) }
+                    item(span = { GridItemSpan(2) }) { Text("Nothing matches \"$q\".", Modifier.padding(horizontal = 18.dp, vertical = 8.dp), style = T.body, color = c.muted) }
                 }
                 if (hits.artists.isNotEmpty()) {
                     item(span = { GridItemSpan(2) }, key = "h-artists") { SearchSection("Artists") }
                     item(span = { GridItemSpan(2) }, key = "artists") {
-                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        androidx.compose.foundation.lazy.LazyRow(contentPadding = PaddingValues(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                             items(hits.artists, key = { "sa" + it.name.lowercase() }, contentType = { "artist" }) { a ->
                                 Column(
                                     Modifier.width(92.dp).cardClick("Open ${a.name}") { onOpenCollection("artist:${a.name}") },
@@ -180,7 +184,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                 if (hits.albums.isNotEmpty()) {
                     item(span = { GridItemSpan(2) }, key = "h-albums") { SearchSection("Albums") }
                     item(span = { GridItemSpan(2) }, key = "albums") {
-                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        androidx.compose.foundation.lazy.LazyRow(contentPadding = PaddingValues(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             items(hits.albums, key = { "sal" + it.id }, contentType = { "album" }) { g ->
                                 Box(Modifier.size(width = 160.dp, height = 214.dp)) {
                                     CoverTile(vm, g.songs.first(), key = "album:${g.id}", kicker = g.artist, title = g.title) { onOpenCollection("album:${g.id}") }
@@ -192,7 +196,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                 if (hits.genres.isNotEmpty()) {
                     item(span = { GridItemSpan(2) }, key = "h-genres") { SearchSection("Genres") }
                     item(span = { GridItemSpan(2) }, key = "genres") {
-                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        androidx.compose.foundation.lazy.LazyRow(contentPadding = PaddingValues(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(hits.genres, key = { "sg" + it.name.lowercase() }, contentType = { "genre" }) { g ->
                                 Pill("${g.name}  ${g.songs.size}", { onOpenCollection("genre:${g.name}") })
                             }
@@ -218,10 +222,13 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                     else -> genres.map { Quad(it.songs.first(), "genre:${it.name}", "${it.songs.size} songs", it.name) }
                 }
                 if (list.isEmpty() && tab == 2) {
-                    item(span = { GridItemSpan(2) }) { Text("No genre tags found in your music.", style = T.body, color = c.muted) }
+                    item(span = { GridItemSpan(2) }) { Text("No genre tags found in your music.", Modifier.padding(horizontal = 18.dp), style = T.body, color = c.muted) }
                 }
-                items(list, key = { it.key }, contentType = { "tile" }) { t ->
-                    CoverTile(vm, t.song, key = t.key, kicker = t.kicker, title = t.title) { onOpenCollection(t.key) }
+                gridItemsIndexed(list, key = { _, t -> t.key }, contentType = { _, _ -> "tile" }) { i, t ->
+                    // Same edge spacing as the Library's album grid.
+                    Box(Modifier.padding(start = if (i % 2 == 0) 18.dp else 0.dp, end = if (i % 2 == 1) 18.dp else 0.dp)) {
+                        CoverTile(vm, t.song, key = t.key, kicker = t.kicker, title = t.title) { onOpenCollection(t.key) }
+                    }
                 }
             }
         }
@@ -231,7 +238,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
 
 @Composable
 private fun SearchSection(title: String) {
-    Text(title, Modifier.padding(top = 8.dp), style = T.h2, color = P.colors.text)
+    Text(title, Modifier.padding(start = 18.dp, end = 18.dp, top = 8.dp), style = T.h2, color = P.colors.text)
 }
 
 /** Cover card that grows into the album/artist page when tapped. */

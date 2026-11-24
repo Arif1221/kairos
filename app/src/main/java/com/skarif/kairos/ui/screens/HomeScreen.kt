@@ -126,9 +126,11 @@ fun HomeScreen(
                         style = T.small, color = c.muted,
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill("Shuffle all", { vm.shuffleAll(songs); onOpenNowPlaying() }, accent = true, icon = Ic.Shuffle)
-                    Pill("Playlists", onPlaylists, icon = Ic.Queue)
+                androidx.compose.runtime.CompositionLocalProvider(com.skarif.kairos.ui.components.LocalPillContainer provides chip) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Pill("Shuffle all", { vm.shuffleAll(songs); onOpenNowPlaying() }, accent = true, icon = Ic.Shuffle)
+                        Pill("Playlists", onPlaylists, icon = Ic.Queue)
+                    }
                 }
             }
 

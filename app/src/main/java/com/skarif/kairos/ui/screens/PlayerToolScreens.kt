@@ -48,6 +48,7 @@ import com.skarif.kairos.data.OutputMode
 import com.skarif.kairos.ui.motion.rubberBand
 import com.skarif.kairos.data.SongSort
 import com.skarif.kairos.ui.MainViewModel
+import com.skarif.kairos.ui.components.pressScale
 import com.skarif.kairos.ui.components.Card
 import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.HatchedBars
@@ -199,10 +200,14 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
                                 "Play next", Ic.Next, if (playing || now.shuffle) null else ({ vm.moveToNext(e.index) }),
                                 "Remove", Ic.Close, if (playing) null else ({ vm.removeQueueItem(e.index) }),
                             ) {
+                                val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                                 Row(
-                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp))
+                                    Modifier.fillMaxWidth()
+                                        .pressScale(press, 0.97f)
+                                        .clip(RoundedCornerShape(22.dp))
                                         .background(if (playing) c.tint else c.card.copy(alpha = if (played) 0.4f else 0.8f))
                                         .combinedClickable(
+                                            interactionSource = press, indication = androidx.compose.material3.ripple(),
                                             role = Role.Button, onClickLabel = "Play", onLongClickLabel = "More options",
                                             onLongClick = { if (song != null) menuFor = e.index to song },
                                         ) { vm.playQueueItem(e.index) }

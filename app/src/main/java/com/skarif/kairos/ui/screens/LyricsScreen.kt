@@ -284,10 +284,13 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
         }
         val d = (info.offset - viewport / 3).toFloat()
         if (abs(d) < 1f) return@LaunchedEffect
+        // A new line while the last wave is still moving: start from where things are on screen
+        // now, not from where they were meant to end, or the lines snap.
+        val leftover = cascade.offsetFor(target)
         list.scrollBy(d)
         // Lines are now in place; draw them where they were and let the wave carry them there.
         cascade.anchor = target
-        cascade.distance = d
+        cascade.distance = d + leftover
         cascade.startNanos = androidx.compose.runtime.withFrameNanos { it }
         cascade.nowNanos = cascade.startNanos
         val until = cascade.startNanos + 1_400_000_000L
@@ -307,11 +310,12 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
                 Text("These lyrics aren't time-synced.", style = T.small, color = Dim)
             } else {
                 // Intro: dots until the first line, if the song starts with music only.
+                // Always the same height (the dots only fade): if this space collapsed when the singing
+                // started, every line jumped up at that exact moment.
                 val first = lyrics.lines.firstOrNull()?.timeMs?.plus(offsetMs) ?: 0L
                 val intro = first > 3_000 && current < 0
-                AnimatedVisibility(intro, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                    BreathingDots(position, 0L, first, Modifier.padding(vertical = 8.dp))
-                }
+                val introAlpha by animateFloatAsState(if (intro) 1f else 0f, tween(300), label = "intro")
+                BreathingDots(position, 0L, first, Modifier.padding(vertical = 8.dp).graphicsLayer { alpha = introAlpha })
             }
         }
         itemsIndexed(lyrics.lines, key = { i, _ -> i }, contentType = { _, l -> if (l.text.isBlank()) "break" else "line" }) { i, line ->
@@ -350,11 +354,9 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
 
             if (line.text.isBlank()) {
                 // An instrumental break: dots while it lasts, a small gap otherwise.
-                Box(lineMod) {
-                    AnimatedVisibility(isCur, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
-                        BreathingDots(position, start, end)
-                    }
-                }
+                // Fixed height too; only the dots fade in and out.
+                val dotsAlpha by animateFloatAsState(if (isCur) 1f else 0f, tween(300), label = "breakDots")
+                Box(lineMod) { BreathingDots(position, start, end, Modifier.graphicsLayer { this.alpha = dotsAlpha }) }
                 return@itemsIndexed
             }
             var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }

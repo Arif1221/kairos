@@ -159,7 +159,7 @@ fun Pill(
     val bg = when {
         accent -> c.accent
         selected -> c.ink
-        else -> c.card
+        else -> LocalPillContainer.current ?: c.card
     }
     val fg = when {
         accent -> c.onAccent
@@ -691,3 +691,45 @@ fun Modifier.appear(order: Int): Modifier {
         translationY = (1f - v) * 26.dp.toPx()
     }
 }
+
+/** For call sites inside `.then(...)`: the same press as [pressScale]. */
+object PressScaleHolder {
+    @Composable
+    fun modifier(interaction: MutableInteractionSource, pressed: Float = 0.93f): Modifier = Modifier.pressScale(interaction, pressed)
+}
+
+/**
+ * The header every main tab uses (Home, Library, Search, Statistics): a frosted panel under the
+ * status bar with round buttons left and right, the page name in the middle, and the page's big
+ * title and controls below. One component, so the tabs look like one app.
+ */
+@Composable
+fun TabHeader(
+    title: String,
+    left: @Composable (chip: Color) -> Unit,
+    right: @Composable (chip: Color) -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.(chip: Color) -> Unit,
+) {
+    val c = P.colors
+    val panel = if (c.dark) Color(0xE6121212) else c.card.copy(alpha = 0.92f)
+    val chip = if (c.dark) Color(0xFF2A2A2A) else c.bg
+    Column(
+        modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
+            .background(panel)
+            .statusBarsPadding()
+            .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            left(chip)
+            Text(title, Modifier.weight(1f), color = c.text, style = T.title, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            right(chip)
+        }
+        androidx.compose.runtime.CompositionLocalProvider(LocalPillContainer provides chip) { content(chip) }
+    }
+}
+
+/** Unselected pills inside a header panel use the panel's chip colour, so they don't vanish into it. */
+val LocalPillContainer = androidx.compose.runtime.staticCompositionLocalOf<Color?> { null }

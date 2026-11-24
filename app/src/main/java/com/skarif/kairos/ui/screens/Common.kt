@@ -48,6 +48,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.ArtworkRepository
 import com.skarif.kairos.data.db.SongEntity
 import com.skarif.kairos.ui.MainViewModel
+import com.skarif.kairos.ui.components.pressScale
 import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.formatTime
 import com.skarif.kairos.ui.theme.P
@@ -126,13 +127,17 @@ fun SongRow(
 private fun SongRowContent(song: SongEntity, playing: Boolean, vm: MainViewModel, number: Int?, onLongClick: (() -> Unit)?, onClick: () -> Unit) {
     val c = P.colors
     val fg = if (playing) c.onAccent else c.text
+    // Same press as buttons and cards (down instantly, bounce back), a little smaller for a full-width row.
+    val interaction = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Row(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
+            .pressScale(interaction, 0.97f)
             .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item))
             .background(if (playing) c.accent else Color.Transparent)
             .combinedClickable(
+                interactionSource = interaction, indication = androidx.compose.material3.ripple(),
                 role = Role.Button, onClickLabel = "Play", onClick = onClick,
                 onLongClickLabel = "More options", onLongClick = onLongClick,
             )
