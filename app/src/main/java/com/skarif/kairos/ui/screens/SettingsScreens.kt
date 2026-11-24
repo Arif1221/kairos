@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -79,6 +80,28 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
     val now by vm.now.collectAsStateWithLifecycle()
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri != null) vm.addLrcFolder(uri)
+    }
+    val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
+        if (uri != null) vm.backupTo(uri)
+    }
+    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) vm.restoreFrom(uri)
+    }
+    val songs by vm.songs.collectAsStateWithLifecycle()
+    val playlists by vm.playlists.collectAsStateWithLifecycle()
+    val favs by vm.favorites.collectAsStateWithLifecycle()
+    val scan by vm.scan.collectAsStateWithLifecycle()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var confirmClear by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    if (confirmClear) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            containerColor = c.sheet,
+            title = { Text("Clear listening history?", style = T.h2, color = c.text) },
+            text = { Text("Stats, Most played, On repeat and your mixes start over. Favourites and playlists stay. Back up first if you might want it back.", style = T.body, color = c.muted) },
+            confirmButton = { Pill("Clear", { vm.clearHistory(); confirmClear = false }, selected = true) },
+            dismissButton = { Pill("Keep", { confirmClear = false }) },
+        )
     }
 
     ScreenBackground(art, s.blurBackground) {
@@ -177,6 +200,14 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
             Card {
                 Text("Playback and suggestions", style = T.h2, color = c.text)
                 ToggleRow(
+                    "Resume where you left off", s.resumeQueue, { v -> vm.updateSettings { it.copy(resumeQueue = v) } },
+                    "Opening the app brings back your last queue, song and position",
+                )
+                ToggleRow(
+                    "Keep screen on with lyrics", s.keepScreenOnLyrics, { v -> vm.updateSettings { it.copy(keepScreenOnLyrics = v) } },
+                    "So you can read along without the screen turning off",
+                )
+                ToggleRow(
                     "Autoplay", s.autoplay, { v -> vm.updateSettings { it.copy(autoplay = v) } },
                     "When the queue ends, keep playing similar songs from your library",
                 )
@@ -199,7 +230,58 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 if (s.tasteExcluded.isNotEmpty()) Pill("Use them all again", vm::clearTasteExclusions, icon = Ic.Refresh)
             }
 
-            Pill("Music folders", onFolders, icon = Ic.Folder, big = true, modifier = Modifier.fillMaxWidth())
+            Card {
+                Text("Library", style = T.h2, color = c.text)
+                Text(
+                    "${songs.size} songs, ${playlists.size} playlists, ${favs.size} favourites",
+                    style = T.title, color = c.text,
+                )
+                ToggleRow(
+                    "Ignore \"The\" and \"A\" when sorting", s.ignoreArticles, { v -> vm.updateSettings { it.copy(ignoreArticles = v) } },
+                    "The Weeknd sorts under W",
+                )
+                ToggleRow(
+                    "Skip short files", s.skipShortFiles, { v -> vm.updateSettings { it.copy(skipShortFiles = v) } },
+                    "Leave out ringtones and voice notes under 30 seconds (scan again to apply)",
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill(if (scan == com.skarif.kairos.ui.ScanState.Scanning) "Scanning…" else "Scan again", vm::scanNow, icon = Ic.Refresh)
+                    Pill("Music folders", onFolders, icon = Ic.Folder)
+                }
+            }
+
+            Card {
+                Text("Backup and restore", style = T.h2, color = c.text)
+                Text(
+                    "Saves favourites, playlists, listening history, lyrics timing, hidden songs and settings to one file. " +
+                        "Restoring on a new phone finds your songs by file name and tags, and never deletes anything.",
+                    style = T.small, color = c.muted,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill("Back up", { backupLauncher.launch("kairos-backup-${java.time.LocalDate.now()}.json") }, icon = Ic.DownArrow, selected = true)
+                    Pill("Restore", { restoreLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }, icon = Ic.Up)
+                }
+                Text("Clear listening history", style = T.small, color = c.muted)
+                Pill("Clear history…", { confirmClear = true }, icon = Ic.Trash)
+            }
+
+            Card {
+                Text("About", style = T.h2, color = c.text)
+                val version = androidx.compose.runtime.remember {
+                    runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""
+                }
+                Text("Kairos $version", style = T.title, color = c.text)
+                Text("An offline music player. No account, no ads, no tracking: everything stays on this phone.", style = T.small, color = c.muted)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill("Source code", {
+                        runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("https://github.com/Arif1221/kairos"))) }
+                    }, icon = Ic.Chevron)
+                    Pill("Privacy", {
+                        runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("https://github.com/Arif1221/kairos/blob/main/PRIVACY.md"))) }
+                    }, icon = Ic.Chevron)
+                }
+            }
+
             Pill("Equalizer", onEqualizer, icon = Ic.Sliders, big = true, modifier = Modifier.fillMaxWidth())
         }
     }

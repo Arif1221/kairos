@@ -83,12 +83,13 @@ private enum class LibTab(val label: String) { SONGS("Songs"), ALBUMS("Albums"),
 /** Items above the first song/album/artist in the grid. */
 private const val HEADER_ITEMS = 2
 
-private fun letterOf(s: SongEntity, sort: SongSort): Char {
-    val text = when (sort) {
+private fun letterOf(s: SongEntity, sort: SongSort, ignoreArticles: Boolean = false): Char {
+    val raw = when (sort) {
         SongSort.ARTIST -> s.artist
         SongSort.ALBUM -> s.album
         else -> s.title
     }
+    val text = if (ignoreArticles) com.skarif.kairos.data.sortTitle(raw) else raw
     val ch = text.trimStart('(', '[', '\'', '"', '.', ' ').firstOrNull()?.uppercaseChar() ?: '#'
     return if (ch in 'A'..'Z') ch else '#'
 }
@@ -125,11 +126,16 @@ fun LibraryScreen(
     val allArtists by vm.artists.collectAsStateWithLifecycle()
     val allGenres by vm.genres.collectAsStateWithLifecycle()
     val allSongs = songs
-    // The search box filters whichever tab is open; every word must match, accents ignored.
-    val shownSongs = remember(allSongs, filter) { if (filter.isBlank()) allSongs else allSongs.filter { matchesQuery("${it.title} ${it.artist} ${it.album}", filter) } }
-    val albums = remember(allAlbums, filter) { allAlbums.filter { matchesQuery("${it.title} ${it.artist}", filter) } }
-    val artists = remember(allArtists, filter) { allArtists.filter { matchesQuery(it.name, filter) } }
-    val genres = remember(allGenres, filter) { allGenres.filter { matchesQuery(it.name, filter) } }
+    // The filter box filters whichever tab is open; every word must match, accents ignored.
+    // Matching runs in the ViewModel off the main thread, on a pre-built index, after a short pause.
+    val hits by vm.libraryHits.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(filter) { vm.setLibraryFilter(filter) }
+    val h = hits?.takeIf { filter.isNotBlank() }
+    androidx.compose.runtime.LaunchedEffect(h) { if (h != null && grid.firstVisibleItemIndex > 1) grid.scrollToItem(1) }
+    val shownSongs = remember(allSongs, h) { h?.let { x -> allSongs.filter { it.id in x.songs } } ?: allSongs }
+    val albums = remember(allAlbums, h) { h?.let { x -> allAlbums.filter { it.id in x.albums } } ?: allAlbums }
+    val artists = remember(allArtists, h) { h?.let { x -> allArtists.filter { it.name in x.artists } } ?: allArtists }
+    val genres = remember(allGenres, h) { h?.let { x -> allGenres.filter { it.name in x.genres } } ?: allGenres }
     val count = when (tab) { LibTab.SONGS -> shownSongs.size; LibTab.ALBUMS -> albums.size; LibTab.ARTISTS -> artists.size; LibTab.GENRES -> genres.size }
     val noun = when (tab) { LibTab.SONGS -> "songs"; LibTab.ALBUMS -> "albums"; LibTab.ARTISTS -> "artists"; LibTab.GENRES -> "genres" }
     val summary = remember(songs) {
@@ -140,15 +146,15 @@ fun LibraryScreen(
     val collapsed by remember { derivedStateOf { grid.firstVisibleItemIndex > 0 } }
     val letterSorted = settings.songSort in setOf(SongSort.TITLE, SongSort.ARTIST, SongSort.ALBUM)
     // Songs sorted by title/artist/album are shown in runs under a letter header ("A", "B", ...).
-    val runs = remember(shownSongs, settings.songSort, filter) {
+    val runs = remember(shownSongs, settings.songSort, settings.ignoreArticles, filter) {
         if (!letterSorted || filter.isNotBlank()) listOf(LetterRun(null, 0, shownSongs))
         else {
             val out = ArrayList<LetterRun>()
             var start = 0
             while (start < shownSongs.size) {
-                val l = letterOf(shownSongs[start], settings.songSort)
+                val l = letterOf(shownSongs[start], settings.songSort, settings.ignoreArticles)
                 var end = start + 1
-                while (end < shownSongs.size && letterOf(shownSongs[end], settings.songSort) == l) end++
+                while (end < shownSongs.size && letterOf(shownSongs[end], settings.songSort, settings.ignoreArticles) == l) end++
                 out += LetterRun(l, start, shownSongs.subList(start, end))
                 start = end
             }
@@ -205,7 +211,7 @@ fun LibraryScreen(
                             color = soft, style = T.small,
                         )
                     }
-                    SearchField(filter, { filter = it; scope.launch { grid.scrollToItem(0) } }, "Filter ${tab.label.lowercase()}", container = chip, height = 52.dp)
+                    SearchField(filter, { filter = it }, "Filter ${tab.label.lowercase()}", container = chip, height = 52.dp)
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(chip).padding(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),

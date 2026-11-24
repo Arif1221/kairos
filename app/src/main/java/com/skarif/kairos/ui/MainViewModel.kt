@@ -12,6 +12,8 @@ import com.skarif.kairos.data.normalize
 import com.skarif.kairos.data.searchSongs
 import com.skarif.kairos.data.matchesQuery
 import com.skarif.kairos.data.sortKey
+import com.skarif.kairos.data.sortTitle
+import kotlinx.coroutines.flow.first
 import com.skarif.kairos.data.splitGenres
 import com.skarif.kairos.data.spreadShuffle
 import com.skarif.kairos.data.weightedSample
@@ -46,6 +48,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -81,6 +84,8 @@ data class ArtistUi(val name: String, val songs: List<SongEntity>)
 
 data class GenreUi(val name: String, val songs: List<SongEntity>)
 
+data class LibraryHits(val songs: Set<Long>, val albums: Set<Long>, val artists: Set<String>, val genres: Set<String>)
+
 data class SearchHits(
     val artists: List<ArtistUi> = emptyList(),
     val albums: List<AlbumGroup> = emptyList(),
@@ -107,7 +112,7 @@ data class StatsUi(
     val topArtists: List<Pair<String, Long>> = emptyList(),
 )
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, kotlinx.coroutines.FlowPreview::class)
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val ct = (app as PlayerApp).container
     private fun <T> Flow<T>.state(initial: T) = stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), initial)
@@ -140,11 +145,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun albumGroup(albumId: Long): AlbumGroup? = albumIndex.value[albumId]
 
     private val sortKey = settings.map { it.songSort to it.sortDescending }.distinctUntilChanged()
-    val sortedSongs: StateFlow<List<SongEntity>> = combine(songs, sortKey, playCounts) { list, (sort, desc), counts ->
+    val sortedSongs: StateFlow<List<SongEntity>> = combine(songs, sortKey, playCounts, settings.map { it.ignoreArticles }.distinctUntilChanged()) { list, (sort, desc), counts, articles ->
+        // "The Weeknd" under W when articles are ignored.
+        val key: (String) -> String = if (articles) { t -> sortTitle(t) } else { t -> t.lowercase() }
         val sorted = when (sort) {
-            SongSort.TITLE -> list.sortedBy { it.title.lowercase() }
-            SongSort.ARTIST -> list.sortedBy { it.artist.lowercase() }
-            SongSort.ALBUM -> list.sortedWith(compareBy({ it.album.lowercase() }, { it.track }))
+            SongSort.TITLE -> list.sortedBy { key(it.title) }
+            SongSort.ARTIST -> list.sortedBy { key(it.artist) }
+            SongSort.ALBUM -> list.sortedWith(compareBy({ key(it.album) }, { it.track }))
             SongSort.DATE_ADDED -> list.sortedBy { it.dateAddedSec }
             SongSort.LENGTH -> list.sortedBy { it.durationMs }
             SongSort.MOST_PLAYED -> list.sortedBy { counts[it.id] ?: 0 }
@@ -363,21 +370,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
-    val searchResults: StateFlow<List<SongEntity>> = combine(songs, _query) { all, q -> searchSongs(all, q, 200) }
+    /** Built once per library change, so typing never re-normalizes the whole library. */
+    private val searchIndex: StateFlow<com.skarif.kairos.data.SearchIndex> = combine(songs, albums, artists, genres) { s, al, ar, ge ->
+        com.skarif.kairos.data.SearchIndex(s, al, ar.map { it.name }, ge.map { it.name })
+    }.flowOn(Dispatchers.Default).always(com.skarif.kairos.data.SearchIndex(emptyList()))
+
+    /** Debounced: results follow typing after a short pause instead of on every key. */
+    private val typedQuery = _query.debounce { if (it.isBlank()) 0L else 120L }
+
+    val searchResults: StateFlow<List<SongEntity>> = combine(searchIndex, typedQuery) { idx, q -> idx.songs(q, 200) }
         .flowOn(Dispatchers.Default).state(emptyList())
 
     /** Artists, albums and genres matching the search, names starting with it first. */
-    val searchHits: StateFlow<SearchHits> = combine(_query, artists, albums, genres) { q, ar, al, ge ->
+    val searchHits: StateFlow<SearchHits> = combine(typedQuery, searchIndex, artists, genres) { q, idx, ar, ge ->
         if (q.isBlank()) SearchHits() else {
-            val n = normalize(q)
-            fun rank(name: String) = if (normalize(name).startsWith(n)) 0 else 1
+            val arBy = ar.associateBy { it.name }
+            val geBy = ge.associateBy { it.name }
             SearchHits(
-                artists = ar.filter { matchesQuery(it.name, q) }.sortedWith(compareBy({ rank(it.name) }, { -it.songs.size })).take(20),
-                albums = al.filter { matchesQuery("${it.title} ${it.artist}", q) }.sortedWith(compareBy({ rank(it.title) }, { -it.songs.size })).take(20),
-                genres = ge.filter { matchesQuery(it.name, q) }.sortedWith(compareBy({ rank(it.name) }, { -it.songs.size })).take(12),
+                artists = idx.artists(q).mapNotNull { arBy[it] }.take(20),
+                albums = idx.albums(q).take(20),
+                genres = idx.genres(q).mapNotNull { geBy[it] }.take(12),
             )
         }
     }.flowOn(Dispatchers.Default).state(SearchHits())
+
+    // ---------------------------------------------------------------- library filter
+
+    private val _libraryFilter = MutableStateFlow("")
+    fun setLibraryFilter(q: String) { _libraryFilter.value = q }
+
+    /** What the Library filter box matches, per tab; null when the box is empty. */
+    val libraryHits: StateFlow<LibraryHits?> = combine(_libraryFilter.debounce { if (it.isBlank()) 0L else 120L }, searchIndex) { q, idx ->
+        if (q.isBlank()) null
+        else LibraryHits(idx.songIds(q), idx.albums(q).mapTo(HashSet()) { it.id }, idx.artists(q).toSet(), idx.genres(q).toSet())
+    }.flowOn(Dispatchers.Default).state(null)
 
     private val _folders = MutableStateFlow<List<FolderInfo>>(emptyList())
     val folders: StateFlow<List<FolderInfo>> = _folders.asStateFlow()
@@ -385,11 +411,74 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _scan = MutableStateFlow<ScanState>(ScanState.Idle)
     val scan: StateFlow<ScanState> = _scan.asStateFlow()
 
+    private val backup = com.skarif.kairos.data.Backup(ct.db, ct.settings)
+
+    /** Writes a backup file (favourites, playlists, history, settings) to where you picked. */
+    fun backupTo(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val json = backup.export(songs.value)
+                getApplication<Application>().contentResolver.openOutputStream(uri, "wt")!!.use { it.write(json.toByteArray()) }
+            }.onSuccess { toast("Backup saved") }.onFailure { toast("Couldn't save the backup: ${it.message}") }
+        }
+    }
+
+    fun restoreFrom(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val json = getApplication<Application>().contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
+                backup.restore(json, songs.value)
+            }.onSuccess { r ->
+                toast(
+                    "Restored ${r.favourites} favourites, ${r.playlists} playlists, ${r.plays} plays" +
+                        if (r.missingSongs > 0) ". ${r.missingSongs} songs aren't on this phone" else "",
+                )
+            }.onFailure { toast("Couldn't restore: ${it.message ?: "not a Kairos backup"}") }
+        }
+    }
+
+    /** Deletes all listening history (Stats and the mixes built from it start over). */
+    fun clearHistory() {
+        viewModelScope.launch(Dispatchers.IO) { ct.db.playEvents().clear(); toast("Listening history cleared") }
+    }
+
+    // ---------------------------------------------------------------- resume queue
+
+    private val queueFile = java.io.File(app.filesDir, "last-queue.txt")
+
+    private fun saveQueue() {
+        val n = now.value
+        if (n.queue.isEmpty() || !settings.value.resumeQueue) return
+        // Play order, so a shuffled queue comes back in the order you were hearing it.
+        val ids = n.queue.map { it.songId }
+        val text = "${n.queuePosition}\n${position.value}\n${playingFrom.value.orEmpty()}\n${ids.joinToString(",")}"
+        viewModelScope.launch(Dispatchers.IO) { runCatching { queueFile.writeText(text) } }
+    }
+
+    private suspend fun restoreQueue() {
+        if (!ct.settings.load().resumeQueue) return
+        val lines = runCatching { queueFile.readLines() }.getOrNull() ?: return
+        if (lines.size < 4) return
+        val all = songs.first { it.isNotEmpty() }.associateBy { it.id }
+        val list = lines[3].split(',').mapNotNull { it.toLongOrNull()?.let(all::get) }
+        if (list.isEmpty()) return
+        _playingFrom.value = lines[2].ifBlank { null }
+        ct.player.restoreIfEmpty(list, lines[0].toIntOrNull() ?: 0, lines[1].toLongOrNull() ?: 0L)
+    }
+
     /** The song autoplay last added songs for, so it adds only once per "end of queue". */
     private var autoplayedAfter: Long? = null
 
     init {
         ct.player.connect()
+        viewModelScope.launch { restoreQueue() }
+        // Save the queue when it, the song, or play/pause changes, and every 10 s while playing.
+        viewModelScope.launch {
+            now.map { Triple(it.queue, it.queuePosition, it.isPlaying) }.distinctUntilChanged().collect { saveQueue() }
+        }
+        viewModelScope.launch {
+            while (true) { kotlinx.coroutines.delay(10_000); if (now.value.isPlaying) saveQueue() }
+        }
         // Autoplay: when the last song in the queue starts, add similar songs from your library.
         viewModelScope.launch {
             now.map { Triple(it.songId, it.queuePosition == it.queue.lastIndex, it.repeatMode) }.distinctUntilChanged().collect { (id, last, repeat) ->

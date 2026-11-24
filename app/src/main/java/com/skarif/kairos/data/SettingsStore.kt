@@ -64,6 +64,12 @@ data class Settings(
     val snoozedSongs: Set<String> = emptySet(),
     /** Song ids whose plays don't shape mixes and suggestions (Stats still count them). */
     val tasteExcluded: Set<String> = emptySet(),
+    /** Bring back the last queue, song and position when the app starts. */
+    val resumeQueue: Boolean = true,
+    /** Keep the screen on while the lyrics page is open. */
+    val keepScreenOnLyrics: Boolean = true,
+    /** Sort "The Weeknd" under W and "A Day to Remember" under D. */
+    val ignoreArticles: Boolean = false,
 ) {
     val minDurationMs: Long get() = if (skipShortFiles) 30_000L else 0L
 }
@@ -99,6 +105,9 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
         val hidden = stringSetPreferencesKey("hidden_songs")
         val snoozed = stringSetPreferencesKey("snoozed_songs")
         val tasteExcluded = stringSetPreferencesKey("taste_excluded")
+        val resumeQueue = booleanPreferencesKey("resume_queue")
+        val keepScreenOn = booleanPreferencesKey("keep_screen_on_lyrics")
+        val ignoreArticles = booleanPreferencesKey("ignore_articles")
     }
 
     val settings: StateFlow<Settings> = ds.data
@@ -140,6 +149,9 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
             hiddenSongs = p[K.hidden] ?: d.hiddenSongs,
             snoozedSongs = p[K.snoozed] ?: d.snoozedSongs,
             tasteExcluded = p[K.tasteExcluded] ?: d.tasteExcluded,
+            resumeQueue = p[K.resumeQueue] ?: d.resumeQueue,
+            keepScreenOnLyrics = p[K.keepScreenOn] ?: d.keepScreenOnLyrics,
+            ignoreArticles = p[K.ignoreArticles] ?: d.ignoreArticles,
         )
     }
 
@@ -169,6 +181,9 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
         p[K.hidden] = s.hiddenSongs
         p[K.snoozed] = s.snoozedSongs
         p[K.tasteExcluded] = s.tasteExcluded
+        p[K.resumeQueue] = s.resumeQueue
+        p[K.keepScreenOn] = s.keepScreenOnLyrics
+        p[K.ignoreArticles] = s.ignoreArticles
     }
 
     private inline fun <reified E : Enum<E>> enumOr(name: String?, default: E): E =

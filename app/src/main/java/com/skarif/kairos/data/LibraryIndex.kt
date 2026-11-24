@@ -20,6 +20,13 @@ fun normalize(s: String): String {
     return Normalizer.normalize(stripped, Normalizer.Form.NFC).lowercase().replace(NON_WORD, " ").trim()
 }
 
+/** Lowercase, with a leading "The ", "A " or "An " dropped: "The Weeknd" sorts under W. */
+fun sortTitle(s: String): String {
+    val l = s.trim().lowercase()
+    for (a in listOf("the ", "a ", "an ")) if (l.startsWith(a) && l.length > a.length) return l.substring(a.length)
+    return l
+}
+
 /** Same, with a leading "the " dropped, for sorting and grouping. */
 fun sortKey(s: String): String = normalize(s).removePrefix("the ")
 
@@ -383,4 +390,86 @@ fun parseM3u(text: String, all: List<SongEntity>): Pair<List<SongEntity>, Int> {
         info = null
     }
     return out to missing
+}
+
+// ---------------------------------------------------------------- precomputed search index
+
+/**
+ * Everything search needs, normalized once when the library changes. Normalizing 2,000 songs on
+ * every keystroke (Unicode decomposition + regex, three fields each) is what made typing lag.
+ */
+class SearchIndex(
+    songs: List<SongEntity>,
+    albums: List<AlbumGroup> = emptyList(),
+    artistNames: List<String> = emptyList(),
+    genreNames: List<String> = emptyList(),
+) {
+    private class Entry(val song: SongEntity, val title: String, val artist: String, val album: String) {
+        val hay = "$title $artist $album"
+        val titleWords = title.split(' ')
+    }
+    private val entries = songs.map { Entry(it, normalize(it.title), normalize(it.artist), normalize(it.album)) }
+    private val albumKeys = albums.map { it to normalize("${it.title} ${it.artist}") }
+    private val artistKeys = artistNames.map { it to normalize(it) }
+    private val genreKeys = genreNames.map { it to normalize(it) }
+
+    /** Ranked like [searchSongs]. */
+    fun songs(query: String, limit: Int = 300): List<SongEntity> {
+        val q = normalize(query)
+        if (q.isEmpty()) return emptyList()
+        val words = q.split(' ')
+        return entries.asSequence().filter { e -> words.all { it in e.hay } }
+            .map { e ->
+                val rank = when {
+                    e.title.startsWith(q) -> 0
+                    e.titleWords.any { it.startsWith(q) } -> 1
+                    q in e.title -> 2
+                    q in e.artist -> 3
+                    q in e.album -> 4
+                    else -> 5
+                }
+                Triple(e.song, rank, e.title)
+            }
+            .sortedWith(compareBy({ it.second }, { it.third.length }, { it.third }))
+            .take(limit).map { it.first }.toList()
+    }
+
+    /** Ids of every song matching all the words, in no particular order (for filtering a list). */
+    fun songIds(query: String): Set<Long> {
+        val words = normalize(query).split(' ').filter { it.isNotEmpty() }
+        if (words.isEmpty()) return entries.mapTo(HashSet()) { it.song.id }
+        return entries.filter { e -> words.all { it in e.hay } }.mapTo(HashSet()) { it.song.id }
+    }
+
+    private fun <T> match(keys: List<Pair<T, String>>, query: String): List<T> {
+        val q = normalize(query)
+        val words = q.split(' ').filter { it.isNotEmpty() }
+        if (words.isEmpty()) return keys.map { it.first }
+        return keys.filter { (_, k) -> words.all { it in k } }.sortedBy { (_, k) -> if (k.startsWith(q)) 0 else 1 }.map { it.first }
+    }
+
+    fun albums(query: String): List<AlbumGroup> = match(albumKeys, query)
+    fun artists(query: String): List<String> = match(artistKeys, query)
+    fun genres(query: String): List<String> = match(genreKeys, query)
+}
+
+// ---------------------------------------------------------------- matching songs across phones (backup restore)
+
+/**
+ * Finds a song from a backup on this phone. MediaStore ids change after a reinstall or on a new
+ * phone, so a backup stores each song's path, title, artist and length instead.
+ * Path first; then same artist and title with a length within 3 seconds; then title alone if
+ * only one song has it.
+ */
+class SongMatcher(all: List<SongEntity>) {
+    private val byPath = all.associateBy { (it.folder + it.fileName).lowercase() }
+    private val byTag = all.groupBy { normalize("${it.artist} ${it.title}") }
+    private val byTitle = all.groupBy { normalize(it.title) }
+
+    fun find(path: String, title: String, artist: String, durationMs: Long): SongEntity? {
+        byPath[path.lowercase()]?.let { return it }
+        val close = { s: SongEntity -> durationMs <= 0 || kotlin.math.abs(s.durationMs - durationMs) <= 3_000 }
+        byTag[normalize("$artist $title")]?.firstOrNull(close)?.let { return it }
+        return byTitle[normalize(title)]?.filter(close)?.singleOrNull()
+    }
 }

@@ -116,6 +116,9 @@ interface FavoriteDao {
 
     @Query("DELETE FROM favorites WHERE songId = :songId")
     suspend fun remove(songId: Long)
+
+    @Query("SELECT * FROM favorites")
+    suspend fun all(): List<FavoriteEntity>
 }
 
 @Dao
@@ -137,6 +140,12 @@ abstract class PlaylistDao {
 
     @Query("DELETE FROM playlists WHERE id = :playlistId")
     abstract suspend fun delete(playlistId: Long)
+
+    @Query("SELECT * FROM playlists ORDER BY createdAt")
+    abstract suspend fun allLists(): List<PlaylistEntity>
+
+    @Query("SELECT * FROM playlist_songs ORDER BY playlistId, position")
+    abstract suspend fun allItems(): List<PlaylistSongEntity>
 
     @Query("UPDATE playlists SET name = :name WHERE id = :playlistId")
     abstract suspend fun rename(playlistId: Long, name: String)
@@ -175,6 +184,15 @@ interface PlayEventDao {
 
     @Query("SELECT * FROM play_events ORDER BY startedAt")
     fun observeAll(): Flow<List<PlayEventEntity>>
+
+    @Query("SELECT * FROM play_events ORDER BY startedAt")
+    suspend fun all(): List<PlayEventEntity>
+
+    @Insert
+    suspend fun insertAll(e: List<PlayEventEntity>)
+
+    @Query("DELETE FROM play_events")
+    suspend fun clear()
 }
 
 @Dao
@@ -184,6 +202,9 @@ interface LyricsOffsetDao {
 
     @Upsert
     suspend fun upsert(o: LyricsOffsetEntity)
+
+    @Query("SELECT * FROM lyrics_offsets")
+    suspend fun all(): List<LyricsOffsetEntity>
 }
 
 @Database(

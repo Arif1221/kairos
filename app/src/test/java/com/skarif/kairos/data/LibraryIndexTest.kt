@@ -175,4 +175,29 @@ class LibraryIndexTest {
         assertEquals(listOf(a, b), got)
         assertEquals(1, miss)
     }
+
+    @Test
+    fun searchIndexMatchesSearchSongsAndFiltersOtherLists() {
+        val a = song("Shape of You", "Ed Sheeran", "Divide", albumId = 1)
+        val b = song("Perfect", "Ed Sheeran", "Divide", albumId = 1)
+        val c = song("Love Story", "Taylor Swift", "Fearless", albumId = 2)
+        val all = listOf(a, b, c)
+        val idx = SearchIndex(all, groupAlbums(all), listOf("Ed Sheeran", "Taylor Swift"), listOf("Pop"))
+        assertEquals(searchSongs(all, "ed"), idx.songs("ed"))
+        assertEquals(setOf(a.id, b.id), idx.songIds("sheeran"))
+        assertEquals(listOf("Taylor Swift"), idx.artists("tay"))
+        assertEquals(listOf("Fearless"), idx.albums("fear").map { it.title })
+        assertEquals(3, idx.songIds("  ").size)
+    }
+
+    @Test
+    fun songMatcherFindsByPathThenTags() {
+        val a = song("Alpha", "Ann", folder = "Music/A/")
+        val b = song("Beta", "Bob", folder = "Music/B/")
+        val m = SongMatcher(listOf(a, b))
+        assertEquals(a, m.find("music/a/Alpha.mp3", "x", "y", 0))
+        assertEquals(b, m.find("Old/Path/b.mp3", "Beta", "Bob", 201_000))
+        assertEquals(null, m.find("Old/Path/b.mp3", "Beta", "Bob", 260_000))
+        assertEquals(b, m.find("nowhere.mp3", "beta", "Someone", 200_000))
+    }
 }

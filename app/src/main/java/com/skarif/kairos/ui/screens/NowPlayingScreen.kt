@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -113,7 +114,32 @@ fun NowPlayingPane(
     if (menu) PlayerMenu(vm, s, onAlbum, { a -> onOpenCollection("artist:$a") }, onSleep, onEqualizer) { menu = false }
     if (speedDialog) SpeedDialog(vm) { speedDialog = false }
 
-    Column(Modifier.fillMaxSize().verticalScroll(ctrl.mainScroll).navigationBarsPadding()) {
+    // Pulling down anywhere on the player closes it once the page is scrolled to the top,
+    // with the same swipe rule as the cover (before, only the cover could be dragged).
+    val pullToClose = remember(ctrl) {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                // Already pulling the sheet: keep moving it both ways instead of scrolling.
+                if (ctrl.dragging && source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput) {
+                    ctrl.dragBy(available.y)
+                    return available.copy(x = 0f)
+                }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (available.y > 0f && source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput) {
+                    ctrl.dragBy(available.y)
+                    return available.copy(x = 0f)
+                }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+            override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                if (ctrl.dragging) { ctrl.settle(available.y); return available }
+                return androidx.compose.ui.unit.Velocity.Zero
+            }
+        }
+    }
+    Column(Modifier.fillMaxSize().nestedScroll(pullToClose).verticalScroll(ctrl.mainScroll).navigationBarsPadding()) {
         Box(Modifier.fillMaxWidth().height(heroHeight + 38.dp)) {
             Box(Modifier.fillMaxWidth().height(heroHeight).clip(RoundedCornerShape(bottomStart = 46.dp, bottomEnd = 46.dp))) {
                 Box(
@@ -127,13 +153,8 @@ fun NowPlayingPane(
                                     if (axis == 2) {
                                         ctrl.settle(v.y)
                                     } else {
-                                        val x = ctrl.skipX.value
-                                        val w = size.width
-                                        val dir = when {
-                                            x < -w * 0.18f || (v.x < -900f && x < 0f) -> -1
-                                            x > w * 0.18f || (v.x > 900f && x > 0f) -> 1
-                                            else -> 0
-                                        }
+                                        // Shared swipe rule: 72 dp or a quick flick, same as everywhere else.
+                                        val dir = com.skarif.kairos.ui.motion.Swipe.decide(ctrl.skipX.value, v.x, density)
                                         onSkip(dir, v.x)
                                     }
                                 },

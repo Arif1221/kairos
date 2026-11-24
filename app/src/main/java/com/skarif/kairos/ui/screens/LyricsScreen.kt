@@ -95,6 +95,13 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
     val art by vm.artwork.collectAsStateWithLifecycle()
     val state by vm.lyrics.collectAsStateWithLifecycle()
     val offset by vm.lyricsOffset.collectAsStateWithLifecycle()
+    // Keep the screen awake while reading along, if that setting is on.
+    val keepOn = vm.settings.collectAsStateWithLifecycle().value.keepScreenOnLyrics
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.DisposableEffect(keepOn) {
+        view.keepScreenOn = keepOn
+        onDispose { view.keepScreenOn = false }
+    }
     var options by rememberSaveable { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize()) {

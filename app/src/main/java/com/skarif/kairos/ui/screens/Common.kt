@@ -5,6 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.Color
@@ -269,7 +271,9 @@ fun LiveTime(vm: MainViewModel, durationMs: Long, color: Color) {
 }
 
 /**
- * Swipe a row right or left to run an action; the row springs back afterwards.
+ * Swipe a row right or left to run an action; the row springs back afterwards. Uses the shared
+ * swipe rule ([com.skarif.kairos.ui.motion.Swipe]): 72 dp or a quick flick, the same as closing
+ * the player or swiping the cover. (Material's SwipeToDismissBox acted on the lightest flick.)
  * Also exposed as accessibility actions, since a swipe can't be done with TalkBack.
  */
 @Composable
@@ -285,63 +289,68 @@ fun SwipeActions(
     val c = P.colors
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val state = androidx.compose.material3.rememberSwipeToDismissBoxState(
-        confirmValueChange = { v ->
-            when (v) {
-                androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd -> onRight?.invoke()
-                androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> onLeft?.invoke()
-                else -> Unit
-            }
-            false // never stay dismissed; the action ran, the row returns
-        },
-        // Short swipe: a fifth of the row, at most 72 dp, is enough to act.
-        positionalThreshold = { total -> minOf(total * 0.2f, 72f * density.density) },
-    )
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val offset = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+    val distancePx = com.skarif.kairos.ui.motion.Swipe.DISTANCE_DP * density.density
     // A tick under the finger the moment the swipe passes the point where it will act.
-    androidx.compose.runtime.LaunchedEffect(state.targetValue) {
-        if (state.targetValue != androidx.compose.material3.SwipeToDismissBoxValue.Settled) {
-            haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+    val armed = kotlin.math.abs(offset.value) >= distancePx
+    LaunchedEffect(armed) { if (armed) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove) }
+    val dragState = androidx.compose.foundation.gestures.rememberDraggableState { d ->
+        val next = offset.value + d
+        // Only towards sides that have an action; resist past the commit point.
+        val allowed = when {
+            next > 0 && onRight == null -> 0f
+            next < 0 && onLeft == null -> 0f
+            kotlin.math.abs(next) > distancePx * 1.6f -> offset.value + d * 0.25f
+            else -> next
         }
+        scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { offset.snapTo(allowed) }
     }
-    androidx.compose.material3.SwipeToDismissBox(
-        state = state,
-        enableDismissFromStartToEnd = onRight != null,
-        enableDismissFromEndToStart = onLeft != null,
-        modifier = Modifier.semantics {
+    Box(
+        Modifier.semantics {
             customActions = listOfNotNull(
                 if (onRight != null && rightLabel != null) androidx.compose.ui.semantics.CustomAccessibilityAction(rightLabel) { onRight(); true } else null,
                 if (onLeft != null && leftLabel != null) androidx.compose.ui.semantics.CustomAccessibilityAction(leftLabel) { onLeft(); true } else null,
             )
         },
-        backgroundContent = {
-            val dir = state.dismissDirection
-            val right = dir == androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd
-            val active = dir != androidx.compose.material3.SwipeToDismissBoxValue.Settled
-            // Colour only the strip the row has uncovered, so nothing shows through the row itself.
-            val offsetPx = runCatching { state.requireOffset() }.getOrDefault(0f)
-            val strip = with(androidx.compose.ui.platform.LocalDensity.current) { kotlin.math.abs(offsetPx).toDp() }
-            Box(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 2.dp)) {
-                if (active && strip > 0.dp) {
-                    val icon = if (right) rightIcon else leftIcon
-                    val fg = if (right) c.onAccent else c.inkFg
-                    Box(
-                        Modifier.align(if (right) Alignment.CenterStart else Alignment.CenterEnd)
-                            .width(strip).fillMaxHeight().clip(RoundedCornerShape(24.dp))
-                            .background(if (right) c.accent else c.ink),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        // The icon grows as you pull, and pops once the action is armed.
-                        val armed = state.targetValue != androidx.compose.material3.SwipeToDismissBoxValue.Settled
-                        val iconScale by androidx.compose.animation.core.animateFloatAsState(
-                            if (armed) 1.25f else (0.6f + state.progress * 0.5f).coerceAtMost(1f),
-                            androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 500f), label = "swipeIcon",
-                        )
-                        if (icon != null && strip > 36.dp) {
-                            Icon(icon, null, tint = fg, modifier = Modifier.size(22.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale })
-                        }
+    ) {
+        // The strip the row has uncovered, coloured, with the action's icon.
+        val o = offset.value
+        if (o != 0f) {
+            val right = o > 0
+            val strip = with(density) { kotlin.math.abs(o).toDp() }
+            Box(Modifier.matchParentSize().padding(horizontal = 12.dp, vertical = 2.dp)) {
+                val icon = if (right) rightIcon else leftIcon
+                Box(
+                    Modifier.align(if (right) Alignment.CenterStart else Alignment.CenterEnd)
+                        .width(strip).fillMaxHeight().clip(RoundedCornerShape(24.dp))
+                        .background(if (right) c.accent else c.ink),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val iconScale by androidx.compose.animation.core.animateFloatAsState(
+                        if (armed) 1.25f else (0.6f + kotlin.math.abs(o) / distancePx * 0.4f).coerceAtMost(1f),
+                        androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 500f), label = "swipeIcon",
+                    )
+                    if (icon != null && strip > 36.dp) {
+                        Icon(icon, null, tint = if (right) c.onAccent else c.inkFg, modifier = Modifier.size(22.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale })
                     }
                 }
             }
-        },
-    ) { content() }
+        }
+        Box(
+            Modifier
+                .graphicsLayer { translationX = offset.value }
+                .draggable(
+                    dragState, androidx.compose.foundation.gestures.Orientation.Horizontal,
+                    enabled = onRight != null || onLeft != null,
+                    onDragStopped = { v ->
+                        when (com.skarif.kairos.ui.motion.Swipe.decide(offset.value, v, density.density)) {
+                            1 -> onRight?.invoke()
+                            -1 -> onLeft?.invoke()
+                        }
+                        offset.animateTo(0f, com.skarif.kairos.ui.motion.Motion.spatial(), initialVelocity = v)
+                    },
+                ),
+        ) { content() }
+    }
 }

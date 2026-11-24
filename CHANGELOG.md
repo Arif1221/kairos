@@ -19,6 +19,10 @@ Offline builds. Each version is on the [Releases](https://github.com/Arif1221/ka
 - Search finds artists, albums and genres, not just songs; Genres browse tab
 - Player: "Playing from", ⋮ menu (song radio, share, share file, playback speed, sleep timer, equalizer, credits, hide, go to artist), tappable artist, elapsed and remaining time, Smart Shuffle and radio buttons
 - Under the player: live lyrics preview, up next, about the artist with more of their songs, and song info
+- Fixed: typing in the Library filter or Search lagged; search now uses an index built once per library change
+- One swipe rule everywhere (72 dp or a quick flick): closing the player, swiping the cover or mini player, queue and library rows. Pull down anywhere on the player to close it
+- Backup and restore: favourites, playlists, history, lyrics timing, hidden songs and settings in one file, restorable on a new phone
+- Settings: resume where you left off, keep screen on with lyrics, ignore "The"/"A" when sorting, scan again, clear history, about
 
 ## 0.7.6
 - New app icon, with a themed icon on Android 13+

@@ -97,6 +97,23 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
         c.play()
     }
 
+    /**
+     * Puts a saved queue back, paused, if nothing is loaded yet (the app just started).
+     * Waits for the connection to the playback service.
+     */
+    suspend fun restoreIfEmpty(songs: List<SongEntity>, index: Int, positionMs: Long) {
+        if (songs.isEmpty()) return
+        var c = controller
+        var waited = 0
+        while (c == null && waited < 100) { kotlinx.coroutines.delay(50); waited++; c = controller }
+        c ?: return
+        kotlinx.coroutines.withContext(Dispatchers.Main) {
+            if (c.mediaItemCount > 0) return@withContext
+            c.setMediaItems(songs.map { it.toMediaItem() }, index.coerceIn(0, songs.lastIndex), positionMs.coerceAtLeast(0))
+            c.prepare()
+        }
+    }
+
     fun toggle() = controller?.run { if (isPlaying) pause() else { if (playbackState == Player.STATE_IDLE) prepare(); play() } }
     fun pause() = controller?.pause()
     fun next() = controller?.seekToNextMediaItem()

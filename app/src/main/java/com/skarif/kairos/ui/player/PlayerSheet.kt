@@ -74,6 +74,7 @@ import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.motion.Motion
+import com.skarif.kairos.ui.motion.Swipe
 import com.skarif.kairos.ui.screens.LyricsPane
 import com.skarif.kairos.ui.screens.NowPlayingPane
 import com.skarif.kairos.ui.screens.QueuePane
@@ -111,6 +112,11 @@ class PlayerController(private val scope: CoroutineScope) {
     var dragging by mutableStateOf(false)
         private set
 
+    /** Where the current drag started, to measure it against the shared swipe rule. */
+    private var dragStart: Float? = null
+    /** Screen density, set by the sheet, for the swipe rule. */
+    internal var density = 1f
+
     // Only one animation drives the player at a time; a new one replaces the old.
     private var job: Job? = null
     private fun run(block: suspend CoroutineScope.() -> Unit) {
@@ -130,6 +136,7 @@ class PlayerController(private val scope: CoroutineScope) {
     }
 
     fun dragBy(dyPx: Float) {
+        if (!dragging) dragStart = progress.value
         dragging = true
         job?.cancel()
         // Undispatched: the snap happens now, in order, never after a later settle().
@@ -138,14 +145,21 @@ class PlayerController(private val scope: CoroutineScope) {
         }
     }
 
-    /** Ends a drag: a flick decides, otherwise whichever side is closer. */
+    /**
+     * Ends a drag with the shared swipe rule ([Swipe]): from open, 72 dp down or a flick closes;
+     * from closed, 72 dp up or a flick opens. Anything less springs back. Not after a drag
+     * (a half-open player left behind), whichever side is closer.
+     */
     fun settle(velocityY: Float) {
+        val start = dragStart
         dragging = false
+        dragStart = null
+        val movedDownPx = start?.let { (it - progress.value) * rangePx } ?: 0f
+        val dir = Swipe.decide(movedDownPx, velocityY, density) // 1 = down
         val target = when {
-            velocityY > 900f -> 0f
-            velocityY < -900f -> 1f
-            progress.value > 0.5f -> 1f
-            else -> 0f
+            start == null -> if (progress.value > 0.5f) 1f else 0f
+            start > 0.5f -> if (dir == 1) 0f else 1f
+            else -> if (dir == -1) 1f else 0f
         }
         run {
             progress.animateTo(target, Motion.sheet(), initialVelocity = -velocityY / rangePx)
@@ -226,6 +240,7 @@ fun PlayerSheet(
         val inset = px(14f)
         val miniTop = h - miniBottomPx - miniH
         ctrl.rangePx = miniTop.coerceAtLeast(1f)
+        ctrl.density = LocalDensity.current.density
 
         fun sheetRect(p: Float) = Rect(mix(inset, 0f, p), mix(miniTop, 0f, p), mix(w - inset, w, p), mix(miniTop + miniH, h, p))
 
@@ -394,10 +409,12 @@ private fun MiniContent(vm: MainViewModel, ctrl: PlayerController, title: String
                 translationX = nudgeAnim.value
             }
             .pointerInput(Unit) {
-                // Swipe the mini player sideways to change song.
+                // Swipe the mini player sideways to change song, with the shared swipe rule.
+                val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
                 detectHorizontalDragGestures(
+                    onDragStart = { tracker.resetTracking() },
                     onDragEnd = {
-                        val dir = when { nudge < -size.width * 0.15f -> -1; nudge > size.width * 0.15f -> 1; else -> 0 }
+                        val dir = Swipe.decide(nudge, tracker.calculateVelocity().x, density)
                         nudge = 0f
                         scope.launch {
                             if (dir != 0) {
@@ -410,6 +427,7 @@ private fun MiniContent(vm: MainViewModel, ctrl: PlayerController, title: String
                     onDragCancel = { nudge = 0f; scope.launch { nudgeAnim.animateTo(0f, Motion.spatial()) } },
                 ) { change, amount ->
                     change.consume()
+                    tracker.addPosition(change.uptimeMillis, change.position)
                     nudge += amount
                     scope.launch { nudgeAnim.snapTo(nudge * 0.5f) }
                 }
