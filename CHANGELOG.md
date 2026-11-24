@@ -2,6 +2,15 @@
 
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
+## Unreleased
+- New motion system on iOS-style springs: every movement keeps your finger's speed and can be interrupted
+- Pages push in from the right edge over the old one; back is a predictive-back swipe from either edge that scrubs the animation
+- Opening the player sinks the app behind it back with rounded corners, like an iOS sheet; a back swipe pulls the player down under your thumb
+- The cover settles back while paused and springs forward on play
+- Buttons and cards press down instantly, dim slightly, and spring back with a small bounce
+- Tabs crossfade with a slight zoom; Library and Search rows glide when filtering or sorting
+- Fixed: the queue's now-playing card didn't show the song's cover
+
 ## 0.8.0
 - Fixed: the queue sometimes showed every song as "Unknown" with no covers
 - Home redesigned to match Library: same header, plain cards, no empty "0 songs" tiles

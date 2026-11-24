@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -130,6 +131,7 @@ class PlayerController(private val scope: CoroutineScope) {
     }
 
     fun collapse() = run {
+        dragging = false
         progress.animateTo(0f, Motion.sheet())
         page = PlayerPage.MAIN
         mainScroll.scrollTo(0)
@@ -143,6 +145,19 @@ class PlayerController(private val scope: CoroutineScope) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             progress.snapTo((progress.value - dyPx / rangePx).coerceIn(0f, 1f))
         }
+    }
+
+    /** Predictive back: the sheet follows the back gesture down, up to a third of the way. */
+    fun backProgress(fraction: Float) {
+        dragging = true
+        job?.cancel()
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { progress.snapTo(1f - 0.33f * fraction.coerceIn(0f, 1f)) }
+    }
+
+    /** The back gesture was cancelled: spring back open. */
+    fun backCancel() {
+        dragging = false
+        run { progress.animateTo(1f, Motion.sheet()) }
     }
 
     /**
@@ -228,8 +243,18 @@ fun PlayerSheet(
         androidx.compose.runtime.snapshotFlow { Triple(ctrl.progress.isRunning, ctrl.dragging, ctrl.progress.value) }
             .collect { (running, dragging, v) -> if (!running && !dragging && v > 0.001f && v < 0.999f) ctrl.settle(0f) }
     }
-    BackHandler(enabled = ctrl.isOpen) {
-        if (ctrl.page != PlayerPage.MAIN) ctrl.page = PlayerPage.MAIN else ctrl.collapse()
+    // Back closes the player interactively: a back swipe pulls the sheet down under your thumb
+    // (predictive back), and letting go either finishes closing or springs it back open.
+    // On a lyrics or queue page, back returns to the main player.
+    androidx.activity.compose.PredictiveBackHandler(enabled = ctrl.isOpen) { events ->
+        val onMain = ctrl.page == PlayerPage.MAIN
+        try {
+            events.collect { e -> if (onMain) ctrl.backProgress(e.progress) }
+            if (onMain) ctrl.collapse() else ctrl.page = PlayerPage.MAIN
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            if (onMain) ctrl.backCancel()
+            throw e
+        }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -313,10 +338,18 @@ fun PlayerSheet(
 
         // 2. The cover, morphing between the mini player, the hero and each page's thumbnail.
         // Neighbours sit either side for swiping between songs.
+        // Apple Music's touch: the cover settles back a little while paused and springs forward on play.
+        val pauseScale by androidx.compose.animation.core.animateFloatAsState(
+            if (now.isPlaying) 1f else 0.94f, Motion.bouncy(), label = "pauseScale",
+        )
         @Composable
         fun cover(img: ImageBitmap?, offset: Int, desc: String?) {
             Box(
                 Modifier
+                    // On the queue and lyrics pages the cover sits inside the page's header card, which
+                    // has its own background; draw the cover above the page there, or the card hides it.
+                    // On the main player it stays below, so the buttons over the hero stay on top.
+                    .zIndex(if (offset == 0 && ctrl.page != PlayerPage.MAIN) 2f else 0f)
                     .placeAt { artRect() }
                     .graphicsLayer {
                         val p = ctrl.progress.value
@@ -328,6 +361,16 @@ fun PlayerSheet(
                         shape = RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
                         clip = true
                         translationX = if (offset == 0) ctrl.skipX.value else ctrl.skipX.value + offset * size.width
+                        if (offset == 0 && ctrl.page == PlayerPage.MAIN) {
+                            // Shrink toward the centre while paused, only once the player is open.
+                            val s = 1f - (1f - pauseScale) * p.coerceIn(0f, 1f)
+                            scaleX = s; scaleY = s
+                            // A paused cover becomes a rounded card all round, like iOS.
+                            if (pauseScale < 0.999f) {
+                                val r = mix(top, corners.y, ((1f - pauseScale) / 0.06f).coerceIn(0f, 1f)).coerceAtLeast(0f)
+                                shape = RoundedCornerShape(r)
+                            }
+                        }
                         if (offset != 0) alpha = (0.55f + 0.45f * (1f - abs(translationX) / size.width)).coerceIn(0f, 1f)
                     }
                     .background(c.accent),

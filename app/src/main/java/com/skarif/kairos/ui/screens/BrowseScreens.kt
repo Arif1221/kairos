@@ -186,9 +186,11 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                 if (results.isNotEmpty()) {
                     item(span = { GridItemSpan(2) }, key = "h-songs") { SearchSection("Songs  ${results.size}") }
                     gridItemsIndexed(results, key = { _, s -> s.id }, span = { _, _ -> GridItemSpan(2) }, contentType = { _, _ -> "song" }) { i, s ->
+                        Box(Modifier.animateItem(fadeInSpec = androidx.compose.animation.core.tween(160), placementSpec = com.skarif.kairos.ui.motion.Motion.spatial(), fadeOutSpec = androidx.compose.animation.core.tween(100))) {
                         SongRow(s, s.id == now.songId, vm, favourite = s.id in favs, onLongClick = { actionsFor = s }) {
                             vm.play(results, i, "Search")
                             onOpenNowPlaying()
+                        }
                         }
                     }
                 }

@@ -101,8 +101,18 @@ fun formatTime(ms: Long): String {
 @Composable
 fun Modifier.pressScale(interaction: MutableInteractionSource, pressed: Float = 0.93f): Modifier {
     val isPressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (isPressed) pressed else 1f, spring(stiffness = Spring.StiffnessMediumLow), label = "press")
-    return this.graphicsLayer { scaleX = scale; scaleY = scale }
+    // iOS feel: goes down the instant you touch (fast, no wobble), comes back with a small bounce.
+    val scale = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(1f) }
+    androidx.compose.runtime.LaunchedEffect(isPressed) {
+        if (isPressed) scale.animateTo(pressed, com.skarif.kairos.ui.motion.Motion.interactive())
+        else scale.animateTo(1f, com.skarif.kairos.ui.motion.Motion.bouncy())
+    }
+    // Pressed things also dim slightly, like an iOS highlight. Both read in the draw phase.
+    return this.graphicsLayer {
+        val v = scale.value
+        scaleX = v; scaleY = v
+        alpha = (1f - (1f - v) / (1f - pressed).coerceAtLeast(0.01f) * 0.12f).coerceIn(0f, 1f)
+    }
 }
 
 @Composable

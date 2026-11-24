@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.SongSort
+import com.skarif.kairos.ui.motion.Motion
 import com.skarif.kairos.data.matchesQuery
 import com.skarif.kairos.data.db.SongEntity
 import com.skarif.kairos.ui.MainViewModel
@@ -275,7 +276,8 @@ fun LibraryScreen(
                             }
                         }
                         itemsIndexed(run.songs, key = { _, s -> s.id }, span = { _, _ -> GridItemSpan(2) }, contentType = { _, _ -> "song" }) { i, s ->
-                            Box(Modifier.padding(end = if (letters.isNotEmpty()) 22.dp else 0.dp)) {
+                            // Rows glide into place when the filter or sort changes, instead of jumping.
+                            Box(Modifier.animateItem(fadeInSpec = tween(180), placementSpec = Motion.spatial(), fadeOutSpec = tween(120)).padding(end = if (letters.isNotEmpty()) 22.dp else 0.dp)) {
                                 SongRow(s, playing = s.id == now.songId, vm, favourite = s.id in favs, onLongClick = { actionsFor = s }) {
                                     vm.play(shownSongs, run.start + i, "Your library")
                                     onOpenNowPlaying()
@@ -286,7 +288,7 @@ fun LibraryScreen(
                 }
                 LibTab.ALBUMS -> {
                     itemsIndexed(albums, key = { _, g -> "al" + g.id }, contentType = { _, _ -> "album" }) { i, g ->
-                        Box(Modifier.padding(start = if (i % 2 == 0) 18.dp else 0.dp, end = if (i % 2 == 1) 18.dp else 0.dp)) {
+                        Box(Modifier.animateItem(fadeInSpec = tween(180), placementSpec = Motion.spatial(), fadeOutSpec = tween(120)).padding(start = if (i % 2 == 0) 18.dp else 0.dp, end = if (i % 2 == 1) 18.dp else 0.dp)) {
                             CoverTile(vm, g.songs.first(), key = "album:${g.id}", kicker = g.artist, title = g.title) { onOpenCollection("album:${g.id}") }
                         }
                     }

@@ -116,10 +116,8 @@ private val DARK_TOP = setOf("collection/{key}")
 /** Bottom sheets opened over whatever is showing, including the player. */
 private enum class Tool { SLEEP, EQ, SORT }
 
-private val tabEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-    fadeIn(Motion.fadeIn()) + scaleIn(tween(Motion.PAGE_MS, easing = Motion.Emphasized), initialScale = 0.97f)
-}
-private val tabExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = { fadeOut(Motion.fadeOut()) }
+private val tabEnter = Motion.tabEnter
+private val tabExit = Motion.tabExit
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -195,12 +193,24 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
             com.skarif.kairos.ui.components.Backdrop(backArt, settings.blurBackground)
             NavHost(
                 nav, startDestination = start,
-                // Push: the new page slides in from the right, the old one drifts left and fades.
-                // Pop is the mirror image. Translation only, so it stays smooth on long lists.
-                enterTransition = { slideInHorizontally(tween(Motion.PAGE_MS, easing = Motion.Emphasized)) { it / 5 } + fadeIn(tween(260, easing = Motion.EmphasizedDecelerate)) },
-                exitTransition = { slideOutHorizontally(tween(Motion.PAGE_MS, easing = Motion.Emphasized)) { -it / 10 } + fadeOut(tween(200)) },
-                popEnterTransition = { slideInHorizontally(tween(Motion.PAGE_MS, easing = Motion.Emphasized)) { -it / 10 } + fadeIn(tween(260, easing = Motion.EmphasizedDecelerate)) },
-                popExitTransition = { slideOutHorizontally(tween(320, easing = Motion.EmphasizedAccelerate)) { it / 5 } + fadeOut(tween(200)) },
+                // iOS sheet depth: as the player opens, the app behind it sinks back, rounds its
+                // corners and dims. Read in the draw phase, so dragging the player never recomposes.
+                modifier = Modifier.graphicsLayer {
+                    val p = player.progress.value.coerceIn(0f, 1f)
+                    if (p > 0f) {
+                        val s = 1f - 0.07f * p
+                        scaleX = s; scaleY = s
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape((28f * p).dp)
+                        clip = true
+                        alpha = 1f - 0.35f * p
+                    }
+                },
+                // iOS-style push and pop on springs (see Motion). With predictive back enabled in
+                // the manifest, a back swipe from either edge scrubs the pop under your thumb.
+                enterTransition = Motion.pushEnter,
+                exitTransition = Motion.pushExit,
+                popEnterTransition = Motion.popEnter,
+                popExitTransition = Motion.popExit,
             ) {
                 screen("onboarding") {
                     OnboardingScreen(vm) { nav.navigate("home") { popUpTo("onboarding") { inclusive = true } } }
