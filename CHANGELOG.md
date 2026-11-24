@@ -2,7 +2,7 @@
 
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
-## Unreleased
+## 0.8.1
 - New motion system on iOS-style springs: every movement keeps your finger's speed and can be interrupted
 - Pages push in from the right edge over the old one; back is a predictive-back swipe from either edge that scrubs the animation
 - Opening the player sinks the app behind it back with rounded corners, like an iOS sheet; a back swipe pulls the player down under your thumb
