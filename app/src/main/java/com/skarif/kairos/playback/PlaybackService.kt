@@ -117,6 +117,24 @@ class PlaybackService : MediaSessionService() {
 
     /** Items arrive from the UI with only a media id; turn that into the file's content Uri here. */
     private val callback = object : MediaSession.Callback {
+        /**
+         * The lock screen / notification / system media controls connect through the "media
+         * notification controller". Without the timeline command, Media3 stops mirroring the
+         * whole queue to Android's media session: with a 2,000-song queue that mirror was rebuilt
+         * on the main thread on every queue change and froze the app for 100-540 ms (measured
+         * with the in-app performance log). Play/pause, next/previous, seeking and the song's
+         * details keep working there; only the queue list is not shared with the system.
+         */
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+            if (!session.isMediaNotificationController(controller)) return super.onConnect(session, controller)
+            val commands = MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
+                .remove(androidx.media3.common.Player.COMMAND_GET_TIMELINE)
+                .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailablePlayerCommands(commands)
+                .build()
+        }
+
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,

@@ -6,6 +6,8 @@ Offline builds. Each version is on the [Releases](https://github.com/Arif1221/ka
 - Fixed: tapping a song that wasn't playing still lagged while the player opened. Each queue change makes Android's media controls rebuild the whole queue on the main thread; the rest of a long queue was added in 21 batches right after opening (21 rebuilds). It is now added in two steps, only once the player has finished animating. Restoring the queue at app start loads the same way instead of all at once
 - The app's new colours and the cards under the player wait for the opening animation to finish, not a fixed delay
 - App start does less at once: the search index, Library sort keys and artist lookup are built when a screen needs them
+- Fixed (measured with the performance log): freezes of 100-540 ms at app start and after tapping a song. Media3 mirrored the whole queue (2,000+ songs) to Android's system media controls on the main thread at every queue change. The lock screen and notification still have play/pause, next/previous, seeking and song details; they just no longer get a copy of the queue list
+- Fixed: a 362 ms freeze just after the app opened while it switched from default to album colours; the last colours are remembered, so it opens in them
 - New: Settings, Performance log. It records every dropped frame with what the app was doing, to share when something lags
 - Fixed: the first time you played a song after opening the app, the player still skipped from closed to almost open. It is now built while still closed, then opens on a fresh spring
 - Fixed: lyrics jumped up, back down, then glided whenever the line changed (the scrolled list showed one frame before the wave offset)
