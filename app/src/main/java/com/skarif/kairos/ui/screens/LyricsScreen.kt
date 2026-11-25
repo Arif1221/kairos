@@ -81,16 +81,14 @@ import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
 import kotlin.math.abs
 
-// Follow the theme: light glass and dark text in the light theme, the reverse in the dark one.
-// Lyrics are always white on a dark, coloured background (as in Apple Music), in light theme
-// too: grey text on the pale light-theme background was hard to read.
-private val Glass: Color @Composable get() = Color(0x2EFFFFFF)
-private val Dim: Color @Composable get() = Color(0xB3FFFFFF)
-private val Fg: Color @Composable get() = Color.White
+// Follow the theme, like every other page: dark text on the light background, white on the dark one.
+private val Glass: Color @Composable get() = if (P.colors.dark) Color(0x2EFFFFFF) else Color(0x14000000)
+private val Dim: Color @Composable get() = P.colors.text.copy(alpha = 0.7f)
+private val Fg: Color @Composable get() = P.colors.text
 
 /**
- * Immersive lyrics: the cover blurred behind a dark veil, white text, and a karaoke fill that
- * sweeps across the current line. Timing controls hide behind the options button.
+ * Immersive lyrics over the player's blurred-cover background, in the theme's colours, with a
+ * karaoke fill that sweeps across the current line. Timing controls hide behind the options button.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -109,33 +107,8 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
         onDispose { view.keepScreenOn = false }
     }
     var options by rememberSaveable { mutableStateOf(false) }
-    // Apple Music's living background: soft blobs of the album's colour drifting slowly behind the
-    // words. One slow clock, read only while drawing, so it costs no recomposition.
-    val drift = androidx.compose.animation.core.rememberInfiniteTransition(label = "drift")
-    val t by drift.animateFloat(
-        0f, (2 * Math.PI).toFloat(),
-        androidx.compose.animation.core.infiniteRepeatable(tween(24_000, easing = androidx.compose.animation.core.LinearEasing)),
-        label = "driftClock",
-    )
-    val blob = c.accent
-    val blob2 = androidx.compose.ui.graphics.lerp(c.accent, Color(0xFF3A2A6A), 0.45f)
-
-    Box(
-        Modifier.fillMaxSize().drawBehind {
-            val w = size.width
-            val h = size.height
-            fun spot(color: Color, cx: Float, cy: Float, r: Float, a: Float) = drawCircle(
-                Brush.radialGradient(listOf(color.copy(alpha = a), Color.Transparent), center = Offset(cx, cy), radius = r),
-                radius = r, center = Offset(cx, cy),
-            )
-            // A dark, album-tinted base, then the drifting colour on top.
-            drawRect(androidx.compose.ui.graphics.lerp(Color(0xFF0E0E10), blob, 0.22f).copy(alpha = 0.86f))
-            val tt = t
-            spot(blob, w * (0.3f + 0.2f * kotlin.math.sin(tt)), h * (0.3f + 0.15f * kotlin.math.cos(tt * 2)), w * 0.9f, 0.55f)
-            spot(blob2, w * (0.75f + 0.15f * kotlin.math.cos(tt)), h * (0.65f + 0.15f * kotlin.math.sin(tt * 1.5f)), w * 0.8f, 0.45f)
-            spot(blob, w * (0.5f + 0.3f * kotlin.math.sin(tt * 0.7f + 1f)), h * (0.9f + 0.1f * kotlin.math.cos(tt)), w * 0.7f, 0.35f)
-        },
-    ) {
+    // The player's own background (the blurred cover) shows through, as on the main player.
+    Box(Modifier.fillMaxSize()    ) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),

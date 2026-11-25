@@ -36,7 +36,7 @@ import kotlinx.coroutines.withContext
  * The app's background: theme colour, the album cover heavily blurred, a wash, and a dot grid.
  *
  * Every page draws its own copy, so pages are opaque and can slide over each other the iOS way.
- * That is only cheap because nothing here is blurred live: the cover is shrunk to 40 px and
+ * That is only cheap because nothing here is blurred live: the cover is shrunk to 48 px and
  * box-blurred once per song on a background thread, then drawn stretched (one textured
  * rectangle). The dots are one tiny tile repeated by a shader. No RenderEffect, no Crossfade,
  * the same on every Android version.
@@ -122,8 +122,11 @@ private fun dotTile(step: Int, radius: Float, color: Color): ImageBitmap {
     return bmp.asImageBitmap()
 }
 
-/** 40 px copy of [src], box-blurred three times (close to a Gaussian). A few hundred microseconds. */
-internal fun blurredTiny(src: Bitmap, side: Int = 40, radius: Int = 4): ImageBitmap {
+/**
+ * 48 px copy of [src], lightly box-blurred three times (close to a Gaussian), then stretched to
+ * the screen: the same look as the old live 24 dp blur, with the cover's colours still distinct.
+ */
+internal fun blurredTiny(src: Bitmap, side: Int = 48, radius: Int = 1): ImageBitmap {
     val small = Bitmap.createScaledBitmap(src, side, side, true)
     val px = IntArray(side * side)
     small.getPixels(px, 0, side, 0, 0, side, side)

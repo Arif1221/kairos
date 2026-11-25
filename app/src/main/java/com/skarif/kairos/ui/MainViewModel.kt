@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -304,13 +305,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .flowOn(Dispatchers.Default).always(History(emptyList(), emptyList(), Taste(emptyMap(), emptyMap(), emptySet(), emptyMap())))
 
     /**
-     * Auto playlists, rebuilt whenever the library or listening history changes. The first four
-     * show on Home; all of them are under Playlists, Smart.
+     * Auto playlists. The first four show on Home; all of them are under Playlists, Smart.
+     *
+     * Kept for the life of the app (not only while Home is showing), so going back to Home shows
+     * them at once instead of building them again. Rebuilt only when something they depend on
+     * really changes: a song added or removed, a new play or skip, a favourite. The play log
+     * updates every 15 s while a song plays; that alone doesn't rebuild anything.
      */
     val mixes: StateFlow<List<Collection>> = combine(
-        combine(songs, events, historyFlow, songById, genres) { a, b, c, d, e -> MixIn(a, b, c, d, e) },
-        blocked, hour,
-    ) { (allSongs, ev, hist, byId, gens), block, hr ->
+        combine(
+            songs,
+            events.distinctUntilChangedBy { it.size },
+            historyFlow.distinctUntilChangedBy { it.plays.size to it.skips.size },
+            songById, genres,
+        ) { a, b, c, d, e -> MixIn(a, b, c, d, e) },
+        blocked, hour, favorites,
+    ) { (allSongs, ev, hist, byId, gens), block, hr, favs ->
         val all = allSongs
         // Generated mixes leave out hidden and snoozed songs; your own lists (favourites, most played) don't.
         val open = all.filter { it.id !in block }
@@ -338,7 +348,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .sortedWith(compareByDescending<Long> { counts[it] ?: 0 }.thenByDescending { decayed[it] ?: 0.0 })
             .take(50).mapNotNull { byId[it] }
         val recent = all.sortedByDescending { it.dateAddedSec }.take(50)
-        val favourites = all.filter { it.id in favorites.value }
+        val favourites = all.filter { it.id in favs }
         // Loved once (3+ plays) but not played for a month. Empty until that is true.
         val forgotten = counts.filter { (id, n) -> n >= 3 && (lastAt[id] ?: 0L) < monthAgo }
             .keys.sortedByDescending { counts[it] }.take(40).mapNotNull { byId[it] }
@@ -389,7 +399,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             Collection("quick", "Quick hits", "Under 3 minutes", quick),
             Collection("long", "Long listens", "6 minutes or more", longOnes),
         ) + artistMixes + genreMixes
-    }.flowOn(Dispatchers.Default).onEach { _mixesReady.value = true }.state(emptyList())
+    }.flowOn(Dispatchers.Default).distinctUntilChanged().onEach { _mixesReady.value = true }.always(emptyList())
 
     private val _mixesReady = MutableStateFlow(false)
     /** False until mixes have been worked out once, so Home doesn't flash its empty message. */

@@ -3,6 +3,9 @@
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
 ## Unreleased
+- The blurred album cover is back behind every page, lighter so the cover's colours show.
+- Lyrics follow the light or dark theme and sit on the same cover background as the player.
+- Home no longer rebuilds its mixes each time you come back to it, or every few seconds while a song plays. Covers on Home appear at once instead of popping in.
 - Fixed: tapping play made the cover jump, with a corner sticking out of its frame.
 - Fixed: scrolling sometimes stopped dead until you scrolled slowly again. The iOS rubber band is rebuilt on Compose's own overscroll support and now applies to every list.
 - Rebuilt on current Android tools: Compose 1.13, Media3 1.11, Kotlin 2.4, AGP 9.5, Android 17 SDK.

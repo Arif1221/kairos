@@ -83,8 +83,8 @@ fun rememberCoverNow(vm: MainViewModel, song: SongEntity?): ImageBitmap? {
 /** Large cover image used by heroes. */
 @Composable
 fun rememberCover(vm: MainViewModel, song: SongEntity?): ImageBitmap? {
-    val bmp by produceState<Bitmap?>(null, song?.id) { value = song?.let { vm.cover(it) } }
-    return androidx.compose.runtime.remember(bmp) { bmp?.asImageBitmap() }
+    // Straight from the memory cache when it's there, so cards coming back on screen don't pop in.
+    return rememberCoverNow(vm, song)
 }
 
 @OptIn(ExperimentalFoundationApi::class)
