@@ -17,3 +17,15 @@ Gemini CLI, Claude Code). Only the ones that apply to this app:
 | testing-setup | Unit, UI and screenshot tests |
 
 Update with the Android CLI: `android skills add --skill=<name> --project=.`
+
+## Community skills
+
+| Skill | Source | Licence | Use it for |
+|---|---|---|---|
+| claude-android-ninja | [Drjacky/claude-android-ninja](https://github.com/Drjacky/claude-android-ninja) | Apache 2.0 | Compose patterns, performance, media/Media3, accessibility, permissions, security, target SDK migrations |
+| android-development | [dpconde/claude-android-skill](https://github.com/dpconde/claude-android-skill) | MIT | Google's architecture guidance (Now in Android): layers, repositories, testing |
+
+Both assume Hilt, multi-module Gradle and (ninja) Navigation 3. Kairos is a single module with a
+small manual container on purpose: at this size that is simpler and builds faster. Use these
+skills for their Compose, media, performance and testing advice; don't migrate the architecture
+just because a skill's template does it differently.
