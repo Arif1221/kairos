@@ -139,7 +139,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val songById: StateFlow<Map<Long, SongEntity>> = songs.map { l -> l.associateBy { it.id } }
         .flowOn(Dispatchers.Default).always(emptyMap())
     val songMap: StateFlow<Map<Long, SongEntity>> get() = songById
-    val playCounts: StateFlow<Map<Long, Int>> = events.map { e -> e.groupingBy { it.songId }.eachCount() }.state(emptyMap())
+    // Everything computed from the whole listening history runs off the main thread: it
+    // updates on every song change and every 15 s while playing.
+    val playCounts: StateFlow<Map<Long, Int>> = events.map { e -> e.groupingBy { it.songId }.eachCount() }
+        .flowOn(Dispatchers.Default).state(emptyMap())
 
     /** Albums merged across MediaStore ids; see [groupAlbums]. */
     val albums: StateFlow<List<AlbumGroup>> = songs.map { groupAlbums(it) }.flowOn(Dispatchers.Default).always(emptyList())
@@ -149,11 +152,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun albumGroup(albumId: Long): AlbumGroup? = albumIndex.value[albumId]
 
     private val sortKey = settings.map { it.songSort to it.sortDescending }.distinctUntilChanged()
-    val sortedSongs: StateFlow<List<SongEntity>> = combine(songs, sortKey, playCounts, settings.map { it.ignoreArticles }.distinctUntilChanged()) { list, (sort, desc), counts, articles ->
-        // "The Weeknd" under W when articles are ignored.
+    /** A-Z keys for every song, worked out once per library change (not on every re-sort). */
+    val sortKeys: StateFlow<Map<String, String>> = combine(songs, settings.map { it.ignoreArticles }.distinctUntilChanged()) { list, articles ->
+        HashMap<String, String>().apply {
+            list.forEach { s -> for (t in arrayOf(s.title, s.artist, s.album)) getOrPut(t) { com.skarif.kairos.data.librarySortKey(t, articles) } }
+        }
+    }.flowOn(Dispatchers.Default).always(emptyMap())
+
+    /**
+     * The Library's order. Off the main thread, and it only listens to play counts when sorted by
+     * most played: before, every saved listen re-sorted all songs on the main thread, right as
+     * the player was opening.
+     */
+    val sortedSongs: StateFlow<List<SongEntity>> = sortKey.flatMapLatest { (sort, _) ->
+        val counts = if (sort == SongSort.MOST_PLAYED) playCounts else flowOf(emptyMap())
+        combine(songs, sortKey, counts, sortKeys) { list, k, c, keys -> Triple(list, k, c) to keys }
+    }.map { (t, keys) ->
+        val (list, sk, counts) = t
+        val (sort, desc) = sk
         // Same rule as the letter headers (see librarySortKey), so the two never disagree.
-        val cache = HashMap<String, String>()
-        val key: (String) -> String = { t -> cache.getOrPut(t) { com.skarif.kairos.data.librarySortKey(t, articles) } }
+        val key: (String) -> String = { s -> keys[s] ?: com.skarif.kairos.data.librarySortKey(s) }
         val sorted = when (sort) {
             SongSort.TITLE -> list.sortedBy { key(it.title) }
             SongSort.ARTIST -> list.sortedBy { key(it.artist) }
@@ -164,10 +182,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         val naturallyDesc = sort == SongSort.DATE_ADDED || sort == SongSort.MOST_PLAYED
         if (desc != naturallyDesc) sorted.asReversed() else sorted
-    }.state(emptyList())
+    }.flowOn(Dispatchers.Default).distinctUntilChanged().state(emptyList())
 
+    /**
+     * The playing song, straight from the in-memory library (falling back to the database for a
+     * song not indexed yet). The database lookup alone made the player show the new song
+     * about 200 ms after the tap.
+     */
     val currentSong: StateFlow<SongEntity?> = now.map { it.songId }.distinctUntilChanged()
-        .flatMapLatest { id -> if (id == null) flowOf(null) else ct.db.songs().observe(id) }
+        .flatMapLatest { id ->
+            when {
+                id == null -> flowOf(null)
+                else -> songById.map { it[id] }.distinctUntilChanged().flatMapLatest { s -> if (s != null) flowOf(s) else ct.db.songs().observe(id) }
+            }
+        }
         .state(null)
 
     /**
@@ -380,7 +408,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val selectedBar: StateFlow<Int> = _selectedBar.asStateFlow()
 
     val stats: StateFlow<StatsUi> = combine(events, songById, _statsRange) { ev, byId, range -> computeStats(ev, byId, range) }
-        .state(StatsUi())
+        .flowOn(Dispatchers.Default).state(StatsUi())
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()

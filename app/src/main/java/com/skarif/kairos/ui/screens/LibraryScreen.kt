@@ -86,13 +86,15 @@ private enum class LibTab(val label: String) { SONGS("Songs"), ALBUMS("Albums"),
 /** Items above the first song/album/artist in the grid. */
 private const val HEADER_ITEMS = 2
 
-private fun letterOf(s: SongEntity, sort: SongSort, ignoreArticles: Boolean = false): Char {
+private fun letterOf(s: SongEntity, sort: SongSort, ignoreArticles: Boolean = false, keys: Map<String, String> = emptyMap()): Char {
     val raw = when (sort) {
         SongSort.ARTIST -> s.artist
         SongSort.ALBUM -> s.album
         else -> s.title
     }
-    return com.skarif.kairos.data.libraryLetter(raw, ignoreArticles)
+    // Reuse the key the ViewModel already worked out off the main thread ("0…" = #, "1x…" = X).
+    val k = keys[raw] ?: return com.skarif.kairos.data.libraryLetter(raw, ignoreArticles)
+    return if (k.startsWith("0") || k.length < 2) '#' else k[1].uppercaseChar().takeIf { it in 'A'..'Z' } ?: '#'
 }
 
 /**
@@ -118,6 +120,7 @@ fun LibraryScreen(
     val scan by vm.scan.collectAsStateWithLifecycle()
     // Collected once here, not once per row.
     val favs by vm.favorites.collectAsStateWithLifecycle()
+    val sortKeys by vm.sortKeys.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(LibTab.SONGS) }
     var actionsFor by remember { mutableStateOf<SongEntity?>(null) }
     val grid = rememberLazyGridState()
@@ -149,15 +152,15 @@ fun LibraryScreen(
     val collapsed by remember { derivedStateOf { grid.firstVisibleItemIndex > 0 } }
     val letterSorted = settings.songSort in setOf(SongSort.TITLE, SongSort.ARTIST, SongSort.ALBUM)
     // Songs sorted by title/artist/album are shown in runs under a letter header ("A", "B", ...).
-    val runs = remember(shownSongs, settings.songSort, settings.ignoreArticles, filter) {
+    val runs = remember(shownSongs, settings.songSort, settings.ignoreArticles, filter, sortKeys) {
         if (!letterSorted || filter.isNotBlank()) listOf(LetterRun(null, 0, shownSongs))
         else {
             val out = ArrayList<LetterRun>()
             var start = 0
             while (start < shownSongs.size) {
-                val l = letterOf(shownSongs[start], settings.songSort, settings.ignoreArticles)
+                val l = letterOf(shownSongs[start], settings.songSort, settings.ignoreArticles, sortKeys)
                 var end = start + 1
-                while (end < shownSongs.size && letterOf(shownSongs[end], settings.songSort, settings.ignoreArticles) == l) end++
+                while (end < shownSongs.size && letterOf(shownSongs[end], settings.songSort, settings.ignoreArticles, sortKeys) == l) end++
                 out += LetterRun(l, start, shownSongs.subList(start, end))
                 start = end
             }

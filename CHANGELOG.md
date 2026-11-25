@@ -5,6 +5,9 @@ Offline builds. Each version is on the [Releases](https://github.com/Arif1221/ka
 ## Unreleased
 - Fixed: the first time you played a song after opening the app, the player still skipped from closed to almost open. It is now built while still closed, then opens on a fresh spring
 - Fixed: lyrics jumped up, back down, then glided whenever the line changed (the scrolled list showed one frame before the wave offset)
+- Fixed: opening a song still lagged. Every song change saved a listen, and that re-sorted the whole Library and recalculated Statistics on the main thread right as the player opened (and again every 15 s while playing). Both now run in the background, and the Library only re-sorts on plays when sorted by Most played
+- Fixed: the player showed the new song about 200 ms after the tap while it looked it up in the database; it now comes straight from the loaded library
+- Fixed: the first lyric lines jumped up and slid back when singing started (the list can't scroll above the top; the wave now uses the distance it really moved)
 - Fixed: Library letter headers out of order ("W" above "#"); sorting and headers now share one rule that ignores leading punctuation and accents, with numbers and other scripts under "#" first
 
 ## 0.8.2

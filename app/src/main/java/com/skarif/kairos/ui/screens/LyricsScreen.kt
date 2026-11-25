@@ -290,11 +290,13 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
         // Set the wave to its start (time 0 = full offset) *before* scrolling, so the frame that
         // shows the scrolled list also shows the offset. Doing it after waited a frame, and that
         // one frame showed the lines jump up, then back down, then glide.
-        cascade.anchor = target
-        cascade.distance = d + leftover
         cascade.startNanos = 0L
         cascade.nowNanos = 0L
-        list.scrollBy(d)
+        // Use how far the list really moved: at the top of the song it can't scroll up, and
+        // offsetting by the full distance made the first lines jump up, then slide back.
+        val moved = list.scrollBy(d)
+        cascade.anchor = target
+        cascade.distance = moved + leftover
         val t0 = androidx.compose.runtime.withFrameNanos { it }
         cascade.startNanos = t0
         cascade.nowNanos = t0
