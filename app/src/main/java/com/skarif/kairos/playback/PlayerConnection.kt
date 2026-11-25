@@ -129,7 +129,7 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
      * queue for Android's media controls (lock screen, notification) on the main thread, so
      * 2,000 songs in 21 batches meant 21 full rebuilds right after the player opened.
      */
-    private fun loadQueue(c: MediaController, songs: List<SongEntity>, start: Int, positionMs: Long, playNow: Boolean) {
+    private fun loadQueue(c: MediaController, songs: List<SongEntity>, start: Int, positionMs: Long, playNow: Boolean, firstWaitMs: Long = 400) {
         fillJob?.cancel()
         if (songs.size <= 40) {
             _filling.value = false
@@ -143,13 +143,15 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
         c.prepare(); if (playNow) c.play()
         fillJob = appScope.launch(Dispatchers.Main) {
             try {
-                suspend fun idle() { delay(400); while (busy()) delay(50); delay(200) }
-                idle()
+                suspend fun idle(ms: Long = 400) { delay(ms); while (busy()) delay(50); delay(200) }
+                idle(firstWaitMs)
+                // Pieces of 250, one per frame: one call with 2,000 songs blocks the main thread for 100+ ms.
                 val after = withContext(Dispatchers.Default) { songs.subList(start + 1, songs.size).map { it.toMediaItem() } }
-                if (after.isNotEmpty()) c.addMediaItems(after)
+                for (part in after.chunked(250)) { while (busy()) delay(50); c.addMediaItems(part); delay(32) }
                 idle()
                 val before = withContext(Dispatchers.Default) { songs.subList(0, start).map { it.toMediaItem() } }
-                if (before.isNotEmpty()) { fillInsertedBefore = before.size; c.addMediaItems(0, before) }
+                // Inserted at the front in reverse piece order, so the final order is unchanged.
+                for (part in before.chunked(250).asReversed()) { while (busy()) delay(50); c.addMediaItems(0, part); fillInsertedBefore += part.size; delay(32) }
             } finally {
                 _filling.value = false
                 publish()
@@ -169,8 +171,8 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
         c ?: return
         kotlinx.coroutines.withContext(Dispatchers.Main) {
             if (c.mediaItemCount > 0) return@withContext
-            // Same gradual loading as play(), so app start doesn't hand Media3 2,000 songs at once.
-            loadQueue(c, songs, index.coerceIn(0, songs.lastIndex), positionMs.coerceAtLeast(0), playNow = false)
+            // Same gradual loading as play(), started 2.5 s later so it misses the opening animations.
+            loadQueue(c, songs, index.coerceIn(0, songs.lastIndex), positionMs.coerceAtLeast(0), playNow = false, firstWaitMs = 2500)
         }
     }
 

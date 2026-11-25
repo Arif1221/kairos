@@ -3,6 +3,8 @@
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
 ## Unreleased
+- Fixed a crash on launch when a saved queue was restored.
+- The restored queue now loads 2.5 s after launch, in small pieces, so app start doesn't stutter.
 - Fixed: tapping a song that wasn't playing still lagged while the player opened. Each queue change makes Android's media controls rebuild the whole queue on the main thread; the rest of a long queue was added in 21 batches right after opening (21 rebuilds). It is now added in two steps, only once the player has finished animating. Restoring the queue at app start loads the same way instead of all at once
 - The app's new colours and the cards under the player wait for the opening animation to finish, not a fixed delay
 - App start does less at once: the search index, Library sort keys and artist lookup are built when a screen needs them

@@ -523,45 +523,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** The song autoplay last added songs for, so it adds only once per "end of queue". */
     private var autoplayedAfter: Long? = null
 
-    init {
-        ct.player.connect()
-        // Long queues finish loading only once the player isn't animating.
-        ct.player.busy = { com.skarif.kairos.ui.motion.PlayerMotion.animating }
-        // Performance log context: queue loading, and the second after a song change.
-        viewModelScope.launch { ct.player.filling.collect { com.skarif.kairos.perf.PerfLog.state("queue", if (it) "loading" else null) } }
-        viewModelScope.launch {
-            now.map { it.songId }.distinctUntilChanged().collectLatest {
-                com.skarif.kairos.perf.PerfLog.state("song", "just changed")
-                kotlinx.coroutines.delay(1500)
-                com.skarif.kairos.perf.PerfLog.state("song", null)
-            }
-        }
-        viewModelScope.launch { restoreQueue() }
-        // Save the queue when it, the song, or play/pause changes, and every 10 s while playing.
-        viewModelScope.launch {
-            now.map { Triple(it.queue, it.queuePosition, it.isPlaying) }.distinctUntilChanged().collect { saveQueue() }
-        }
-        viewModelScope.launch { ct.player.filling.collect { if (!it) saveQueue() } }
-        viewModelScope.launch {
-            while (true) { kotlinx.coroutines.delay(10_000); if (now.value.isPlaying) saveQueue() }
-        }
-        // Autoplay: when the last song in the queue starts, add similar songs from your library.
-        viewModelScope.launch {
-            combine(now, ct.player.filling) { n, f -> Triple(n.songId, n.queuePosition == n.queue.lastIndex && !f, n.repeatMode) }.distinctUntilChanged().collect { (id, last, repeat) ->
-                if (id == null || !last || repeat != androidx.media3.common.Player.REPEAT_MODE_OFF || !settings.value.autoplay) return@collect
-                // A long queue is still being added; the "last" song isn't really the last.
-                if (ct.player.filling.value) return@collect
-                if (autoplayedAfter == id) return@collect
-                autoplayedAfter = id
-                val queued = now.value.queue.mapNotNull { songById.value[it.songId] }
-                val more = kotlinx.coroutines.withContext(Dispatchers.Default) {
-                    similarSongs(queued.takeLast(10), songs.value, historyFlow.value.taste, 10, kotlin.random.Random.Default, blocked.value + queued.map { it.id })
-                }
-                ct.player.append(more)
-            }
-        }
-    }
-
     // ---------------------------------------------------------------- collections
 
     fun albumOf(albumId: Long): Collection? = albumIndex.value[albumId]?.toCollection()
@@ -907,6 +868,47 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun thumbnail(song: SongEntity): Bitmap? = ct.artwork.load(song, 160)
     suspend fun cover(song: SongEntity): Bitmap? = ct.artwork.load(song, 720)
     fun cachedCover(song: SongEntity): Bitmap? = ct.artwork.peek(song, 720)
+
+    // Kept last: Kotlin runs initialisers in file order, and these collectors start
+    // immediately, so every field they touch must already exist.
+    init {
+        ct.player.connect()
+        // Long queues finish loading only once the player isn't animating.
+        ct.player.busy = { com.skarif.kairos.ui.motion.PlayerMotion.animating }
+        // Performance log context: queue loading, and the second after a song change.
+        viewModelScope.launch { ct.player.filling.collect { com.skarif.kairos.perf.PerfLog.state("queue", if (it) "loading" else null) } }
+        viewModelScope.launch {
+            now.map { it.songId }.distinctUntilChanged().collectLatest {
+                com.skarif.kairos.perf.PerfLog.state("song", "just changed")
+                kotlinx.coroutines.delay(1500)
+                com.skarif.kairos.perf.PerfLog.state("song", null)
+            }
+        }
+        viewModelScope.launch { restoreQueue() }
+        // Save the queue when it, the song, or play/pause changes, and every 10 s while playing.
+        viewModelScope.launch {
+            now.map { Triple(it.queue, it.queuePosition, it.isPlaying) }.distinctUntilChanged().collect { saveQueue() }
+        }
+        viewModelScope.launch { ct.player.filling.collect { if (!it) saveQueue() } }
+        viewModelScope.launch {
+            while (true) { kotlinx.coroutines.delay(10_000); if (now.value.isPlaying) saveQueue() }
+        }
+        // Autoplay: when the last song in the queue starts, add similar songs from your library.
+        viewModelScope.launch {
+            combine(now, ct.player.filling) { n, f -> Triple(n.songId, n.queuePosition == n.queue.lastIndex && !f, n.repeatMode) }.distinctUntilChanged().collect { (id, last, repeat) ->
+                if (id == null || !last || repeat != androidx.media3.common.Player.REPEAT_MODE_OFF || !settings.value.autoplay) return@collect
+                // A long queue is still being added; the "last" song isn't really the last.
+                if (ct.player.filling.value) return@collect
+                if (autoplayedAfter == id) return@collect
+                autoplayedAfter = id
+                val queued = now.value.queue.mapNotNull { songById.value[it.songId] }
+                val more = kotlinx.coroutines.withContext(Dispatchers.Default) {
+                    similarSongs(queued.takeLast(10), songs.value, historyFlow.value.taste, 10, kotlin.random.Random.Default, blocked.value + queued.map { it.id })
+                }
+                ct.player.append(more)
+            }
+        }
+    }
 }
 
 /** Days between two instants; used by screens that show "x days ago". */
