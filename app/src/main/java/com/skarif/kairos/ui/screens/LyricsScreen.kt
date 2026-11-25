@@ -287,12 +287,17 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
         // A new line while the last wave is still moving: start from where things are on screen
         // now, not from where they were meant to end, or the lines snap.
         val leftover = cascade.offsetFor(target)
-        list.scrollBy(d)
-        // Lines are now in place; draw them where they were and let the wave carry them there.
+        // Set the wave to its start (time 0 = full offset) *before* scrolling, so the frame that
+        // shows the scrolled list also shows the offset. Doing it after waited a frame, and that
+        // one frame showed the lines jump up, then back down, then glide.
         cascade.anchor = target
         cascade.distance = d + leftover
-        cascade.startNanos = androidx.compose.runtime.withFrameNanos { it }
-        cascade.nowNanos = cascade.startNanos
+        cascade.startNanos = 0L
+        cascade.nowNanos = 0L
+        list.scrollBy(d)
+        val t0 = androidx.compose.runtime.withFrameNanos { it }
+        cascade.startNanos = t0
+        cascade.nowNanos = t0
         val until = cascade.startNanos + 1_400_000_000L
         while (cascade.nowNanos < until) androidx.compose.runtime.withFrameNanos { cascade.nowNanos = it }
         cascade.distance = 0f

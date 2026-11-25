@@ -200,4 +200,19 @@ class LibraryIndexTest {
         assertEquals(null, m.find("Old/Path/b.mp3", "Beta", "Bob", 260_000))
         assertEquals(b, m.find("nowhere.mp3", "beta", "Someone", 200_000))
     }
+
+    @Test
+    fun libraryOrderAndLettersAgree() {
+        val titles = listOf("(When You Gonna) Give It Up", "...Baby One More Time", "2019", "21 Guns", "Élan", "আমার গান", "The Less I Know", "apple")
+        val sorted = titles.sortedBy { librarySortKey(it) }
+        val letters = sorted.map { libraryLetter(it) }
+        // Letters never go backwards, so each header appears once, in order.
+        assertEquals(letters.distinct(), letters.fold(mutableListOf<Char>()) { acc, c -> if (acc.lastOrNull() != c) acc += c; acc })
+        assertEquals('#', letters.first())
+        assertEquals('W', libraryLetter("(When You Gonna) Give It Up"))
+        assertEquals('B', libraryLetter("...Baby One More Time"))
+        assertEquals('E', libraryLetter("Élan"))
+        assertEquals('L', libraryLetter("The Less I Know", ignoreArticles = true))
+        assertEquals('#', libraryLetter("আমার গান"))
+    }
 }

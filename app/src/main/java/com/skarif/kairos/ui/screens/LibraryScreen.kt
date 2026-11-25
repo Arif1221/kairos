@@ -92,9 +92,7 @@ private fun letterOf(s: SongEntity, sort: SongSort, ignoreArticles: Boolean = fa
         SongSort.ALBUM -> s.album
         else -> s.title
     }
-    val text = if (ignoreArticles) com.skarif.kairos.data.sortTitle(raw) else raw
-    val ch = text.trimStart('(', '[', '\'', '"', '.', ' ').firstOrNull()?.uppercaseChar() ?: '#'
-    return if (ch in 'A'..'Z') ch else '#'
+    return com.skarif.kairos.data.libraryLetter(raw, ignoreArticles)
 }
 
 /**

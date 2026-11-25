@@ -151,7 +151,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val sortKey = settings.map { it.songSort to it.sortDescending }.distinctUntilChanged()
     val sortedSongs: StateFlow<List<SongEntity>> = combine(songs, sortKey, playCounts, settings.map { it.ignoreArticles }.distinctUntilChanged()) { list, (sort, desc), counts, articles ->
         // "The Weeknd" under W when articles are ignored.
-        val key: (String) -> String = if (articles) { t -> sortTitle(t) } else { t -> t.lowercase() }
+        // Same rule as the letter headers (see librarySortKey), so the two never disagree.
+        val cache = HashMap<String, String>()
+        val key: (String) -> String = { t -> cache.getOrPut(t) { com.skarif.kairos.data.librarySortKey(t, articles) } }
         val sorted = when (sort) {
             SongSort.TITLE -> list.sortedBy { key(it.title) }
             SongSort.ARTIST -> list.sortedBy { key(it.artist) }

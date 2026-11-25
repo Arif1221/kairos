@@ -473,3 +473,25 @@ class SongMatcher(all: List<SongEntity>) {
         return byTitle[normalize(title)]?.filter(close)?.singleOrNull()
     }
 }
+
+// ---------------------------------------------------------------- library A-Z order
+
+/**
+ * The one rule for sorting the library and for its letter headers, so they always agree:
+ * punctuation and accents at the start don't count ("(When You…" sorts under W, "Élan" under E),
+ * "The"/"A"/"An" are skipped when [ignoreArticles], and anything that doesn't start with A–Z
+ * (numbers, Bengali, Hindi…) goes under "#", before A.
+ */
+fun libraryKey(text: String, ignoreArticles: Boolean = false): String {
+    val k = normalize(text)
+    return if (ignoreArticles) sortTitle(k) else k
+}
+
+fun libraryLetter(text: String, ignoreArticles: Boolean = false): Char {
+    val c = libraryKey(text, ignoreArticles).firstOrNull()?.uppercaseChar() ?: '#'
+    return if (c in 'A'..'Z') c else '#'
+}
+
+/** Sort key: "#" group first, then A–Z, each by [libraryKey]. */
+fun librarySortKey(text: String, ignoreArticles: Boolean = false): String =
+    (if (libraryLetter(text, ignoreArticles) == '#') "0" else "1") + libraryKey(text, ignoreArticles)

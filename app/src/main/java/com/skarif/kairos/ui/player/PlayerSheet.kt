@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -125,9 +126,25 @@ class PlayerController(private val scope: CoroutineScope) {
         job = scope.launch(block = block)
     }
 
+    /** Asks the sheet to build the full player now (before it is visible). */
+    var warmRequested by mutableStateOf(false)
+    /** The full player has been built at least once. */
+    var pagesBuilt by mutableStateOf(false)
+
     fun expand(to: PlayerPage = PlayerPage.MAIN) {
         page = to
-        run { progress.animateTo(1f, Motion.sheet()) }
+        run {
+            // First open since the app started: build the player while it is still closed, let
+            // two frames pass, then start the spring. Building it inside the animation's first
+            // frame is what made it skip from closed to almost open.
+            if (!pagesBuilt) {
+                warmRequested = true
+                kotlinx.coroutines.withTimeoutOrNull(800) { androidx.compose.runtime.snapshotFlow { pagesBuilt }.first { it } }
+                androidx.compose.runtime.withFrameNanos { }
+                androidx.compose.runtime.withFrameNanos { }
+            }
+            progress.animateTo(1f, Motion.sheet())
+        }
     }
 
     fun collapse() = run {
@@ -394,7 +411,8 @@ fun PlayerSheet(
         // (it showed half-open, then fully open: "two frames").
         var warm by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { kotlinx.coroutines.delay(800); warm = true }
-        if (open || warm) {
+        if (open || warm || ctrl.warmRequested) {
+            androidx.compose.runtime.SideEffect { ctrl.pagesBuilt = true }
             Box(
                 Modifier.fillMaxSize()
                     .layout { m, c ->

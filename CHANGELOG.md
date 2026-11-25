@@ -2,6 +2,11 @@
 
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
+## Unreleased
+- Fixed: the first time you played a song after opening the app, the player still skipped from closed to almost open. It is now built while still closed, then opens on a fresh spring
+- Fixed: lyrics jumped up, back down, then glided whenever the line changed (the scrolled list showed one frame before the wave offset)
+- Fixed: Library letter headers out of order ("W" above "#"); sorting and headers now share one rule that ignores leading punctuation and accents, with numbers and other scripts under "#" first
+
 ## 0.8.2
 - Fixed: the player still froze half-open, then jumped open, when you tapped a song. The full player is now built in the background as soon as a song is loaded, and the new album colours are applied just after it opens instead of on its first frames
 - Fixed: the queue count showed "1 of 1", then "1 of 1601", while a long queue was being added; it now shows the real position and total from the start
