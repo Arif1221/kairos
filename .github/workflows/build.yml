@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -32,7 +32,7 @@ jobs:
           KAIROS_KEY_PASSWORD: ${{ secrets.KAIROS_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease bundleRelease testReleaseUnitTest --stacktrace
+          ./gradlew assembleRelease bundleRelease testDebugUnitTest --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: kairos-apk
