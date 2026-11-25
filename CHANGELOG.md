@@ -2,7 +2,7 @@
 
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
-## Unreleased
+## 0.8.3 (2026-11-25)
 - The blurred album cover is back behind every page, lighter so the cover's colours show.
 - Lyrics follow the light or dark theme and sit on the same cover background as the player.
 - Home no longer rebuilds its mixes each time you come back to it, or every few seconds while a song plays. Covers on Home appear at once instead of popping in.
