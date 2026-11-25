@@ -200,65 +200,6 @@ fun Card(modifier: Modifier = Modifier, color: Color = P.colors.card, content: @
 }
 
 /**
- * The album cover, heavily blurred, behind every screen, with a light or dark wash and the dot grid.
- * Android 12+ blurs live. Older phones get a 12-pixel copy stretched up, which looks the same at this blur.
- */
-@Composable
-fun ScreenBackground(art: Bitmap?, blur: Boolean, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    if (LocalBackdrop.current) {
-        // The app draws one shared backdrop behind every page; pages only draw their content.
-        Box(modifier.fillMaxSize(), content = content)
-    } else {
-        Box(modifier.fillMaxSize()) {
-            Backdrop(art, blur)
-            content()
-        }
-    }
-}
-
-/** True where a shared [Backdrop] is already drawn behind the page. */
-val LocalBackdrop = androidx.compose.runtime.staticCompositionLocalOf { false }
-
-/** Theme colour, the blurred cover and the dot grid: the app's background. */
-@Composable
-fun Backdrop(art: Bitmap?, blur: Boolean, modifier: Modifier = Modifier) {
-    val c = P.colors
-    Box(modifier.fillMaxSize().background(c.bg)) {
-        if (blur && art != null) {
-            // A 48 px copy, stretched and lightly blurred, looks the same as blurring the full image
-            // at a fraction of the GPU cost. Crossfades when the song changes.
-            Crossfade(art, animationSpec = tween(700), label = "bg") { bmp ->
-                val tiny = remember(bmp) { Bitmap.createScaledBitmap(bmp, 48, 48, true).asImageBitmap() }
-                Image(
-                    tiny, null,
-                    Modifier.fillMaxSize().scale(1.2f).then(if (Build.VERSION.SDK_INT >= 31) Modifier.blur(24.dp, BlurredEdgeTreatment.Unbounded) else Modifier),
-                    contentScale = ContentScale.Crop, filterQuality = FilterQuality.High,
-                )
-            }
-            Box(Modifier.fillMaxSize().background(c.veil))
-        }
-        Spacer(
-            Modifier.fillMaxSize().drawWithCache {
-                // Build the dot grid once per size, not on every frame.
-                val step = 20.dp.toPx()
-                val r = 1.1.dp.toPx()
-                val dots = Path()
-                var y = step / 2
-                while (y < size.height) {
-                    var x = step / 2
-                    while (x < size.width) {
-                        dots.addOval(Rect(x - r, y - r, x + r, y + r))
-                        x += step
-                    }
-                    y += step
-                }
-                onDrawBehind { drawPath(dots, Color(0x337F7F7F)) }
-            },
-        )
-    }
-}
-
-/**
  * The seek bar as a bar chart of the song (design reference: the finance chart card).
  * The played part fills continuously across the bars, a black playhead marks the position,
  * and while playing the bars near the playhead gently pulse.
@@ -582,7 +523,10 @@ fun HatchedBars(
 @Composable
 fun KairosSheet(onDismiss: () -> Unit, content: @Composable androidx.compose.foundation.layout.ColumnScope.(close: () -> Unit) -> Unit) {
     val c = P.colors
-    val state = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val state = androidx.compose.material3.rememberBottomSheetState(
+        androidx.compose.material3.SheetValue.Hidden,
+        setOf(androidx.compose.material3.SheetValue.Hidden, androidx.compose.material3.SheetValue.Expanded),
+    )
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val close: () -> Unit = {
         scope.launch { state.hide() }.invokeOnCompletion { if (!state.isVisible) onDismiss() }
@@ -671,24 +615,6 @@ fun KairosDialog(
                 confirmButton()
             }
         }
-    }
-}
-
-/**
- * Content arriving on a page: rises a little and fades in, each block [order] × 45 ms after the
- * one before, so a page builds itself top to bottom instead of popping in at once.
- */
-@Composable
-fun Modifier.appear(order: Int): Modifier {
-    val a = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(order.coerceIn(0, 12) * 45L)
-        a.animateTo(1f, com.skarif.kairos.ui.motion.Motion.ios(0.55f, 0.88f))
-    }
-    return graphicsLayer {
-        val v = a.value
-        alpha = v.coerceIn(0f, 1f)
-        translationY = (1f - v) * 26.dp.toPx()
     }
 }
 

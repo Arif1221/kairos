@@ -35,7 +35,6 @@ import com.skarif.kairos.ui.components.HatchedBars
 import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.components.CompactTitleBar
-import com.skarif.kairos.ui.components.appear
 import com.skarif.kairos.ui.components.stretchTitle
 import com.skarif.kairos.ui.motion.rubberBand
 import kotlinx.coroutines.launch
@@ -77,7 +76,7 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
     }
     val pastTitle by androidx.compose.runtime.remember { androidx.compose.runtime.derivedStateOf { scroll.value > with(density) { 140.dp.toPx() } } }
 
-    ScreenBackground(art, settings.blurBackground) {
+    ScreenBackground {
         Column(
             Modifier.fillMaxSize().rubberBand(band)
                 .verticalScroll(scroll, flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling())
@@ -96,7 +95,7 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
             }
             Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Column(
-                Modifier.appear(1).fillMaxWidth().clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(c.accent).padding(14.dp),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(c.accent).padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -119,15 +118,15 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
                     onSelect = vm::selectBar,
                 )
             }
-            Row(Modifier.appear(2), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatTile("Plays", "${st.plays}", Modifier.weight(1f))
                 StatTile("Different songs", "${st.uniqueSongs}", Modifier.weight(1f))
             }
-            Row(Modifier.appear(3), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatTile("Daily average", hoursText(st.avgPerDayMs), Modifier.weight(1f))
                 StatTile("Day streak", plural(st.streakDays, "day"), Modifier.weight(1f))
             }
-            Row(Modifier.appear(4), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatTile("Played to the end", "${st.completedPct}%", Modifier.weight(1f))
                 StatTile("Usually listening at", st.peakHour.ifEmpty { "–" }, Modifier.weight(1f))
             }
@@ -161,7 +160,7 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
                     }
                 }
             }
-            recap?.let { Box(Modifier.appear(6)) { RecapCard(vm, it) } }
+            recap?.let { Box(Modifier) { RecapCard(vm, it) } }
             Text("Stats update while you listen.", style = T.small, color = c.muted)
             }
         }

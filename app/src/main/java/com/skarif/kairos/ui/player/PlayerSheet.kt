@@ -12,7 +12,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -74,7 +73,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
-import com.skarif.kairos.ui.components.ScreenBackground
+import com.skarif.kairos.ui.components.backdrop
 import com.skarif.kairos.ui.motion.Motion
 import com.skarif.kairos.ui.motion.Swipe
 import com.skarif.kairos.ui.screens.LyricsPane
@@ -233,7 +232,6 @@ fun PlayerSheet(
     val song by vm.currentSong.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
-    val settings by vm.settings.collectAsStateWithLifecycle()
     val s = song
     LaunchedEffect(s == null) { if (s == null) ctrl.progress.snapTo(0f) }
     if (s == null) return
@@ -257,8 +255,9 @@ fun PlayerSheet(
     val open by remember { derivedStateOf { ctrl.progress.value > 0.001f } }
     // Safety net: if anything ever leaves the player resting half open, finish the move.
     LaunchedEffect(ctrl) {
-        androidx.compose.runtime.snapshotFlow { Triple(ctrl.progress.isRunning, ctrl.dragging, ctrl.progress.value) }
-            .collect { (running, dragging, v) -> if (!running && !dragging && v > 0.001f && v < 0.999f) ctrl.settle(0f) }
+        // Only wakes when motion stops, not on every frame of it.
+        androidx.compose.runtime.snapshotFlow { !ctrl.progress.isRunning && !ctrl.dragging }
+            .collect { still -> val v = ctrl.progress.value; if (still && v > 0.001f && v < 0.999f) ctrl.settle(0f) }
     }
     // Back closes the player interactively: a back swipe pulls the sheet down under your thumb
     // (predictive back), and letting go either finishes closing or springs it back open.
@@ -285,8 +284,6 @@ fun PlayerSheet(
                 )
             }
     }
-    var warmBackdrop by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { kotlinx.coroutines.delay(800); warmBackdrop = true }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
@@ -343,11 +340,11 @@ fun PlayerSheet(
                     shadowElevation = mix(10f, 0f, p).dp.toPx()
                 },
         ) {
-            Box(Modifier.fillMaxSize().drawBehind { drawRect(lerp(miniBg, c.bg, ctrl.progress.value)) })
-            // Also ready before opening, for the same reason as the pages below.
-            if (open || warmBackdrop) {
-                com.skarif.kairos.ui.components.Backdrop(art, settings.blurBackground, Modifier.graphicsLayer { alpha = ctrl.progress.value })
-            }
+            Box(
+                Modifier.fillMaxSize()
+                    .drawBehind { drawRect(lerp(miniBg, c.bg, ctrl.progress.value)) }
+                    .backdrop { ctrl.progress.value },
+            )
         }
         // Touch area and mini content, sized to the sheet.
         Box(
@@ -421,7 +418,8 @@ fun PlayerSheet(
         // is open. Building them on the first frame of opening is what froze the animation
         // (it showed half-open, then fully open: "two frames").
         var warm by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) { kotlinx.coroutines.delay(800); warm = true }
+        // After app start has settled, not during its first frames.
+        LaunchedEffect(Unit) { kotlinx.coroutines.delay(1200); warm = true }
         if (open || warm || ctrl.warmRequested) {
             androidx.compose.runtime.SideEffect { ctrl.pagesBuilt = true }
             Box(
@@ -440,14 +438,9 @@ fun PlayerSheet(
                 androidx.compose.runtime.CompositionLocalProvider(com.skarif.kairos.ui.screens.LocalPlayerVisible provides visibleState) {
                 AnimatedContent(
                     ctrl.page,
-                    // Player, lyrics and queue: the new page grows in from slightly smaller while the
-                    // old one grows past and fades, on springs, so switching feels like depth.
-                    transitionSpec = {
-                        (fadeIn(androidx.compose.animation.core.tween(200, delayMillis = 50)) +
-                            androidx.compose.animation.scaleIn(Motion.ios(0.45f, 0.9f), initialScale = 0.94f)) togetherWith
-                            (fadeOut(androidx.compose.animation.core.tween(140)) +
-                                androidx.compose.animation.scaleOut(Motion.ios(0.45f, 1f), targetScale = 1.04f))
-                    },
+                    // Player, lyrics and queue: a quick crossfade while the cover glides to its new
+                    // place, as in Apple Music. The cover carries the motion; the pages just swap.
+                    transitionSpec = { fadeIn(tween(180, delayMillis = 60)) togetherWith fadeOut(tween(120)) },
                     label = "playerPage",
                 ) { page ->
                     when (page) {
@@ -464,7 +457,7 @@ fun PlayerSheet(
                                     val go = if (dir < 0) nextSong != null else prevSong != null
                                     if (go && dir != 0) {
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        ctrl.skipX.animateTo(dir * w, tween(220, easing = Motion.Emphasized), initialVelocity = vx)
+                                        ctrl.skipX.animateTo(dir * w, Motion.sheet(), initialVelocity = vx)
                                         if (dir < 0) vm.next() else vm.previousTrack()
                                     } else {
                                         ctrl.skipX.animateTo(0f, Motion.spatial(), initialVelocity = vx)
@@ -544,7 +537,7 @@ private fun MiniContent(vm: MainViewModel, ctrl: PlayerController, title: String
         ) {
             Spacer(Modifier.width(48.dp)) // the cover is drawn here by the cover layer
             Column(Modifier.weight(1f)) {
-                Text(title, style = T.title, color = c.text, maxLines = 1, modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2000))
+                Text(title, style = T.title, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(artist, style = T.small.copy(fontSize = 13.sp), color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             CircleButton(if (playing) Ic.Pause else Ic.Play, if (playing) "Pause" else "Play", vm::toggle, size = 46.dp, container = c.ink, content = c.inkFg)

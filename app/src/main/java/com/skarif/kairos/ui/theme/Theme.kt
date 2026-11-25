@@ -113,7 +113,7 @@ fun PlayerTheme(settings: Settings, album: AlbumColors?, content: @Composable ()
     val useArt = settings.colorFromArt && album != null
     // Album colours are tuned per theme so the accent never disappears into the background.
     val tuned = remember(useArt, album, settings.fixedColor, dark) {
-        ArtworkRepository.tuneAccent(if (useArt) album!!.accent else settings.fixedColor, dark)
+        ArtworkRepository.tuneAccent(if (useArt) album.accent else settings.fixedColor, dark)
     }
     val accent by animateColorAsState(Color(tuned), tween(700), label = "accent")
     val onAccent by animateColorAsState(Color(ArtworkRepository.onColorFor(tuned)), tween(700), label = "onAccent")

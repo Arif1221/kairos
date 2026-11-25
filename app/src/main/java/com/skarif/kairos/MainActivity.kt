@@ -23,6 +23,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -114,7 +115,7 @@ class MainActivity : ComponentActivity() {
     override fun onPause() { super.onPause(); com.skarif.kairos.perf.PerfLog.setTracking(false) }
 }
 
-private val TABS = listOf("home", "library", "stats", "search")
+private val TABS = Motion.TABS
 
 /** Screens whose top edge is dark in every theme. */
 private val DARK_TOP = setOf("collection/{key}")
@@ -122,8 +123,6 @@ private val DARK_TOP = setOf("collection/{key}")
 /** Bottom sheets opened over whatever is showing, including the player. */
 private enum class Tool { SLEEP, EQ, SORT }
 
-private val tabEnter = Motion.tabEnter
-private val tabExit = Motion.tabExit
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -192,7 +191,7 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
         // Shown once after a crash, so the report can be copied and sent.
         var crash by remember { mutableStateOf(java.io.File(context.filesDir, PlayerApp.CRASH_FILE).takeIf { it.exists() }?.readText()) }
         crash?.let { text ->
-            val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+            val clipboard = androidx.compose.ui.platform.LocalClipboard.current
             com.skarif.kairos.ui.components.KairosDialog(
                 onDismissRequest = { java.io.File(context.filesDir, PlayerApp.CRASH_FILE).delete(); crash = null },
                 containerColor = P.colors.sheet,
@@ -206,7 +205,7 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 },
                 confirmButton = {
                     androidx.compose.material3.TextButton({
-                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(text))
+                        scope.launch { clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(android.content.ClipData.newPlainText("Kairos crash", text))) }
                         java.io.File(context.filesDir, PlayerApp.CRASH_FILE).delete(); crash = null
                     }) { Text("Copy report", color = P.colors.text) }
                 },
@@ -217,56 +216,59 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
         }
 
         // Android's stretch at the ends of lists is replaced by an iOS rubber band (ui/motion/Scroll.kt).
-        @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+        val backArt by vm.artwork.collectAsStateWithLifecycle()
+        val backdrop = com.skarif.kairos.ui.components.rememberBackdrop(backArt, settings.blurBackground)
         CompositionLocalProvider(
-            LocalPlayer provides player, com.skarif.kairos.ui.components.LocalBackdrop provides true,
-            androidx.compose.foundation.LocalOverscrollConfiguration provides null,
+            LocalPlayer provides player, com.skarif.kairos.ui.components.LocalBackdrop provides backdrop,
+            androidx.compose.foundation.LocalOverscrollFactory provides null,
         ) {
-        Box(Modifier.fillMaxSize()) {
-            // One shared background behind every page: pages slide over it instead of each
-            // drawing (and blurring) its own copy, which is what made transitions heavy.
-            val backArt by vm.artwork.collectAsStateWithLifecycle()
-            com.skarif.kairos.ui.components.Backdrop(backArt, settings.blurBackground)
+        // Black behind everything: what shows around the app when it sinks back behind the player.
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
             NavHost(
                 nav, startDestination = start,
-                // iOS sheet depth: as the player opens, the app behind it sinks back, rounds its
-                // corners and dims. Read in the draw phase, so dragging the player never recomposes.
-                modifier = Modifier.graphicsLayer {
-                    // Sheets (sleep timer, equalizer, sort) push the app back too, a little less.
-                    val p = maxOf(player.progress.value.coerceIn(0f, 1f), sheetDepth.value * 0.6f)
-                    if (p > 0f) {
-                        val s = 1f - 0.07f * p
-                        scaleX = s; scaleY = s
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape((28f * p).dp)
-                        clip = true
-                        alpha = 1f - 0.35f * p
+                // iOS sheet depth: as the player (or a sheet) comes up, the app behind sinks back,
+                // rounds its corners and darkens. Darkening is drawn as a scrim, not alpha: alpha
+                // on a full-screen layer forces an extra full-screen pass every frame. Once the
+                // player covers it completely, the app isn't drawn at all.
+                modifier = Modifier
+                    .graphicsLayer {
+                        val p = maxOf(player.progress.value.coerceIn(0f, 1f), sheetDepth.value * 0.6f)
+                        if (p >= 0.999f) { alpha = 0f; return@graphicsLayer }
+                        if (p > 0f) {
+                            val sc = 1f - 0.06f * p
+                            scaleX = sc; scaleY = sc
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape((24f * p).dp)
+                            clip = true
+                        }
                     }
-                },
-                // iOS-style push and pop on springs (see Motion). With predictive back enabled in
-                // the manifest, a back swipe from either edge scrubs the pop under your thumb.
-                enterTransition = Motion.pushEnter,
-                exitTransition = Motion.pushExit,
+                    .drawWithContent {
+                        drawContent()
+                        val p = maxOf(player.progress.value.coerceIn(0f, 1f), sheetDepth.value * 0.6f)
+                        if (p > 0f) drawRect(Color.Black, alpha = 0.4f * p)
+                    },
+                enterTransition = Motion.enter,
+                exitTransition = Motion.exit,
                 popEnterTransition = Motion.popEnter,
                 popExitTransition = Motion.popExit,
             ) {
                 screen("onboarding") {
                     OnboardingScreen(vm) { nav.navigate("home") { popUpTo("onboarding") { inclusive = true } } }
                 }
-                screen("home", enterTransition = tabEnter, exitTransition = tabExit) {
+                screen("home") {
                     HomeScreen(
                         vm, onMenu = openMenu, onSearch = { nav.tab("search") }, onOpenCollection = ::openCollection,
                         onOpenNowPlaying = openPlayer, onPlaylists = { nav.navigate("playlists") },
                         onLibrary = { nav.tab("library") },
                     )
                 }
-                screen("library", enterTransition = tabEnter, exitTransition = tabExit) {
+                screen("library") {
                     LibraryScreen(
                         vm, onOpenNowPlaying = openPlayer, onSettings = { nav.navigate("settings") },
                         onFolders = { nav.navigate("folders") }, onSort = { tool = Tool.SORT }, onOpenAlbum = ::openAlbum, onOpenCollection = ::openCollection,
                     )
                 }
-                screen("stats", enterTransition = tabEnter, exitTransition = tabExit) { StatsScreen(vm, onMenu = openMenu, onSettings = { nav.navigate("settings") }) }
-                screen("search", enterTransition = tabEnter, exitTransition = tabExit) {
+                screen("stats") { StatsScreen(vm, onMenu = openMenu, onSettings = { nav.navigate("settings") }) }
+                screen("search") {
                     SearchScreen(vm, onMenu = openMenu, onOpenCollection = ::openCollection, onOpenNowPlaying = openPlayer)
                 }
                 screen("playlists") {
@@ -400,18 +402,8 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
 }
 
 /** A NavHost destination that also tells shared-card transitions which animation it is in. */
-private fun NavGraphBuilder.screen(
-    route: String,
-    enterTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition?)? = null,
-    exitTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition?)? = null,
-    popExitTransition: (AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition?)? = exitTransition,
-    content: @Composable (NavBackStackEntry) -> Unit,
-) = composable(
-    route,
-    enterTransition = enterTransition,
-    exitTransition = exitTransition,
-    popExitTransition = popExitTransition,
-) { entry -> ProvideNavScope(this) { content(entry) } }
+private fun NavGraphBuilder.screen(route: String, content: @Composable (NavBackStackEntry) -> Unit) =
+    composable(route) { entry -> ProvideNavScope(this) { content(entry) } }
 
 /** Tab-style navigation: one copy of each tab, Home at the bottom of the stack. */
 private fun NavHostController.tab(route: String) = navigate(route) {

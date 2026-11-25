@@ -53,7 +53,6 @@ import com.skarif.kairos.ui.components.RadioCard
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.components.Segmented
 import com.skarif.kairos.ui.components.ToggleRow
-import com.skarif.kairos.ui.components.appear
 import com.skarif.kairos.ui.motion.rubberBand
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
@@ -106,7 +105,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
         )
     }
 
-    ScreenBackground(art, s.blurBackground) {
+    ScreenBackground {
         Column(
             Modifier.fillMaxSize().rubberBand(com.skarif.kairos.ui.motion.rememberRubberBand()).verticalScroll(rememberScrollState(), flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling()).statusBarsPadding().navigationBarsPadding()
                 .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp),
@@ -115,7 +114,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
             Header("Settings", onBack)
             Text(mixedHeadline("Make it " to false, "yours" to true), style = T.h1, color = c.text)
 
-            Card(Modifier.appear(1)) {
+            Card(Modifier) {
                 Text("Theme", style = T.h2, color = c.text)
                 Segmented(listOf("Light", "Dark", "System"), s.themeMode.ordinal, { i ->
                     vm.updateSettings { it.copy(themeMode = ThemeMode.entries[i]) }
@@ -144,7 +143,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 ToggleRow("Pure black in dark mode", s.pureBlack, { v -> vm.updateSettings { it.copy(pureBlack = v) } }, "Saves battery on AMOLED screens")
             }
 
-            Card(Modifier.appear(2)) {
+            Card(Modifier) {
                 Text("Lyrics", style = T.h2, color = c.text)
                 ToggleRow(
                     "Read embedded lyrics", s.readEmbeddedLyrics, { v -> vm.updateSettings { it.copy(readEmbeddedLyrics = v) } },
@@ -171,7 +170,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 Pill("Allow a folder", { pickFolder.launch(null) }, icon = Ic.Plus, selected = true)
             }
 
-            Card(Modifier.appear(3)) {
+            Card(Modifier) {
                 Text("Audio quality", style = T.h2, color = c.text)
                 now.output?.let { Text("Output now: $it", style = T.title, color = c.text) }
                 RadioCard(
@@ -199,7 +198,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 })
             }
 
-            Card(Modifier.appear(4)) {
+            Card(Modifier) {
                 Text("Playback and suggestions", style = T.h2, color = c.text)
                 ToggleRow(
                     "Resume where you left off", s.resumeQueue, { v -> vm.updateSettings { it.copy(resumeQueue = v) } },
@@ -232,7 +231,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 if (s.tasteExcluded.isNotEmpty()) Pill("Use them all again", vm::clearTasteExclusions, icon = Ic.Refresh)
             }
 
-            Card(Modifier.appear(5)) {
+            Card(Modifier) {
                 Text("Library", style = T.h2, color = c.text)
                 Text(
                     "${songs.size} songs, ${playlists.size} playlists, ${favs.size} favourites",
@@ -252,7 +251,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 }
             }
 
-            Card(Modifier.appear(6)) {
+            Card(Modifier) {
                 Text("Backup and restore", style = T.h2, color = c.text)
                 Text(
                     "Saves favourites, playlists, listening history, lyrics timing, hidden songs and settings to one file. " +
@@ -267,7 +266,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 Pill("Clear history…", { confirmClear = true }, icon = Ic.Trash)
             }
 
-            Card(Modifier.appear(7)) {
+            Card(Modifier) {
                 // On-device frame timing: what to send when something lags.
                 Text("Performance log", style = T.h2, color = c.text)
                 var summary by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.skarif.kairos.perf.PerfLog.summary()) }
@@ -291,7 +290,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 }
             }
 
-            Card(Modifier.appear(8)) {
+            Card(Modifier) {
                 Text("About", style = T.h2, color = c.text)
                 val version = androidx.compose.runtime.remember {
                     runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""
@@ -327,7 +326,7 @@ fun FoldersScreen(vm: MainViewModel, onBack: () -> Unit) {
     LaunchedEffect(s.skipShortFiles) { vm.loadFolders() }
     val total = folders.filter { it.key !in s.excludedFolders }.sumOf { it.count }
 
-    ScreenBackground(art, s.blurBackground) {
+    ScreenBackground {
         Column(
             Modifier.fillMaxSize().rubberBand(com.skarif.kairos.ui.motion.rememberRubberBand()).verticalScroll(rememberScrollState(), flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling()).statusBarsPadding().navigationBarsPadding()
                 .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp),

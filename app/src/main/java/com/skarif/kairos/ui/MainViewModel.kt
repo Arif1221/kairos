@@ -912,4 +912,3 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 }
 
 /** Days between two instants; used by screens that show "x days ago". */
-fun daysAgo(epochMs: Long): Long = ChronoUnit.DAYS.between(Instant.ofEpochMilli(epochMs), Instant.now())

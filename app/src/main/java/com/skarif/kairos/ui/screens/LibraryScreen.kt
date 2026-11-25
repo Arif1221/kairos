@@ -187,13 +187,15 @@ fun LibraryScreen(
         vm.tabReselected.collect { if (it == "library") grid.animateScrollToItem(0) }
     }
 
-    ScreenBackground(art, settings.blurBackground) {
+    ScreenBackground {
         LazyVerticalGrid(
             GridCells.Fixed(2),
             Modifier.fillMaxSize().rubberBand(band),
             state = grid,
             flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
             contentPadding = PaddingValues(bottom = 230.dp),
+            // Build rows a screen ahead while idle (pausable composition spreads it over frames).
+            cacheWindow = androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow(ahead = 480.dp, behind = 160.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(if (tab == LibTab.ALBUMS || tab == LibTab.GENRES) 10.dp else 0.dp),
         ) {
@@ -286,7 +288,7 @@ fun LibraryScreen(
                         }
                         itemsIndexed(run.songs, key = { _, s -> s.id }, span = { _, _ -> GridItemSpan(2) }, contentType = { _, _ -> "song" }) { i, s ->
                             // Rows glide into place when the filter or sort changes, instead of jumping.
-                            Box(Modifier.animateItem(fadeInSpec = tween(180), placementSpec = Motion.spatial(), fadeOutSpec = tween(120)).padding(end = if (letters.isNotEmpty()) 22.dp else 0.dp)) {
+                            Box(Modifier.padding(end = if (letters.isNotEmpty()) 22.dp else 0.dp)) {
                                 SongRow(s, playing = s.id == now.songId, vm, favourite = s.id in favs, onLongClick = { actionsFor = s }) {
                                     vm.play(shownSongs, run.start + i, "Your library")
                                     onOpenNowPlaying()
@@ -297,7 +299,7 @@ fun LibraryScreen(
                 }
                 LibTab.ALBUMS -> {
                     itemsIndexed(albums, key = { _, g -> "al" + g.id }, contentType = { _, _ -> "album" }) { i, g ->
-                        Box(Modifier.animateItem(fadeInSpec = tween(180), placementSpec = Motion.spatial(), fadeOutSpec = tween(120)).padding(start = if (i % 2 == 0) 18.dp else 0.dp, end = if (i % 2 == 1) 18.dp else 0.dp)) {
+                        Box(Modifier.padding(start = if (i % 2 == 0) 18.dp else 0.dp, end = if (i % 2 == 1) 18.dp else 0.dp)) {
                             CoverTile(vm, g.songs.first(), key = "album:${g.id}", kicker = g.artist, title = g.title) { onOpenCollection("album:${g.id}") }
                         }
                     }

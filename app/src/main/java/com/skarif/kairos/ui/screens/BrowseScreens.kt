@@ -63,7 +63,6 @@ import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.Pill
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.components.CompactTitleBar
-import com.skarif.kairos.ui.components.appear
 import com.skarif.kairos.ui.components.stretchTitle
 import com.skarif.kairos.ui.motion.rubberBand
 import kotlinx.coroutines.launch
@@ -131,7 +130,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
     }
     val pastTitle by remember { androidx.compose.runtime.derivedStateOf { searchGrid.firstVisibleItemIndex > 0 } }
 
-    ScreenBackground(art, settings.blurBackground) {
+    ScreenBackground {
         LazyVerticalGrid(
             GridCells.Fixed(2),
             Modifier.fillMaxSize().rubberBand(band),
@@ -206,7 +205,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                 if (results.isNotEmpty()) {
                     item(span = { GridItemSpan(2) }, key = "h-songs") { SearchSection("Songs  ${results.size}") }
                     gridItemsIndexed(results, key = { _, s -> s.id }, span = { _, _ -> GridItemSpan(2) }, contentType = { _, _ -> "song" }) { i, s ->
-                        Box(Modifier.animateItem(fadeInSpec = androidx.compose.animation.core.tween(160), placementSpec = com.skarif.kairos.ui.motion.Motion.spatial(), fadeOutSpec = androidx.compose.animation.core.tween(100))) {
+                        Box {
                         SongRow(s, s.id == now.songId, vm, favourite = s.id in favs, onLongClick = { actionsFor = s }) {
                             vm.play(results, i, "Search")
                             onOpenNowPlaying()
@@ -283,7 +282,7 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
 
     val band = com.skarif.kairos.ui.motion.rememberRubberBand()
 
-    ScreenBackground(art, settings.blurBackground) {
+    ScreenBackground {
         LazyVerticalGrid(
             GridCells.Fixed(2),
             Modifier.fillMaxSize().statusBarsPadding().rubberBand(band),
@@ -380,7 +379,7 @@ fun NewPlaylistScreen(vm: MainViewModel, onDone: () -> Unit, initialSongs: List<
     val songMap by vm.songMap.collectAsStateWithLifecycle()
     val pickedSongs = picked.mapNotNull { songMap[it] }
 
-    ScreenBackground(art, settings.blurBackground) {
+    ScreenBackground {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             ScreenHeader("New playlist", onDone)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -518,8 +517,6 @@ fun CollectionScreen(
     }
 
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-    var settled by remember { mutableStateOf(false) }
-    androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(1200); settled = true }
     val band = com.skarif.kairos.ui.motion.rememberRubberBand()
     Box(Modifier.fillMaxSize().background(c.bg)) {
         LazyColumn(
@@ -608,7 +605,7 @@ fun CollectionScreen(
                 }
             }
             item {
-                Row(Modifier.appear(2).fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Pill("Play", { if (shown.isNotEmpty()) { vm.play(shown, 0, colTitle); onOpenNowPlaying() } }, selected = true, big = true, icon = Ic.Play, modifier = Modifier.weight(1f))
                     Pill(
                         if (settings.smartShuffle) "Smart shuffle" else "Shuffle", { vm.shuffle(shown, from = colTitle); onOpenNowPlaying() },
@@ -684,7 +681,7 @@ fun CollectionScreen(
             if (list.isNotEmpty()) {
                 itemsIndexed(list, key = { i, s -> "$i-${s.id}" }, contentType = { _, _ -> "song" }) { i, s ->
                     // The first screenful of songs rises in one after another when the page opens.
-                    Box(if (i < 10 && !settled) Modifier.appear(3 + i) else Modifier) {
+                    Box {
                     SongRow(s, s.id == now.songId, vm, favourite = s.id in favs, number = if (isAlbum) (s.track.takeIf { it > 0 } ?: (i + 1)) else null, onLongClick = { actionIndex = i; actionsFor = s }) {
                         vm.play(list, i, colTitle)
                         onOpenNowPlaying()

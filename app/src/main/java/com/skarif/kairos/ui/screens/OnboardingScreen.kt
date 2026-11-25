@@ -70,7 +70,7 @@ fun OnboardingScreen(vm: MainViewModel, onDone: () -> Unit) {
         }
     }
 
-    ScreenBackground(null, settings.blurBackground) {
+    ScreenBackground {
         Column(
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 30.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),

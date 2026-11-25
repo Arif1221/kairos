@@ -1,5 +1,6 @@
 package com.skarif.kairos.ui.screens
 
+import androidx.compose.foundation.basicMarquee
 import android.graphics.Bitmap
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -71,18 +72,6 @@ fun SongArt(vm: MainViewModel, song: SongEntity?, size: Dp, modifier: Modifier =
     }
 }
 
-/** Accent colour taken from a song's art, for tinting cards (Home mixes, Search tiles). */
-@Composable
-fun artColor(vm: MainViewModel, song: SongEntity?): Color {
-    val c = P.colors
-    val argb by produceState<Int?>(null, song?.id) {
-        value = song?.let { s -> vm.thumbnail(s)?.let { ArtworkRepository.paletteAccent(it) } }
-    }
-    return argb?.let { Color(ArtworkRepository.tuneAccent(it, c.dark)) } ?: c.accent
-}
-
-fun tintOf(card: Color, accent: Color, dark: Boolean): Color = lerp(card, accent, if (dark) 0.28f else 0.22f)
-
 /** Like [rememberCover], but a cached cover shows on the very first frame, with no flash of the old one. */
 @Composable
 fun rememberCoverNow(vm: MainViewModel, song: SongEntity?): ImageBitmap? {
@@ -95,7 +84,7 @@ fun rememberCoverNow(vm: MainViewModel, song: SongEntity?): ImageBitmap? {
 @Composable
 fun rememberCover(vm: MainViewModel, song: SongEntity?): ImageBitmap? {
     val bmp by produceState<Bitmap?>(null, song?.id) { value = song?.let { vm.cover(it) } }
-    return bmp?.asImageBitmap()
+    return androidx.compose.runtime.remember(bmp) { bmp?.asImageBitmap() }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -234,6 +223,14 @@ fun DialogItem(text: String, onClick: () -> Unit) {
 val LocalPlayerVisible = androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.runtime.State<Boolean>> { androidx.compose.runtime.mutableStateOf(true) }
 
 /**
+ * Scrolls a long title, but only while the player is on screen. A marquee asks for a frame every
+ * vsync; running it on the hidden, pre-built player kept the whole app drawing nonstop.
+ */
+@Composable
+fun Modifier.liveMarquee(): Modifier =
+    if (LocalPlayerVisible.current.value) basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2000, repeatDelayMillis = 2500) else this
+
+/**
  * Playback position that moves every frame while playing. The player reports it every 200 ms;
  * in between it is extrapolated from the frame clock, so anything driven by it glides.
  */
@@ -273,7 +270,9 @@ fun rememberLivePosition(vm: MainViewModel): androidx.compose.runtime.State<Long
 fun LiveWaveformSeek(vm: MainViewModel, durationMs: Long, seed: Long, modifier: Modifier = Modifier, barsHeight: Dp = 66.dp, bars: Int = 26) {
     val pos = rememberLivePosition(vm)
     val now by vm.now.collectAsStateWithLifecycle()
-    com.skarif.kairos.ui.components.WaveformSeek(pos, durationMs, seed, vm::seekTo, modifier, barsHeight, bars, playing = now.isPlaying)
+    // The bars move only while playing *and* on screen; otherwise their frame clock stops.
+    val visible = LocalPlayerVisible.current.value
+    com.skarif.kairos.ui.components.WaveformSeek(pos, durationMs, seed, vm::seekTo, modifier, barsHeight, bars, playing = now.isPlaying && visible)
 }
 
 @Composable

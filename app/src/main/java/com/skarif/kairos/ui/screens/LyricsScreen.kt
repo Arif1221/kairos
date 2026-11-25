@@ -148,7 +148,7 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
                 Column(Modifier.weight(1f)) {
                     Text(
                         song?.title ?: "", style = T.title.copy(fontSize = 16.sp), color = Fg, maxLines = 1,
-                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2000),
+                        modifier = Modifier.liveMarquee(),
                     )
                     Text(song?.artist ?: "", style = T.small.copy(fontSize = 12.sp), color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -339,8 +339,9 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
                 when { browsing -> 0.8f; isCur -> 1f; i < current -> 0.3f; else -> (0.55f - 0.06f * (distance - 1)).coerceAtLeast(0.25f) },
                 com.skarif.kairos.ui.motion.Motion.ios(0.5f, 1f), label = "lineAlpha",
             )
-            val blur by androidx.compose.animation.core.animateDpAsState(
-                if (browsing || isCur) 0.dp else (distance.coerceAtMost(4) * 1.1f).dp,
+            // Blur in dp, kept as State and read only while drawing: changing it never recomposes.
+            val blur = animateFloatAsState(
+                if (browsing || isCur) 0f else distance.coerceAtMost(4) * 1.1f,
                 com.skarif.kairos.ui.motion.Motion.ios(0.5f, 1f), label = "lineBlur",
             )
             val scale by animateFloatAsState(if (isCur) 1f else 0.94f, com.skarif.kairos.ui.motion.Motion.ios(0.55f, 0.8f), label = "lineScale")
@@ -352,8 +353,11 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
                     scaleX = scale; scaleY = scale
                     transformOrigin = TransformOrigin(0f, 0.5f)
                     this.alpha = alpha
+                    val r = blur.value.dp.toPx()
+                    renderEffect = if (r > 0.5f && android.os.Build.VERSION.SDK_INT >= 31) {
+                        androidx.compose.ui.graphics.BlurEffect(r, r, androidx.compose.ui.graphics.TileMode.Decal)
+                    } else null
                 }
-                .then(if (blur > 0.2.dp) Modifier.blur(blur, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded) else Modifier)
                 .clip(RoundedCornerShape(14.dp))
                 .clickable(role = Role.Button, onClickLabel = "Play from this line") { onSeek(start) }
                 .padding(vertical = 6.dp)

@@ -3,6 +3,16 @@
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
 ## Unreleased
+- Rebuilt on current Android tools: Compose 1.13, Media3 1.11, Kotlin 2.4, AGP 9.5, Android 17 SDK.
+- New motion system, iOS style and lighter:
+  - pages are opaque and push like iOS: the new page slides over and the old one slides back and dims;
+  - tabs switch with a quick fade;
+  - opening the player sinks the app back under a dark scrim, and stops drawing it once it's covered.
+- Background blur is now done once per song instead of live, so it costs about the same as drawing one picture, on every phone.
+- Nothing runs while the app is idle: the seek bar's motion and long-title scrolling only run while the player is on screen (before, the hidden player kept the app drawing nonstop during playback).
+- Removed the staggered "appear" animations and list animations in Library and Search.
+- Lyrics blur no longer rebuilds every line on each frame.
+- Library builds rows ahead of scrolling.
 - Fixed a crash on launch when a saved queue was restored.
 - The restored queue now loads 2.5 s after launch, in small pieces, so app start doesn't stutter.
 - Fixed: tapping a song that wasn't playing still lagged while the player opened. Each queue change makes Android's media controls rebuild the whole queue on the main thread; the rest of a long queue was added in 21 batches right after opening (21 rebuilds). It is now added in two steps, only once the player has finished animating. Restoring the queue at app start loads the same way instead of all at once

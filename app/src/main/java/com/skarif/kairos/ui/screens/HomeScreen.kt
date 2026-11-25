@@ -42,7 +42,6 @@ import com.skarif.kairos.ui.components.Pill
 import com.skarif.kairos.ui.components.PillMeter
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.components.CompactTitleBar
-import com.skarif.kairos.ui.components.appear
 import com.skarif.kairos.ui.components.stretchTitle
 import com.skarif.kairos.ui.motion.rubberBand
 import kotlinx.coroutines.launch
@@ -95,7 +94,7 @@ fun HomeScreen(
     val pastTitle by androidx.compose.runtime.remember { androidx.compose.runtime.derivedStateOf { scroll.value > with(density) { 150.dp.toPx() } } }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
-    ScreenBackground(art, settings.blurBackground) {
+    ScreenBackground {
         Column(
             Modifier.fillMaxSize()
                 .rubberBand(band)
@@ -138,7 +137,7 @@ fun HomeScreen(
             val picks = listOf("favourites", "most", "onrepeat", "recent", "lastplayed", "never")
                 .mapNotNull { byKey[it] }.filter { it.songs.isNotEmpty() }.take(6)
             if (picks.isNotEmpty()) {
-                Column(Modifier.appear(1).padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     picks.chunked(2).forEach { row ->
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             row.forEach { m -> QuickPick(vm, m, card, Modifier.weight(1f)) { onOpenCollection(m.key) } }
@@ -154,7 +153,7 @@ fun HomeScreen(
             if (album != null && song != null) {
                 val idx = album.songs.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
                 Column(
-                    Modifier.appear(2).padding(horizontal = 18.dp).fillMaxWidth().cardClick("Open player", onOpenNowPlaying)
+                    Modifier.padding(horizontal = 18.dp).fillMaxWidth().cardClick("Open player", onOpenNowPlaying)
                         .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(card).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
@@ -179,7 +178,7 @@ fun HomeScreen(
             if (recent.isNotEmpty()) {
                 Section("Jump back in", "See all", 3) { onOpenCollection("lastplayed") }
                 androidx.compose.foundation.lazy.LazyRow(
-                    modifier = Modifier.appear(4),
+                    modifier = Modifier,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -204,7 +203,7 @@ fun HomeScreen(
             if (more.isNotEmpty()) {
                 Section("Made for you", "All", 5) { onPlaylists() }
                 androidx.compose.foundation.lazy.LazyRow(
-                    modifier = Modifier.appear(6),
+                    modifier = Modifier,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -222,7 +221,7 @@ fun HomeScreen(
             if (fresh.isNotEmpty()) {
                 Section("Fresh in your library", "Library", 7) { onLibrary() }
                 androidx.compose.foundation.lazy.LazyRow(
-                    modifier = Modifier.appear(8),
+                    modifier = Modifier,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -241,7 +240,7 @@ fun HomeScreen(
 
 @Composable
 private fun Section(title: String, action: String? = null, order: Int = 0, onAction: () -> Unit = {}) {
-    Row(Modifier.appear(order).fillMaxWidth().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, Modifier.weight(1f), style = T.h2.copy(fontSize = 22.sp), color = P.colors.text)
         if (action != null) {
             Text(
