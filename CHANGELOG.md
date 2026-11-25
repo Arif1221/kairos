@@ -2,7 +2,7 @@
 
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
-## Unreleased
+## 0.8.4 (2026-11-25)
 - Fixed: swiping back shrank the page into a floating card. The back swipe now slides the page away like iOS, following your thumb.
 - The album cover shows through the background more clearly, especially pale covers in the light theme.
 
