@@ -3,6 +3,10 @@
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
 ## Unreleased
+- Fixed: tapping a song that wasn't playing still lagged while the player opened. Each queue change makes Android's media controls rebuild the whole queue on the main thread; the rest of a long queue was added in 21 batches right after opening (21 rebuilds). It is now added in two steps, only once the player has finished animating. Restoring the queue at app start loads the same way instead of all at once
+- The app's new colours and the cards under the player wait for the opening animation to finish, not a fixed delay
+- App start does less at once: the search index, Library sort keys and artist lookup are built when a screen needs them
+- New: Settings, Performance log. It records every dropped frame with what the app was doing, to share when something lags
 - Fixed: the first time you played a song after opening the app, the player still skipped from closed to almost open. It is now built while still closed, then opens on a fresh spring
 - Fixed: lyrics jumped up, back down, then glided whenever the line changed (the scrolled list showed one frame before the wave offset)
 - Fixed: opening a song still lagged. Every song change saved a listen, and that re-sorted the whole Library and recalculated Statistics on the main thread right as the player opened (and again every 15 s while playing). Both now run in the background, and the Library only re-sorts on plays when sorted by Most played

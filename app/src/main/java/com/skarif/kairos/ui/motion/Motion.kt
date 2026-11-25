@@ -139,3 +139,15 @@ object Swipe {
         }
     }
 }
+
+/**
+ * Whether the player sheet is opening or closing right now. Heavy work triggered by a song
+ * change (recolouring the app, filling a long queue, building the player's lower cards) waits
+ * until this is false, so it never lands on the frames of the animation.
+ */
+object PlayerMotion {
+    private val state = androidx.compose.runtime.mutableStateOf(false)
+    var animating: Boolean
+        get() = state.value
+        set(v) { state.value = v }
+}

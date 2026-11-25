@@ -72,6 +72,7 @@ dependencies {
 
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.session)
+    implementation(libs.androidx.metrics.performance)
     implementation(libs.media3.common)
     implementation(libs.kotlinx.coroutines.guava)
 

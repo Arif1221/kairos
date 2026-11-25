@@ -107,7 +107,11 @@ class MainActivity : ComponentActivity() {
         val onboarded = runBlocking { (application as PlayerApp).container.settings.load().onboarded }
         val start = if (onboarded && hasAudioPermission(this)) "home" else "onboarding"
         setContent { PlayerRoot(start) }
+        com.skarif.kairos.perf.PerfLog.install(window)
     }
+
+    override fun onResume() { super.onResume(); com.skarif.kairos.perf.PerfLog.setTracking(true) }
+    override fun onPause() { super.onPause(); com.skarif.kairos.perf.PerfLog.setTracking(false) }
 }
 
 private val TABS = listOf("home", "library", "stats", "search")
@@ -130,8 +134,16 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
     // you tap a song landed on the player's first opening frames; a short delay lets it open first.
     var album by remember { mutableStateOf(albumNow) }
     LaunchedEffect(albumNow) {
-        if (album != null && albumNow != null) kotlinx.coroutines.delay(520)
+        if (album != null && albumNow != null) {
+            // Wait until the player has finished opening, not a fixed time that could land mid-animation.
+            kotlinx.coroutines.delay(120)
+            androidx.compose.runtime.snapshotFlow { com.skarif.kairos.ui.motion.PlayerMotion.animating }.first { !it }
+            kotlinx.coroutines.delay(120)
+        }
+        com.skarif.kairos.perf.PerfLog.state("theme", "recolouring")
         album = albumNow
+        kotlinx.coroutines.delay(400)
+        com.skarif.kairos.perf.PerfLog.state("theme", null)
     }
     PlayerTheme(settings, album) {
         val context = LocalContext.current
@@ -159,6 +171,7 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
 
         val entry by nav.currentBackStackEntryAsState()
         val route = entry?.destination?.route
+        LaunchedEffect(route) { com.skarif.kairos.perf.PerfLog.state("screen", route) }
         val playerUp by remember { derivedStateOf { player.progress.value > 0.5f } }
 
         // Bar icons must contrast with what is behind them: the player's cover is dark at the top,

@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -157,7 +158,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         HashMap<String, String>().apply {
             list.forEach { s -> for (t in arrayOf(s.title, s.artist, s.album)) getOrPut(t) { com.skarif.kairos.data.librarySortKey(t, articles) } }
         }
-    }.flowOn(Dispatchers.Default).always(emptyMap())
+    }.flowOn(Dispatchers.Default).state(emptyMap()) // built when the Library is on screen, not at app start
 
     /**
      * The Library's order. Off the main thread, and it only listens to play counts when sorted by
@@ -252,7 +253,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** "Pop; Rock" counts for both, and "Hip-Hop" / "hip hop" are one genre. */
     /** Artist by normalized name, so the player can find "about the artist" without scanning. */
     val artistByKey: StateFlow<Map<String, ArtistUi>> = artists.map { l -> l.associateBy { normalize(it.name) } }
-        .flowOn(Dispatchers.Default).always(emptyMap())
+        .flowOn(Dispatchers.Default).state(emptyMap())
 
     val genres: StateFlow<List<GenreUi>> = songs.map { all -> groupGenres(all).map { GenreUi(it.name, it.songs) } }
         .flowOn(Dispatchers.Default).always(emptyList())
@@ -415,7 +416,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Built once per library change, so typing never re-normalizes the whole library. */
     private val searchIndex: StateFlow<com.skarif.kairos.data.SearchIndex> = combine(songs, albums, artists, genres) { s, al, ar, ge ->
         com.skarif.kairos.data.SearchIndex(s, al, ar.map { it.name }, ge.map { it.name })
-    }.flowOn(Dispatchers.Default).always(com.skarif.kairos.data.SearchIndex(emptyList()))
+    }.flowOn(Dispatchers.Default).state(com.skarif.kairos.data.SearchIndex(emptyList())) // built when Search or the Library filter is on screen
 
     /** Debounced: results follow typing after a short pause instead of on every key. */
     private val typedQuery = _query.debounce { if (it.isBlank()) 0L else 120L }
@@ -513,6 +514,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         ct.player.connect()
+        // Long queues finish loading only once the player isn't animating.
+        ct.player.busy = { com.skarif.kairos.ui.motion.PlayerMotion.animating }
+        // Performance log context: queue loading, and the second after a song change.
+        viewModelScope.launch { ct.player.filling.collect { com.skarif.kairos.perf.PerfLog.state("queue", if (it) "loading" else null) } }
+        viewModelScope.launch {
+            now.map { it.songId }.distinctUntilChanged().collectLatest {
+                com.skarif.kairos.perf.PerfLog.state("song", "just changed")
+                kotlinx.coroutines.delay(1500)
+                com.skarif.kairos.perf.PerfLog.state("song", null)
+            }
+        }
         viewModelScope.launch { restoreQueue() }
         // Save the queue when it, the song, or play/pause changes, and every 10 s while playing.
         viewModelScope.launch {

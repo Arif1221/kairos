@@ -112,27 +112,44 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
     fun play(songs: List<SongEntity>, startIndex: Int, shuffle: Boolean = false) {
         val c = controller ?: return
         if (songs.isEmpty()) return
-        fillJob?.cancel()
         val start = if (shuffle) songs.indices.random() else startIndex.coerceIn(0, songs.lastIndex)
         c.shuffleModeEnabled = shuffle
+        loadQueue(c, songs, start, 0L, playNow = true)
+    }
+
+    /**
+     * True while the UI is running an animation the user is watching (the player opening or
+     * closing). Big queue updates wait for it; set by the ViewModel.
+     */
+    @Volatile var busy: () -> Boolean = { false }
+
+    /**
+     * Loads a queue. A long one starts with just [start]'s song; the rest is added afterwards in
+     * two calls, once nothing is animating. Every queue change makes Media3 rebuild the whole
+     * queue for Android's media controls (lock screen, notification) on the main thread, so
+     * 2,000 songs in 21 batches meant 21 full rebuilds right after the player opened.
+     */
+    private fun loadQueue(c: MediaController, songs: List<SongEntity>, start: Int, positionMs: Long, playNow: Boolean) {
+        fillJob?.cancel()
         if (songs.size <= 40) {
             _filling.value = false
-            c.setMediaItems(songs.map { it.toMediaItem() }, start, 0L)
-            c.prepare(); c.play()
+            c.setMediaItems(songs.map { it.toMediaItem() }, start, positionMs)
+            c.prepare(); if (playNow) c.play()
             return
         }
         fillStart = start; fillTotal = songs.size; fillInsertedBefore = 0
         _filling.value = true
-        c.setMediaItems(listOf(songs[start].toMediaItem()), 0, 0L)
-        c.prepare(); c.play()
+        c.setMediaItems(listOf(songs[start].toMediaItem()), 0, positionMs)
+        c.prepare(); if (playNow) c.play()
         fillJob = appScope.launch(Dispatchers.Main) {
             try {
-                delay(650) // the player's opening animation
+                suspend fun idle() { delay(400); while (busy()) delay(50); delay(200) }
+                idle()
                 val after = withContext(Dispatchers.Default) { songs.subList(start + 1, songs.size).map { it.toMediaItem() } }
-                for (chunk in after.chunked(100)) { c.addMediaItems(chunk); delay(24) }
+                if (after.isNotEmpty()) c.addMediaItems(after)
+                idle()
                 val before = withContext(Dispatchers.Default) { songs.subList(0, start).map { it.toMediaItem() } }
-                var at = 0
-                for (chunk in before.chunked(100)) { fillInsertedBefore = at + chunk.size; c.addMediaItems(at, chunk); at += chunk.size; delay(24) }
+                if (before.isNotEmpty()) { fillInsertedBefore = before.size; c.addMediaItems(0, before) }
             } finally {
                 _filling.value = false
                 publish()
@@ -152,8 +169,8 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
         c ?: return
         kotlinx.coroutines.withContext(Dispatchers.Main) {
             if (c.mediaItemCount > 0) return@withContext
-            c.setMediaItems(songs.map { it.toMediaItem() }, index.coerceIn(0, songs.lastIndex), positionMs.coerceAtLeast(0))
-            c.prepare()
+            // Same gradual loading as play(), so app start doesn't hand Media3 2,000 songs at once.
+            loadQueue(c, songs, index.coerceIn(0, songs.lastIndex), positionMs.coerceAtLeast(0), playNow = false)
         }
     }
 

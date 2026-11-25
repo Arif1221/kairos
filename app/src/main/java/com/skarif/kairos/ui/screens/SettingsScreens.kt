@@ -268,6 +268,30 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
             }
 
             Card(Modifier.appear(7)) {
+                // On-device frame timing: what to send when something lags.
+                Text("Performance log", style = T.h2, color = c.text)
+                var summary by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(com.skarif.kairos.perf.PerfLog.summary()) }
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    while (true) { summary = com.skarif.kairos.perf.PerfLog.summary(); kotlinx.coroutines.delay(1000) }
+                }
+                Text(summary, style = T.title, color = c.text)
+                Text(
+                    "Every frame that took too long since the app started, with what was happening at that moment. " +
+                        "If something lags, do it a few times, then share this. It stays on your phone until you share it.",
+                    style = T.small, color = c.muted,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill("Share log", {
+                        val version = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""
+                        val text = com.skarif.kairos.perf.PerfLog.report(version, "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE}")
+                        val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, text)
+                        runCatching { ctx.startActivity(android.content.Intent.createChooser(send, "Share performance log")) }
+                    }, icon = Ic.Up, selected = true)
+                    Pill("Reset", { com.skarif.kairos.perf.PerfLog.clear(); summary = com.skarif.kairos.perf.PerfLog.summary() }, icon = Ic.Refresh)
+                }
+            }
+
+            Card(Modifier.appear(8)) {
                 Text("About", style = T.h2, color = c.text)
                 val version = androidx.compose.runtime.remember {
                     runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""

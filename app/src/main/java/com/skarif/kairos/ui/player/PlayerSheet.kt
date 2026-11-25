@@ -274,6 +274,17 @@ fun PlayerSheet(
         }
     }
 
+    // Publish "the player is animating" for work that should wait (see PlayerMotion).
+    LaunchedEffect(ctrl) {
+        androidx.compose.runtime.snapshotFlow { ctrl.progress.isRunning || ctrl.dragging }
+            .collect {
+                com.skarif.kairos.ui.motion.PlayerMotion.animating = it
+                com.skarif.kairos.perf.PerfLog.state(
+                    "player",
+                    when { !it -> null; ctrl.dragging -> "dragging"; ctrl.progress.targetValue > 0.5f -> "opening"; else -> "closing" },
+                )
+            }
+    }
     var warmBackdrop by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { kotlinx.coroutines.delay(800); warmBackdrop = true }
     BoxWithConstraints(Modifier.fillMaxSize()) {

@@ -35,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -307,7 +308,16 @@ fun NowPlayingPane(
             // opening animation's first frames only have the visible part of the player to build.
             var cardsReady by remember { androidx.compose.runtime.mutableStateOf(false) }
             val shown = LocalPlayerVisible.current.value
-            LaunchedEffect(shown) { if (shown && !cardsReady) { kotlinx.coroutines.delay(450); cardsReady = true } }
+            LaunchedEffect(shown) {
+                if (shown && !cardsReady) {
+                    kotlinx.coroutines.delay(150)
+                    androidx.compose.runtime.snapshotFlow { com.skarif.kairos.ui.motion.PlayerMotion.animating }.first { !it }
+                    com.skarif.kairos.perf.PerfLog.state("player cards", "building")
+                    cardsReady = true
+                    kotlinx.coroutines.delay(300)
+                    com.skarif.kairos.perf.PerfLog.state("player cards", null)
+                }
+            }
             if (cardsReady) NowPlayingCards(vm, s, onQueue = onQueue, onLyrics = onLyrics, onOpenCollection = onOpenCollection)
     }
 }
