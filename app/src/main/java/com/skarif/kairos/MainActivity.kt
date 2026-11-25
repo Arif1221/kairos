@@ -250,6 +250,10 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 exitTransition = Motion.exit,
                 popEnterTransition = Motion.popEnter,
                 popExitTransition = Motion.popExit,
+                // The back *gesture* has its own pair (Navigation 2.10); left unset it falls back to
+                // Material's shrink-into-a-card. Use the same iOS slide, following the thumb.
+                predictivePopEnterTransition = { _ -> Motion.popEnter(this) },
+                predictivePopExitTransition = { _ -> Motion.popExit(this) },
             ) {
                 screen("onboarding") {
                     OnboardingScreen(vm) { nav.navigate("home") { popUpTo("onboarding") { inclusive = true } } }

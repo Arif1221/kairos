@@ -2,6 +2,10 @@
 
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
+## Unreleased
+- Fixed: swiping back shrank the page into a floating card. The back swipe now slides the page away like iOS, following your thumb.
+- The album cover shows through the background more clearly, especially pale covers in the light theme.
+
 ## 0.8.3 (2026-11-25)
 - The blurred album cover is back behind every page, lighter so the cover's colours show.
 - Lyrics follow the light or dark theme and sit on the same cover background as the player.

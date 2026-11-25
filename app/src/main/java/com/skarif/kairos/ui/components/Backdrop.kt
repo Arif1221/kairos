@@ -98,7 +98,9 @@ fun Modifier.backdrop(alpha: () -> Float = { 1f }): Modifier {
                 val f = state.fade.value
                 state.previous?.let { drawCover(it, a * (1f - f)) }
                 cur?.let { drawCover(it, a * f) }
-                drawRect(c.veil, alpha = a)
+                // The theme's wash, at about two thirds strength: full strength (62% white in the
+                // light theme) all but hid pale covers.
+                drawRect(c.veil, alpha = a * 0.68f)
             }
             drawRect(dots, alpha = a)
         }
