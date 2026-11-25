@@ -1,42 +1,51 @@
 package com.skarif.kairos.ui.motion
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationState
 import androidx.compose.animation.core.DecayAnimationSpec
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateDecay
 import androidx.compose.animation.core.exponentialDecay
+import androidx.compose.foundation.OverscrollEffect
+import androidx.compose.foundation.OverscrollFactory
 import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.gestures.ScrollScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.Measurable
+import androidx.compose.ui.layout.MeasureResult
+import androidx.compose.ui.layout.MeasureScope
+import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.ui.node.LayoutModifierNode
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Velocity
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
 
 /*
- * Scrolling, iOS style:
- * - [rememberIosFling]: a fling that glides longer and slows down evenly, like UIScrollView
- *   (Android's spline fling stops sooner and more abruptly).
- * - [RubberBand]: pulling past the top or bottom of a list stretches it with growing resistance
- *   and springs back; a fling that hits the end overshoots a little and bounces back.
- * - [RubberBand.pull] lets headers react to the pull: large titles grow, covers zoom.
+ * Scrolling, iOS style.
+ * - [rememberIosFling]: a fling that glides longer and slows evenly, like UIScrollView.
+ * - [RubberBand]: pulling past either end stretches the content with growing resistance and
+ *   springs back; a fling that hits the end overshoots a little and settles.
+ *
+ * The rubber band is a real Compose [OverscrollEffect], so the list itself hands it exactly the
+ * scroll it couldn't use and the fling speed left over. (The old version listened from the
+ * outside through nested scrolling, and a leftover stretch could swallow a whole fling: the list
+ * stopped dead and needed a slow drag to get going again.)
+ *
+ * Every scrollable in the app gets it through [IosOverscrollFactory]; screens whose header reacts
+ * to the pull (large titles growing) create one with [rememberRubberBand] and read [RubberBand.pull].
  */
 
-/**
- * iOS's normal deceleration is 0.998 per millisecond, an exponential decay of about 2 per second.
- * Compose's exponential decay runs at 4.2 per second times the multiplier, so 0.5 is iOS-like.
- */
+/** iOS decelerates by 0.998 per ms; Compose's exponential decay × 0.5 is about the same. */
 private val IosDecay: DecayAnimationSpec<Float> = exponentialDecay(frictionMultiplier = 0.5f)
 
 private class IosFling(private val decay: DecayAnimationSpec<Float>) : FlingBehavior {
@@ -49,86 +58,91 @@ private class IosFling(private val decay: DecayAnimationSpec<Float>) : FlingBeha
             val used = scrollBy(delta)
             last = value
             left = velocity
-            // Hit the end of the list: hand the leftover speed to the rubber band.
+            // Reached the end: stop and hand the remaining speed to the rubber band.
             if (abs(delta - used) > 0.5f) cancelAnimation()
         }
-        return left
+        return if (abs(left) < 1f) 0f else left
     }
 }
 
 @Composable
 fun rememberIosFling(): FlingBehavior = remember { IosFling(IosDecay) }
 
-/** The stretch at the ends of a list. Positive [pull] = pulled down at the top. */
+/** The stretch at the ends of a scrollable. [pull] is in pixels; positive = pulled down/right. */
 @Stable
-class RubberBand internal constructor(private val scope: CoroutineScope) {
-    private val offset = Animatable(0f)
-    /** Current stretch in pixels; read it in a graphicsLayer/draw lambda. */
-    val pull: Float get() = offset.value
-    internal var dragging = false
+class RubberBand : OverscrollEffect {
+    private var stretch by mutableStateOf(Offset.Zero)
+    private var sizePx = Offset(2400f, 2400f)
 
-    /** iOS's rubber-band curve: the further you pull, the less it moves. */
-    internal fun resist(current: Float, delta: Float, dimension: Float): Float {
-        val c = 0.55f
-        val x = abs(current) + abs(delta)
-        // Inverse of f(x) = (1 - 1/(x*c/d + 1)) * d, applied incrementally.
-        val factor = (1f - (x / dimension).coerceIn(0f, 0.95f)) * c
+    /** Vertical stretch; read it while drawing (large titles grow with it). */
+    val pull: Float get() = stretch.y
+
+    override val isInProgress: Boolean get() = stretch != Offset.Zero
+
+    /** iOS's rubber-band curve, applied step by step: the further it's pulled, the less it moves. */
+    private fun resist(current: Float, delta: Float, dimension: Float): Float {
+        if (delta == 0f) return 0f
+        val factor = (1f - (abs(current) / dimension).coerceIn(0f, 0.95f)) * 0.55f
         return delta * factor
     }
 
-    internal fun nudge(by: Float) { scope.launch(start = CoroutineStart.UNDISPATCHED) { offset.snapTo(offset.value + by) } }
+    /** How much of [d] undoes the stretch [p] (scrolling back first un-stretches). */
+    private fun relax(p: Float, d: Float): Float =
+        if (p == 0f || d == 0f || sign(d) == sign(p)) 0f else if (abs(d) >= abs(p)) -p else d
 
-    internal fun release(velocity: Float = 0f) {
-        scope.launch { offset.animateTo(0f, Motion.ios(0.45f, 1f), initialVelocity = velocity) }
+    override fun applyToScroll(delta: Offset, source: NestedScrollSource, performScroll: (Offset) -> Offset): Offset {
+        // Flings scroll normally; what they can't use comes back to applyToFling as speed.
+        if (source != NestedScrollSource.UserInput) return performScroll(delta)
+        val undo = Offset(relax(stretch.x, delta.x), relax(stretch.y, delta.y))
+        var s = stretch + undo
+        val rest = delta - undo
+        val used = performScroll(rest)
+        val left = rest - used
+        s += Offset(resist(s.x, left.x, sizePx.x), resist(s.y, left.y, sizePx.y))
+        stretch = s.snapTiny()
+        return delta
     }
 
-    /** A fling hit the end: overshoot by its leftover speed, then spring back (iOS bounce). */
-    internal fun bounce(velocity: Float) {
-        scope.launch {
-            offset.snapTo(offset.value)
-            offset.animateTo(0f, Motion.ios(0.5f, 0.82f), initialVelocity = (velocity * 0.35f).coerceIn(-6000f, 6000f))
+    override suspend fun applyToFling(velocity: Velocity, performFling: suspend (Velocity) -> Velocity) {
+        if (stretch != Offset.Zero) {
+            // Let go while stretched: spring back, carrying the finger's speed.
+            settle(velocity.x, velocity.y, Motion.ios(0.4f, 1f))
+            return
+        }
+        val left = performFling(velocity)
+        // A fling ran into the end: overshoot by what was left of its speed, then settle.
+        if (abs(left.x) > 50f || abs(left.y) > 50f) {
+            settle((left.x * 0.35f).coerceIn(-6000f, 6000f), (left.y * 0.35f).coerceIn(-6000f, 6000f), Motion.ios(0.5f, 1f))
         }
     }
+
+    private suspend fun settle(vx: Float, vy: Float, spec: androidx.compose.animation.core.AnimationSpec<Float>) = coroutineScope {
+        launch { animate(stretch.x, 0f, vx, spec) { v, _ -> stretch = Offset(v, stretch.y) } }
+        launch { animate(stretch.y, 0f, vy, spec) { v, _ -> stretch = Offset(stretch.x, v) } }
+    }
+
+    private fun Offset.snapTiny() = Offset(if (abs(x) < 0.5f) 0f else x, if (abs(y) < 0.5f) 0f else y)
+
+    /** Moves the content by the stretch. Changing it only updates the layer, never relayouts. */
+    private inner class Node : Modifier.Node(), LayoutModifierNode {
+        override fun MeasureScope.measure(measurable: Measurable, constraints: Constraints): MeasureResult {
+            val p = measurable.measure(constraints)
+            sizePx = Offset(p.width.toFloat().coerceAtLeast(1f), p.height.toFloat().coerceAtLeast(1f))
+            return layout(p.width, p.height) {
+                p.placeWithLayer(0, 0) { translationX = stretch.x; translationY = stretch.y }
+            }
+        }
+    }
+
+    override val node: DelegatableNode = Node()
 }
 
 @Composable
-fun rememberRubberBand(): RubberBand {
-    val scope = rememberCoroutineScope()
-    return remember { RubberBand(scope) }
+fun rememberRubberBand(): RubberBand = remember { RubberBand() }
+
+/** Gives every scrollable in the app the iOS rubber band. Provided at the app root. */
+object IosOverscrollFactory : OverscrollFactory {
+    override fun createOverscrollEffect(): OverscrollEffect = RubberBand()
+    override fun hashCode(): Int = 0x105
+    override fun equals(other: Any?): Boolean = other === this
 }
-
-/**
- * Put this before `verticalScroll` / on a lazy list's modifier. It catches scrolling the list
- * couldn't use (it was already at an end) and turns it into the stretch, drawn as a translation
- * of the whole list. Android's own stretch effect is turned off app-wide in MainActivity.
- */
-fun Modifier.rubberBand(band: RubberBand, dimensionPx: Float = 2400f): Modifier = this
-    .nestedScroll(object : NestedScrollConnection {
-        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-            // While stretched, scrolling back first undoes the stretch.
-            val p = band.pull
-            if (source != NestedScrollSource.UserInput || p == 0f || available.y == 0f || sign(available.y) == sign(p)) return Offset.Zero
-            val take = if (abs(available.y) > abs(p)) -p else available.y
-            band.nudge(take)
-            return Offset(0f, take)
-        }
-
-        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-            if (source != NestedScrollSource.UserInput || available.y == 0f) return Offset.Zero
-            band.dragging = true
-            band.nudge(band.resist(band.pull, available.y, dimensionPx))
-            return Offset(0f, available.y)
-        }
-
-        override suspend fun onPreFling(available: Velocity): Velocity {
-            if (band.pull != 0f) { band.dragging = false; band.release(available.y); return available }
-            return Velocity.Zero
-        }
-
-        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-            band.dragging = false
-            if (abs(available.y) > 50f) band.bounce(available.y)
-            return available
-        }
-    })
-    .graphicsLayer { translationY = band.pull }

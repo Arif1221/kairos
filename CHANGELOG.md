@@ -3,6 +3,8 @@
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
 ## Unreleased
+- Fixed: tapping play made the cover jump, with a corner sticking out of its frame.
+- Fixed: scrolling sometimes stopped dead until you scrolled slowly again. The iOS rubber band is rebuilt on Compose's own overscroll support and now applies to every list.
 - Rebuilt on current Android tools: Compose 1.13, Media3 1.11, Kotlin 2.4, AGP 9.5, Android 17 SDK.
 - New motion system, iOS style and lighter:
   - pages are opaque and push like iOS: the new page slides over and the old one slides back and dims;

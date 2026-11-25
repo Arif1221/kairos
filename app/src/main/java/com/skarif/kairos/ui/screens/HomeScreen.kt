@@ -43,7 +43,6 @@ import com.skarif.kairos.ui.components.PillMeter
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.components.CompactTitleBar
 import com.skarif.kairos.ui.components.stretchTitle
-import com.skarif.kairos.ui.motion.rubberBand
 import kotlinx.coroutines.launch
 import com.skarif.kairos.ui.components.sharedCard
 import com.skarif.kairos.ui.components.cardClick
@@ -97,8 +96,8 @@ fun HomeScreen(
     ScreenBackground {
         Column(
             Modifier.fillMaxSize()
-                .rubberBand(band)
-                .verticalScroll(scroll, flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling())
+                
+                .verticalScroll(scroll, overscrollEffect = band, flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling())
                 .padding(bottom = 230.dp),
             verticalArrangement = Arrangement.spacedBy(22.dp),
         ) {

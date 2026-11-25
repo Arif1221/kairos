@@ -63,7 +63,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.SongSort
 import com.skarif.kairos.ui.motion.Motion
-import com.skarif.kairos.ui.motion.rubberBand
 import com.skarif.kairos.ui.components.stretchTitle
 import com.skarif.kairos.data.matchesQuery
 import com.skarif.kairos.data.db.SongEntity
@@ -190,9 +189,10 @@ fun LibraryScreen(
     ScreenBackground {
         LazyVerticalGrid(
             GridCells.Fixed(2),
-            Modifier.fillMaxSize().rubberBand(band),
+            Modifier.fillMaxSize(),
             state = grid,
             flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
+            overscrollEffect = band,
             contentPadding = PaddingValues(bottom = 230.dp),
             // Build rows a screen ahead while idle (pausable composition spreads it over frames).
             cacheWindow = androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow(ahead = 480.dp, behind = 160.dp),

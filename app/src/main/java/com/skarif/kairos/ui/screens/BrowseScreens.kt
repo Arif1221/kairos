@@ -64,7 +64,6 @@ import com.skarif.kairos.ui.components.Pill
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.components.CompactTitleBar
 import com.skarif.kairos.ui.components.stretchTitle
-import com.skarif.kairos.ui.motion.rubberBand
 import kotlinx.coroutines.launch
 import com.skarif.kairos.ui.components.ScreenHeader
 import com.skarif.kairos.ui.components.sharedCard
@@ -133,9 +132,10 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
     ScreenBackground {
         LazyVerticalGrid(
             GridCells.Fixed(2),
-            Modifier.fillMaxSize().rubberBand(band),
+            Modifier.fillMaxSize(),
             state = searchGrid,
             flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
+            overscrollEffect = band,
             contentPadding = PaddingValues(bottom = 230.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -285,8 +285,9 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
     ScreenBackground {
         LazyVerticalGrid(
             GridCells.Fixed(2),
-            Modifier.fillMaxSize().statusBarsPadding().rubberBand(band),
+            Modifier.fillMaxSize().statusBarsPadding(),
             flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
+            overscrollEffect = band,
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -520,8 +521,9 @@ fun CollectionScreen(
     val band = com.skarif.kairos.ui.motion.rememberRubberBand()
     Box(Modifier.fillMaxSize().background(c.bg)) {
         LazyColumn(
-            Modifier.fillMaxSize().rubberBand(band), state = listState,
+            Modifier.fillMaxSize(), state = listState,
             flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
+            overscrollEffect = band,
             contentPadding = PaddingValues(bottom = 40.dp),
         ) {
             item {

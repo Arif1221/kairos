@@ -36,7 +36,6 @@ import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.components.CompactTitleBar
 import com.skarif.kairos.ui.components.stretchTitle
-import com.skarif.kairos.ui.motion.rubberBand
 import kotlinx.coroutines.launch
 import com.skarif.kairos.ui.theme.P
 import com.skarif.kairos.ui.theme.T
@@ -78,8 +77,8 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
 
     ScreenBackground {
         Column(
-            Modifier.fillMaxSize().rubberBand(band)
-                .verticalScroll(scroll, flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling())
+            Modifier.fillMaxSize()
+                .verticalScroll(scroll, overscrollEffect = band, flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling())
                 .padding(bottom = 230.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {

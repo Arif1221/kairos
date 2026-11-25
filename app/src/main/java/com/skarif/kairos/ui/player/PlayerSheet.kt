@@ -367,8 +367,9 @@ fun PlayerSheet(
         // 2. The cover, morphing between the mini player, the hero and each page's thumbnail.
         // Neighbours sit either side for swiping between songs.
         // Apple Music's touch: the cover settles back a little while paused and springs forward on play.
+        // No overshoot: a bounce past full size pushed the cover out of its frame on play.
         val pauseScale by androidx.compose.animation.core.animateFloatAsState(
-            if (now.isPlaying) 1f else 0.94f, Motion.bouncy(), label = "pauseScale",
+            if (now.isPlaying) 1f else 0.94f, Motion.ios(0.45f, 1f), label = "pauseScale",
         )
         @Composable
         fun cover(img: ImageBitmap?, offset: Int, desc: String?) {
@@ -391,13 +392,14 @@ fun PlayerSheet(
                         translationX = if (offset == 0) ctrl.skipX.value else ctrl.skipX.value + offset * size.width
                         if (offset == 0 && ctrl.page == PlayerPage.MAIN) {
                             // Shrink toward the centre while paused, only once the player is open.
-                            val s = 1f - (1f - pauseScale) * p.coerceIn(0f, 1f)
+                            val k = ((1f - pauseScale) / 0.06f).coerceIn(0f, 1f) * p.coerceIn(0f, 1f)
+                            val s = (1f - 0.06f * k).coerceAtMost(1f)
                             scaleX = s; scaleY = s
-                            // A paused cover becomes a rounded card all round, like iOS.
-                            if (pauseScale < 0.999f) {
-                                val r = mix(top, corners.y, ((1f - pauseScale) / 0.06f).coerceIn(0f, 1f)).coerceAtLeast(0f)
-                                shape = RoundedCornerShape(r)
-                            }
+                            // Paused, the square top corners round off to match the bottom ones, like a
+                            // card. Only the top changes, gradually; the bottom keeps its radius, so no
+                            // corner ever jumps from one frame to the next.
+                            val t = mix(top, bottom, k).coerceAtLeast(0f)
+                            shape = RoundedCornerShape(topStart = t, topEnd = t, bottomStart = bottom, bottomEnd = bottom)
                         }
                         if (offset != 0) alpha = (0.55f + 0.45f * (1f - abs(translationX) / size.width)).coerceIn(0f, 1f)
                     }

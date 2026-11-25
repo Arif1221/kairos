@@ -45,7 +45,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import com.skarif.kairos.data.OutputMode
-import com.skarif.kairos.ui.motion.rubberBand
 import com.skarif.kairos.data.SongSort
 import com.skarif.kairos.ui.MainViewModel
 import com.skarif.kairos.ui.components.pressScale
@@ -186,7 +185,7 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
 
             Box(Modifier.weight(1f)) {
                 LazyColumn(
-                    Modifier.fillMaxSize().rubberBand(com.skarif.kairos.ui.motion.rememberRubberBand()), state = list,
+                    Modifier.fillMaxSize(), state = list,
                     flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
                     contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 2.dp, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),

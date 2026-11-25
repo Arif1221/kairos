@@ -215,12 +215,12 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
             )
         }
 
-        // Android's stretch at the ends of lists is replaced by an iOS rubber band (ui/motion/Scroll.kt).
+        // Every list gets the iOS rubber band instead of Android's stretch (ui/motion/Scroll.kt).
         val backArt by vm.artwork.collectAsStateWithLifecycle()
         val backdrop = com.skarif.kairos.ui.components.rememberBackdrop(backArt, settings.blurBackground)
         CompositionLocalProvider(
             LocalPlayer provides player, com.skarif.kairos.ui.components.LocalBackdrop provides backdrop,
-            androidx.compose.foundation.LocalOverscrollFactory provides null,
+            androidx.compose.foundation.LocalOverscrollFactory provides com.skarif.kairos.ui.motion.IosOverscrollFactory,
         ) {
         // Black behind everything: what shows around the app when it sinks back behind the player.
         Box(Modifier.fillMaxSize().background(Color.Black)) {
