@@ -183,7 +183,25 @@ class Taste(
     val favourites: Set<Long>,
     /** Listening time per artist (normalized name), for "you like this artist" boosts. */
     val artistMs: Map<String, Long>,
+    /** Songs you play near each other in the same sitting: song -> (neighbour -> strength 0..1). */
+    val together: Map<Long, Map<Long, Float>> = emptyMap(),
+    /** When each song was last played (epoch ms). */
+    val lastPlayedAt: Map<Long, Long> = emptyMap(),
 ) {
+    /**
+     * Pushes back what you heard very recently, so radio and suggestions don't replay yesterday:
+     * the last 2 days count 0.3, the last week 0.7, older 1. Never zero.
+     */
+    fun freshness(s: SongEntity, now: Long = System.currentTimeMillis()): Double {
+        val at = lastPlayedAt[s.id] ?: return 1.0
+        val age = now - at
+        return when {
+            age < 2L * 24 * 3600 * 1000 -> 0.3
+            age < 7L * 24 * 3600 * 1000 -> 0.7
+            else -> 1.0
+        }
+    }
+
     private val maxArtistMs = (artistMs.values.maxOrNull() ?: 0L).coerceAtLeast(1L)
 
     /** Higher = more likely to be picked. Never zero, so everything can still turn up. */
@@ -232,58 +250,160 @@ fun spreadShuffle(songs: List<SongEntity>, rnd: Random): List<SongEntity> {
             placed += (start + i.toDouble() / n + jitter) to s
         }
     }
-    return placed.sortedBy { it.first }.map { it.second }
+    return separateAlbums(placed.sortedBy { it.first }.map { it.second })
+}
+
+/** Moves a song down the list when it would follow another from the same album. */
+private fun separateAlbums(list: List<SongEntity>): List<SongEntity> {
+    val out = list.toMutableList()
+    for (i in 1 until out.size) {
+        if (out[i].albumId != out[i - 1].albumId) continue
+        val j = (i + 1 until out.size).firstOrNull { out[it].albumId != out[i - 1].albumId } ?: continue
+        val t = out[i]; out[i] = out[j]; out[j] = t
+    }
+    return out
+}
+
+/**
+ * The "played together" map from your history: plays are split into sittings (a gap of more than
+ * 30 minutes ends one), and songs up to 3 places apart in a sitting are linked, nearer ones more.
+ * Each song keeps its 30 strongest links, scaled to 0..1.
+ */
+fun playedTogether(plays: List<Pair<Long, Long>>): Map<Long, Map<Long, Float>> {
+    val sorted = plays.sortedBy { it.second }
+    val raw = HashMap<Long, HashMap<Long, Float>>()
+    var start = 0
+    for (i in sorted.indices) {
+        if (i > 0 && sorted[i].second - sorted[i - 1].second > 30 * 60_000L) start = i
+        for (d in 1..3) {
+            val j = i - d
+            if (j < start) break
+            val a = sorted[i].first; val b = sorted[j].first
+            if (a == b) continue
+            val w = 1f / d
+            raw.getOrPut(a) { HashMap() }.merge(b, w, Float::plus)
+            raw.getOrPut(b) { HashMap() }.merge(a, w, Float::plus)
+        }
+    }
+    return raw.mapValues { (_, m) ->
+        val top = m.entries.sortedByDescending { it.value }.take(30)
+        val max = top.firstOrNull()?.value ?: 1f
+        top.associate { it.key to it.value / max }
+    }
 }
 
 // ---------------------------------------------------------------- similar songs (autoplay, smart shuffle)
 
 /**
- * Songs that fit after [seeds]: sharing an artist counts most, sharing a genre next, and within
- * that your taste decides. Later seeds count more, so autoplay follows where the queue went.
- * If the library has too few tags to find enough, songs you like fill the rest.
+ * Songs that fit after [seeds], for song radio, autoplay and Smart Shuffle.
+ *
+ * How well a song fits: played together with the seeds in your own sittings counts most (x3), then
+ * a shared artist (x2), a shared genre (x1.2) and a close release year (x0.4). Later seeds count
+ * more, so autoplay follows where the queue went. That fit is multiplied by your taste and by
+ * freshness (songs heard in the last days step back).
+ *
+ * Variety: no artist takes more than a quarter of the list, no album more than 2 songs.
+ * With [drift] the closest matches come first (shuffled in groups of 8) and it widens from there,
+ * like a radio station; without it the picks are spread evenly.
+ * If tags are too thin to find enough, songs you like fill the rest.
  */
 fun similarSongs(
     seeds: List<SongEntity>, all: List<SongEntity>, taste: Taste, n: Int, rnd: Random, exclude: Set<Long> = emptySet(),
+    drift: Boolean = false,
 ): List<SongEntity> {
     if (seeds.isEmpty() || n <= 0) return emptyList()
     val artistW = HashMap<String, Double>()
     val genreW = HashMap<String, Double>()
+    val togetherW = HashMap<Long, Double>()
+    val years = seeds.mapNotNull { it.year.takeIf { y -> y > 0 } }
+    val year = if (years.isEmpty()) 0 else years.sorted()[years.size / 2]
     seeds.forEachIndexed { i, s ->
         val w = 1.0 + i.toDouble() / seeds.size
         splitArtists(s.artist).forEach { artistW.merge(normalize(it), w, Double::plus) }
         splitGenres(s.genre).forEach { genreW.merge(genreKey(it), w, Double::plus) }
+        taste.together[s.id]?.forEach { (id, t) -> togetherW.merge(id, w * t, Double::plus) }
     }
     artistW.remove(normalize(UNKNOWN_ARTIST))
     val maxA = artistW.values.maxOrNull() ?: 1.0
     val maxG = genreW.values.maxOrNull() ?: 1.0
+    val maxT = togetherW.values.maxOrNull() ?: 1.0
     val skip = exclude + seeds.map { it.id }
+    val now = System.currentTimeMillis()
     val open = all.filter { it.id !in skip }
     val scored = open.mapNotNull { s ->
         val a = splitArtists(s.artist).maxOf { artistW[normalize(it)] ?: 0.0 } / maxA
         val g = (splitGenres(s.genre).maxOfOrNull { genreW[genreKey(it)] ?: 0.0 } ?: 0.0) / maxG
-        val sim = 2.0 * a + 1.5 * g
-        if (sim > 0) s to sim else null
+        val t = (togetherW[s.id] ?: 0.0) / maxT
+        val y = if (year > 0 && s.year > 0) (1.0 - kotlin.math.abs(s.year - year) / 15.0).coerceAtLeast(0.0) else 0.0
+        val sim = 3.0 * t + 2.0 * a + 1.2 * g + 0.4 * y
+        if (sim > 0.4) s to sim else null
     }
-    val pool = if (scored.size >= n) scored else {
-        val have = scored.mapTo(HashSet()) { it.first.id }
-        scored + open.filter { it.id !in have }.map { it to 0.15 }
+    // Draw three times as many matches as needed, by weight, then keep them while the variety
+    // caps allow. Only real matches are drawn here: mixing the fallback in with them let forty
+    // barely-weighted songs outweigh five good ones.
+    val weight = { p: Pair<SongEntity, Double> -> p.second * taste.score(p.first) * taste.freshness(p.first, now) }
+    val drawn = weightedSample(scored, minOf(scored.size, n * 3), rnd, weight)
+    val perArtist = HashMap<String, Int>()
+    val perAlbum = HashMap<Long, Int>()
+    val artistCap = (n / 4).coerceAtLeast(2)
+    val picked = ArrayList<Pair<SongEntity, Double>>(n)
+    for ((s, sim) in drawn) {
+        if (picked.size >= n) break
+        // Untagged songs share one "Unknown" album and artist on Android: those aren't capped,
+        // or every loose file in the library would count as one album.
+        val artist = normalize(splitArtists(s.artist).first()).takeIf { it != normalize(UNKNOWN_ARTIST) }
+        val album = s.albumId.takeIf { s.album.isNotBlank() && s.album != UNKNOWN_ALBUM }
+        if (artist != null && (perArtist[artist] ?: 0) >= artistCap) continue
+        if (album != null && (perAlbum[album] ?: 0) >= 2) continue
+        artist?.let { perArtist.merge(it, 1, Int::plus) }
+        album?.let { perAlbum.merge(it, 1, Int::plus) }
+        picked += s to sim
     }
-    return spreadShuffle(weightedSample(pool, n, rnd) { (s, sim) -> sim * taste.score(s) }.map { it.first }, rnd)
+    // Not enough matches (thin tags, a small library): songs you like fill the rest...
+    if (picked.size < n) {
+        val have = picked.mapTo(HashSet()) { it.first.id } + scored.map { it.first.id }
+        val fallback = open.filter { it.id !in have }
+        weightedSample(fallback, n - picked.size, rnd) { taste.score(it) * taste.freshness(it, now) }.forEach { picked += it to 0.1 }
+    }
+    // ...and only then matches the caps held back.
+    if (picked.size < n) {
+        val have = picked.mapTo(HashSet()) { it.first.id }
+        drawn.filter { it.first.id !in have }.take(n - picked.size).forEach { picked += it }
+    }
+    return if (drift) {
+        picked.sortedByDescending { it.second }.chunked(8).flatMap { band -> spreadShuffle(band.map { it.first }, rnd) }
+    } else {
+        spreadShuffle(picked.map { it.first }, rnd)
+    }
 }
 
 /**
- * Smart Shuffle: the list shuffled, with one suggestion from your library after every
- * [every] songs. Suggestions never repeat a song already in the list.
+ * Smart Shuffle: the list shuffled, with one suggestion from your library after every [every]
+ * songs. Each suggestion is chosen to fit the two songs around it (not just the list as a whole),
+ * from a pool of songs that fit the list; none repeats or is already in the list.
  */
 fun smartShuffle(list: List<SongEntity>, all: List<SongEntity>, taste: Taste, rnd: Random, exclude: Set<Long>, every: Int = 3): List<SongEntity> {
     val base = spreadShuffle(list, rnd)
-    val extra = similarSongs(list, all, taste, (list.size / every).coerceIn(1, 60), rnd, exclude + list.map { it.id })
-    if (extra.isEmpty()) return base
-    val out = ArrayList<SongEntity>(base.size + extra.size)
-    var e = 0
+    val slots = (base.size / every).coerceIn(1, 60)
+    val pool = similarSongs(list, all, taste, slots * 3, rnd, exclude + list.map { it.id }).toMutableList()
+    if (pool.isEmpty()) return base
+    fun fit(c: SongEntity, around: List<SongEntity>): Double = around.sumOf { s ->
+        var f = 0.1
+        if (splitArtists(c.artist).any { a -> splitArtists(s.artist).any { normalize(it) == normalize(a) } }) f += 1.0
+        if (splitGenres(c.genre).any { g -> splitGenres(s.genre).any { genreKey(it) == genreKey(g) } }) f += 0.8
+        f += 1.5 * (taste.together[s.id]?.get(c.id) ?: 0f)
+        f
+    }
+    val out = ArrayList<SongEntity>(base.size + slots)
     base.forEachIndexed { i, s ->
         out += s
-        if ((i + 1) % every == 0 && e < extra.size) out += extra[e++]
+        if ((i + 1) % every == 0 && pool.isNotEmpty()) {
+            val around = listOfNotNull(s, base.getOrNull(i + 1))
+            // The best fit among a few random candidates: fitting, but not the same every time.
+            val c = pool.shuffled(rnd).take(6).maxByOrNull { fit(it, around) } ?: return@forEachIndexed
+            pool.remove(c)
+            out += c
+        }
     }
     return out
 }

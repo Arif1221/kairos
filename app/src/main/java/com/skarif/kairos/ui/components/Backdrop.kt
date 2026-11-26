@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -142,17 +143,24 @@ fun Modifier.backdrop(alpha: () -> Float = { 1f }): Modifier {
 /** The tiny cover stretched to fill, cropped to keep its square shape (like ContentScale.Crop, zoomed 1.2×). */
 private fun DrawScope.drawCover(img: ImageBitmap, alpha: Float, t: Float = 0f) {
     if (alpha <= 0f) return
-    // Living motion: a slow figure-eight drift (two unrelated periods, so it never visibly loops)
-    // and a gentle breath in size. Small enough to stay inside the 1.2x zoom's spare margin.
-    val breath = 1f + 0.035f * sin(t * 2f * PI.toFloat() / 9f)
-    val side = maxOf(size.width, size.height) * 1.2f * breath
-    val dx = size.width * 0.04f * sin(t * 2f * PI.toFloat() / 23f)
-    val dy = size.height * 0.03f * sin(t * 2f * PI.toFloat() / 17f + 1.3f)
+    // Living motion, big enough to see through the blur and the wash: a slow wander (two
+    // unrelated periods, so it never visibly loops), a turn of a few degrees, and a breath in size.
+    // 1.45x zoom keeps the edges off screen at every angle and offset.
+    val tau = 2f * PI.toFloat()
+    val breath = 1f + 0.07f * sin(t * tau / 8f)
+    val side = maxOf(size.width, size.height) * 1.45f * breath
+    val dx = size.width * 0.12f * sin(t * tau / 13f)
+    val dy = size.height * 0.06f * sin(t * tau / 11f + 1.3f)
+    val angle = 7f * sin(t * tau / 19f + 0.6f)
     val dst = IntSize(side.toInt(), side.toInt())
     val off = IntOffset(((size.width - side) / 2 + dx).toInt(), ((size.height - side) / 2 + dy).toInt())
     // The square is wider than a portrait page, so clip it to the page. Unclipped, the overflow
     // painted over the page underneath while this one slid away (the "blur card" on back swipe).
-    clipRect { drawImage(img, dstOffset = off, dstSize = dst, alpha = alpha, filterQuality = FilterQuality.Low) }
+    clipRect {
+        rotate(angle, pivot = center + androidx.compose.ui.geometry.Offset(dx, dy)) {
+            drawImage(img, dstOffset = off, dstSize = dst, alpha = alpha, filterQuality = FilterQuality.Low)
+        }
+    }
 }
 
 private fun dotTile(step: Int, radius: Float, color: Color): ImageBitmap {

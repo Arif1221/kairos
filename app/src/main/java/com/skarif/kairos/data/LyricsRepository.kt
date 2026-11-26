@@ -110,6 +110,40 @@ class LyricsRepository(
         }
     }
 
+    enum class SaveLrc { SAVED, NEED_FOLDER, NOTHING }
+
+    /**
+     * Writes the downloaded lyrics as "<song name>.lrc" next to the song, through a folder the user
+     * allowed with write access (the only place Android lets an app write beside your music).
+     * Overwrites an existing .lrc rather than making "name (1).lrc".
+     */
+    suspend fun saveLrc(song: SongEntity): SaveLrc = withContext(Dispatchers.IO) {
+        val found = online.saved(song.id) ?: return@withContext SaveLrc.NOTHING
+        val text = found.synced ?: found.plain ?: return@withContext SaveLrc.NOTHING
+        val base = song.fileName.substringBeforeLast('.')
+        val volume = if (song.volume == "external_primary" || song.volume == "external") "primary" else song.volume.uppercase()
+        val dirId = "$volume:${song.folder}".trimEnd('/')
+        val fileId = "$volume:${song.folder}$base.lrc"
+        val resolver = context.contentResolver
+        val trees = resolver.persistedUriPermissions.filter { it.isWritePermission }.map { it.uri }
+        for (tree in trees) {
+            val treeId = runCatching { DocumentsContract.getTreeDocumentId(tree) }.getOrNull() ?: continue
+            if (!dirId.startsWith(treeId)) continue
+            val ok = runCatching {
+                val existing = DocumentsContract.buildDocumentUriUsingTree(tree, fileId)
+                val overwrote = runCatching { resolver.openOutputStream(existing, "wt")?.use { it.write(text.toByteArray()) } != null }.getOrDefault(false)
+                if (!overwrote) {
+                    val parent = DocumentsContract.buildDocumentUriUsingTree(tree, dirId)
+                    // octet-stream so the provider keeps the ".lrc" name as given.
+                    val created = DocumentsContract.createDocument(resolver, parent, "application/octet-stream", "$base.lrc") ?: error("not created")
+                    resolver.openOutputStream(created, "wt")!!.use { it.write(text.toByteArray()) }
+                }
+            }.isSuccess
+            if (ok) { cache.evictAll(); return@withContext SaveLrc.SAVED }
+        }
+        SaveLrc.NEED_FOLDER
+    }
+
     /** Back to the song's own lyrics (or none). */
     suspend fun removeDownloaded(song: SongEntity) = withContext(Dispatchers.IO) {
         online.remove(song.id)

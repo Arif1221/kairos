@@ -44,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import com.skarif.kairos.ui.components.pressScale
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -115,6 +116,10 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
     // Lyrics-first: huge type, the controls tucked away. For reading along, or a phone on a stand.
     var big by rememberSaveable { mutableStateOf(false) }
     val downloading by vm.lyricsDownloading.collectAsStateWithLifecycle()
+    // Saving an .lrc beside the song needs a folder you allow once (Android's own picker).
+    val pickLyricsFolder = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
+    ) { uri -> if (uri != null) vm.grantLyricsFolderAndSave(uri) }
     val fromOnline = (state as? LyricsState.Ready)?.lyrics?.source == Lyrics.SOURCE_ONLINE
     // The player's own background (the blurred cover) shows through, as on the main player.
     Box(Modifier.fillMaxSize()    ) {
@@ -134,11 +139,6 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
                     )
                     Text(song?.artist ?: "", style = T.small.copy(fontSize = 12.sp), color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                if (state is LyricsState.Ready) CircleButton(
-                    Ic.Lyrics, if (big) "Normal lyrics" else "Big lyrics",
-                    { big = !big; if (big) { getPanel = false; options = false } },
-                    size = 44.dp, container = if (big) c.accent else Glass, content = if (big) c.onAccent else Fg,
-                )
                 if (!big) CircleButton(
                     if (getPanel) Ic.Close else Ic.DownArrow, if (getPanel) "Hide download" else "Download lyrics",
                     { getPanel = !getPanel; if (getPanel) options = false },
@@ -161,15 +161,19 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text(
-                        if (downloading) "Searching lrclib.net…" else "Download from lrclib.net. Sends only the title, artist, album and length.",
+                        if (downloading) "Searching lrclib.net…"
+                        else "Download from lrclib.net. Kept privately in the app, no permission needed. \"Save .lrc\" also puts a file next to the song.",
                         style = T.small, color = Dim,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         SmallPill("Time-synced", "Download time-synced lyrics") {
                             vm.downloadLyrics(com.skarif.kairos.data.OnlineLyricsType.SYNCED); getPanel = false
                         }
                         SmallPill("Plain text", "Download plain lyrics") {
                             vm.downloadLyrics(com.skarif.kairos.data.OnlineLyricsType.PLAIN); getPanel = false
+                        }
+                        if (fromOnline) SmallPill("Save .lrc", "Save lyrics as a file next to the song") {
+                            vm.saveLyricsFile { vm.notify("Pick the folder this song is in"); pickLyricsFolder.launch(null) }
                         }
                         if (fromOnline) SmallPill("Remove", "Remove downloaded lyrics") { vm.removeDownloadedLyrics(); getPanel = false }
                     }
@@ -224,24 +228,26 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
                 }
             }
 
-            // Compact transport (tucked away in lyrics-first mode).
-            AnimatedVisibility(!big, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            // Compact transport. In lyrics-first mode only the seek bar and skip buttons step away;
+            // Queue, the mode switch and play/pause stay, so the way back is always in reach.
             Column(Modifier.padding(horizontal = 18.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val s = song
-                if (s != null) LiveWaveformSeek(vm, now.durationMs.takeIf { it > 0 } ?: s.durationMs, s.id, barsHeight = 28.dp, bars = 32)
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                AnimatedVisibility(!big, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                    if (s != null) LiveWaveformSeek(vm, now.durationMs.takeIf { it > 0 } ?: s.durationMs, s.id, barsHeight = 28.dp, bars = 32)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CircleButton(Ic.Queue, "Queue", onQueue, size = 46.dp, container = Glass, content = Fg)
+                    if (state is LyricsState.Ready) FocusToggle(big) { big = !big; if (big) { getPanel = false; options = false } }
                     Box(Modifier.weight(1f))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircleButton(Ic.Prev, "Previous song", vm::previous, size = 46.dp, container = Glass, content = Fg)
+                        if (!big) CircleButton(Ic.Prev, "Previous song", vm::previous, size = 46.dp, container = Glass, content = Fg)
                         CircleButton(
                             if (now.isPlaying) Ic.Pause else Ic.Play, if (now.isPlaying) "Pause" else "Play", vm::toggle,
-                            size = 56.dp, container = Color.White, content = Color.Black,
+                            size = if (big) 46.dp else 56.dp, container = Color.White, content = Color.Black,
                         )
-                        CircleButton(Ic.Next, "Next song", vm::next, size = 46.dp, container = Glass, content = Fg)
+                        if (!big) CircleButton(Ic.Next, "Next song", vm::next, size = 46.dp, container = Glass, content = Fg)
                     }
                 }
-            }
             }
         }
     }
@@ -285,9 +291,8 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     // Long-press a line: a share card with the line over the blurred cover, in the album's colour.
-    fun shareLine(text: String) {
+    fun shareLines(text: String) {
         val song = vm.currentSong.value ?: return
-        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         scope.launch {
             val cover = vm.cover(song)
             val bmp = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -308,13 +313,20 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
     // Reading ahead: a drag pauses following and unblurs; 3 s after the last touch it resumes.
     val dragged by list.interactionSource.collectIsDraggedAsState()
     var browsing by remember { mutableStateOf(false) }
+    // Sharing several lines: long-press starts a selection, taps add or remove lines (up to 8).
+    val picked = remember(lyrics) { androidx.compose.runtime.mutableStateListOf<Int>() }
+    val selecting = picked.isNotEmpty()
+    fun toggle(i: Int) {
+        if (i in picked) picked.remove(i) else if (picked.size < 8) picked.add(i)
+        else vm.notify("Up to 8 lines on one card")
+    }
     LaunchedEffect(dragged) {
         if (dragged) browsing = true
         else if (browsing) { kotlinx.coroutines.delay(3000); browsing = false }
     }
 
-    LaunchedEffect(current, browsing, viewport) {
-        if (current < 0 || browsing || viewport == 0) return@LaunchedEffect
+    LaunchedEffect(current, browsing, selecting, viewport) {
+        if (current < 0 || browsing || selecting || viewport == 0) return@LaunchedEffect
         val target = current + header
         val info = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
         if (info == null) {
@@ -344,6 +356,7 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
         cascade.distance = 0f
     }
 
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
         state = list,
         modifier = Modifier.fillMaxSize().onSizeChanged { viewport = it.height },
@@ -375,15 +388,18 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
             val distance = abs(i - current)
             // Brightness and blur by distance from the current line; everything sharp while browsing.
             val alpha by animateFloatAsState(
-                when { browsing -> 0.8f; isCur -> 1f; i < current -> 0.3f; else -> (0.55f - 0.06f * (distance - 1)).coerceAtLeast(0.25f) },
+                when { i in picked -> 1f; browsing || selecting -> 0.8f; isCur -> 1f; i < current -> 0.3f; else -> (0.55f - 0.06f * (distance - 1)).coerceAtLeast(0.25f) },
                 com.skarif.kairos.ui.motion.Motion.ios(0.5f, 1f), label = "lineAlpha",
             )
             // Blur in dp, kept as State and read only while drawing: changing it never recomposes.
             val blur = animateFloatAsState(
-                if (browsing || isCur) 0f else distance.coerceAtMost(4) * 1.1f,
+                if (browsing || selecting || isCur) 0f else distance.coerceAtMost(4) * 1.1f,
                 com.skarif.kairos.ui.motion.Motion.ios(0.5f, 1f), label = "lineBlur",
             )
-            val scale by animateFloatAsState(if (isCur) 1f else 0.94f, com.skarif.kairos.ui.motion.Motion.ios(0.55f, 0.8f), label = "lineScale")
+            // Lyrics-first mode makes the line being sung clearly the biggest; the rest step back.
+            val scale by animateFloatAsState(
+                when { isCur -> 1f; big -> 0.7f; else -> 0.94f }, com.skarif.kairos.ui.motion.Motion.ios(0.55f, 0.8f), label = "lineScale",
+            )
             val itemIndex = i + header
             val lineMod = Modifier
                 .fillMaxWidth()
@@ -398,10 +414,16 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
                     } else null
                 }
                 .clip(RoundedCornerShape(14.dp))
+                .background(if (i in picked) accent.copy(alpha = 0.22f) else Color.Transparent)
                 .combinedClickable(
-                    role = Role.Button, onClickLabel = "Play from this line", onClick = { onSeek(start) },
-                    onLongClickLabel = "Share this line",
-                    onLongClick = if (line.text.isBlank()) null else ({ shareLine(line.text) }),
+                    role = Role.Button,
+                    onClickLabel = if (selecting) "Select this line" else "Play from this line",
+                    onClick = { if (selecting) { if (line.text.isNotBlank()) toggle(i) } else onSeek(start) },
+                    onLongClickLabel = "Share lines",
+                    onLongClick = if (line.text.isBlank()) null else ({
+                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        toggle(i)
+                    }),
                 )
                 .padding(vertical = 6.dp)
                 .then(if (isCur) Modifier.semantics { heading() } else Modifier)
@@ -420,18 +442,42 @@ private fun LyricsList(vm: MainViewModel, lyrics: Lyrics, offsetMs: Long, accent
                     .graphicsLayer { if (isCur) compositingStrategy = CompositingStrategy.Offscreen }
                     .then(if (isCur) Modifier.karaoke(position, start, end) { layout } else Modifier),
                 // One weight for every line: switching weight re-wraps the text and makes it jump.
-                // The line being sung glows in the album's colour. The karaoke sweep dims the unsung
-                // part, glow included, so only the words already sung glow. A shadow only changes
-                // drawing, not layout, so the line doesn't re-wrap when it lights up.
+                // The sung words light up, in dark themes only: a small soft white glow, like Apple
+                // Music. Small on purpose: each line is clipped to its own box (for the tap ripple and
+                // the karaoke sweep), and a wide glow got cut into a hard-edged band. In light themes
+                // dark words on a light page are already crisp, and a coloured glow only smudged them.
+                // A shadow changes drawing, not layout, so the line doesn't re-wrap when it lights up.
                 style = T.h1.copy(
                     fontSize = if (big) 46.sp else 34.sp, lineHeight = if (big) 52.sp else 40.sp,
                     fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.6).sp,
-                    shadow = if (isCur) androidx.compose.ui.graphics.Shadow(accent.copy(alpha = 0.9f), blurRadius = 32f) else null,
+                    shadow = if (isCur && P.colors.dark) androidx.compose.ui.graphics.Shadow(Color.White.copy(alpha = 0.45f), blurRadius = 10f) else null,
                 ),
                 color = Fg,
                 onTextLayout = { layout = it },
             )
         }
+    }
+    // The share bar while lines are selected.
+    AnimatedVisibility(
+        selecting, Modifier.align(Alignment.BottomCenter),
+        enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom), exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 18.dp, vertical = 12.dp).fillMaxWidth()
+                .clip(RoundedCornerShape(28.dp)).background(P.colors.sheet).padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                if (picked.size == 1) "1 line" else "${picked.size} lines", Modifier.weight(1f).padding(start = 12.dp),
+                style = T.title, color = P.colors.text,
+            )
+            com.skarif.kairos.ui.components.Pill("Cancel", { picked.clear() })
+            com.skarif.kairos.ui.components.Pill("Share", {
+                shareLines(picked.sorted().joinToString("\n") { lyrics.lines[it].text })
+                picked.clear()
+            }, accent = true, icon = Ic.Share)
+        }
+    }
     }
 }
 
@@ -505,6 +551,27 @@ private fun Modifier.karaoke(
     }
 }
 
+/**
+ * The lyrics-first switch: a pill reading "Aa Focus", so what it does is clear at a glance.
+ * Filled with the album's colour while on.
+ */
+@Composable
+private fun FocusToggle(on: Boolean, onClick: () -> Unit) {
+    val c = P.colors
+    val bg by androidx.compose.animation.animateColorAsState(if (on) c.accent else Glass, tween(200), label = "focusBg")
+    val fg = if (on) c.onAccent else Fg
+    val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    Row(
+        Modifier.height(46.dp).pressScale(press).clip(RoundedCornerShape(23.dp)).background(bg)
+            .clickable(interactionSource = press, indication = androidx.compose.material3.ripple(), role = Role.Switch, onClickLabel = if (on) "Show controls" else "Big lyrics", onClick = onClick)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Aa", style = T.title.copy(fontWeight = FontWeight.ExtraBold, fontSize = 17.sp), color = fg)
+        Text(if (on) "Focus on" else "Focus", style = T.small.copy(fontWeight = FontWeight.Bold), color = fg)
+    }
+}
+
 @Composable
 private fun Message(text: String) {
     Text(text, Modifier.padding(24.dp), style = T.body, color = Dim)
@@ -512,12 +579,14 @@ private fun Message(text: String) {
 
 @Composable
 private fun SmallPill(text: String, description: String, onClick: () -> Unit) {
+    val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Box(
         Modifier
             .height(40.dp)
+            .pressScale(press, 0.94f)
             .clip(RoundedCornerShape(20.dp))
             .background(Glass)
-            .clickable(role = Role.Button, onClickLabel = description, onClick = onClick)
+            .clickable(interactionSource = press, indication = androidx.compose.material3.ripple(), role = Role.Button, onClickLabel = description, onClick = onClick)
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {

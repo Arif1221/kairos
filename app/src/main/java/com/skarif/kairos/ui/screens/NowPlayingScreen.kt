@@ -102,6 +102,7 @@ fun NowPlayingPane(
     val favs by vm.favorites.collectAsStateWithLifecycle()
     // Shake the phone to reshuffle what's coming up; only while this page is actually showing.
     val haptic = LocalHapticFeedback.current
+    var artistPick by remember { androidx.compose.runtime.mutableStateOf<List<String>?>(null) }
     com.skarif.kairos.ui.components.ShakeDetector(LocalPlayerVisible.current.value && ctrl.page == com.skarif.kairos.ui.player.PlayerPage.MAIN) {
         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         vm.reshuffle()
@@ -241,7 +242,7 @@ fun NowPlayingPane(
                         Text(if (s.year > 0) "${s.year}" else "Album", color = Color.White, style = T.small.copy(fontWeight = FontWeight.SemiBold))
                     }
                     Text(
-                        s.album, color = Color.White, style = T.big.copy(fontSize = 38.sp, lineHeight = 40.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        s.album, color = Color.White, style = T.big.copy(fontSize = 26.sp, lineHeight = 30.sp), maxLines = 2, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.clickable(role = Role.Button, onClickLabel = "Open album") { onAlbum(s.albumId) },
                     )
                     Text(
@@ -270,9 +271,19 @@ fun NowPlayingPane(
                         style = T.small.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp),
                         modifier = Modifier.clip(RoundedCornerShape(12.dp))
                             .clickable(role = Role.Button, onClickLabel = "Open artist") {
-                                onOpenCollection("artist:${com.skarif.kairos.data.splitArtists(s.artist).first()}")
+                                // One artist: straight there. Several ("A, B & C"): pick which one.
+                                val all = com.skarif.kairos.data.splitArtists(s.artist)
+                                if (all.size == 1) onOpenCollection("artist:${all.first()}") else artistPick = all
                             }.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
+                    artistPick?.let { names ->
+                        com.skarif.kairos.ui.components.ActionSheet(
+                            title = "Artists", subtitle = s.title,
+                            art = { SongArt(vm, s, 52.dp, corner = 12.dp) },
+                            groups = listOf(names.map { n -> com.skarif.kairos.ui.components.SheetAction(n, Ic.Person) { onOpenCollection("artist:$n") } }),
+                            onDismiss = { artistPick = null },
+                        )
+                    }
                     Text(
                         s.title, color = c.text, style = T.h2.copy(fontSize = 30.sp, lineHeight = 34.sp), textAlign = TextAlign.Center, maxLines = 1,
                         modifier = Modifier.liveMarquee(),
@@ -332,7 +343,7 @@ fun NowPlayingPane(
                     )
                     CircleButton(Ic.Queue, "Queue", onQueue, size = 48.dp)
                     CircleButton(Ic.Radio, "Start song radio", { vm.startRadio(s) }, size = 48.dp)
-                    CircleButton(Ic.Share, "Share", { shareSong(ctx, s, file = false) }, size = 48.dp)
+                    CircleButton(Ic.Share, "Share", { shareSong(ctx, s) }, size = 48.dp)
                 }
             }
             // The cards below the fold are composed after the player has finished opening, so the

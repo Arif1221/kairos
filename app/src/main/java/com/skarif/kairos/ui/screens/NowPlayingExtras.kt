@@ -52,19 +52,22 @@ import com.skarif.kairos.ui.theme.T
  * under the controls: up next, lyrics preview, about the artist and song credits.
  */
 
-/** Shares the song as a message, or the audio file itself. */
-fun shareSong(context: android.content.Context, song: SongEntity, file: Boolean) {
+/**
+ * Shares the song: the audio file itself, with a "Listening to ..." caption. Apps that take files
+ * (WhatsApp, Telegram, Drive, Nearby Share) get the music; apps that only take text get the caption.
+ */
+fun shareSong(context: android.content.Context, song: SongEntity) {
+    val caption = "Listening to ${song.title} by ${song.artist}" + if (song.album.isNotBlank()) " (${song.album})" else ""
     val send = Intent(Intent.ACTION_SEND).apply {
-        if (file) {
-            type = song.mimeType.ifEmpty { "audio/*" }
-            putExtra(Intent.EXTRA_STREAM, song.contentUri())
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        } else {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, "Listening to ${song.title} by ${song.artist}" + if (song.album.isNotBlank()) " (${song.album})" else "")
-        }
+        type = song.mimeType.ifEmpty { "audio/*" }
+        putExtra(Intent.EXTRA_STREAM, song.contentUri())
+        putExtra(Intent.EXTRA_TEXT, caption)
+        putExtra(Intent.EXTRA_SUBJECT, song.title)
+        // Lets the chooser preview the file and pass read access to the app you pick.
+        clipData = android.content.ClipData.newUri(context.contentResolver, song.title, song.contentUri())
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    context.startActivity(Intent.createChooser(send, if (file) "Share song file" else "Share song"))
+    context.startActivity(Intent.createChooser(send, "Share ${song.title}"))
 }
 
 /** The player's ⋮ menu: the usual song actions plus the player-only ones. */
@@ -88,7 +91,6 @@ fun PlayerMenu(
                 SheetAction("Sleep timer", Ic.Clock) { onSleep() },
                 SheetAction("Equalizer", Ic.Sliders) { onEqualizer() },
                 SheetAction("Song info and credits", Ic.Info, keepOpen = true) { info = true },
-                SheetAction("Share the audio file", Ic.Share) { shareSong(ctx, song, file = true) },
             ),
             onDismiss = onDismiss,
         )

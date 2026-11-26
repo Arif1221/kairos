@@ -251,16 +251,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }.state(LyricsState.Loading)
 
     /**
-     * The "Kairos moment": when the chorus first hits, guessed from synced lyrics as the first
-     * time the most repeated line is sung (it has to repeat at least 3 times and come after the
-     * intro). Null without synced lyrics or a clear chorus.
+     * The "Kairos moment": when the chorus first hits. A chorus repeats as a block, so look for
+     * two consecutive lines that come back together later in the song; the block that repeats
+     * most wins (ties: the earliest), and the moment is its first line. A lone repeated ad-lib
+     * ("yeah, yeah") doesn't count. Null without synced lyrics or a clear chorus.
      */
     val chorusMs: StateFlow<Long?> = lyrics.map { st ->
         val l = (st as? LyricsState.Ready)?.lyrics?.takeIf { it.synced } ?: return@map null
-        l.lines.filter { it.text.length >= 8 && it.timeMs >= 15_000 }
-            .groupBy { it.text.lowercase().filter(Char::isLetterOrDigit) }
-            .values.filter { it.size >= 3 }
-            .maxByOrNull { it.size }?.minOf { it.timeMs }
+        val lines = l.lines.filter { it.text.isNotBlank() }
+        val key = lines.map { it.text.lowercase().filter(Char::isLetterOrDigit) }
+        var best = -1; var bestCount = 0
+        for (i in 0 until lines.size - 1) {
+            if (lines[i].timeMs < 15_000 || key[i].length < 6) continue
+            var count = 0
+            for (j in i + 2 until lines.size - 1) if (key[j] == key[i] && key[j + 1] == key[i + 1]) count++
+            if (count > bestCount) { best = i; bestCount = count }
+        }
+        if (bestCount >= 1) lines[best].timeMs else null
     }.distinctUntilChanged().state(null)
 
     val lyricsOffset: StateFlow<Long> = currentSong
@@ -319,7 +326,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         val artistMs = HashMap<String, Long>()
         plays.forEach { e -> byId[e.songId]?.let { s -> splitArtists(s.artist).forEach { a -> artistMs.merge(normalize(a), e.listenedMs, Long::plus) } } }
-        return History(plays, skips, Taste(plays.groupingBy { it.songId }.eachCount(), skips.groupingBy { it.songId }.eachCount(), favs, artistMs))
+        val lastAt = HashMap<Long, Long>()
+        plays.forEach { e -> lastAt.merge(e.songId, e.startedAt, ::maxOf) }
+        return History(plays, skips, Taste(
+            plays.groupingBy { it.songId }.eachCount(), skips.groupingBy { it.songId }.eachCount(), favs, artistMs,
+            together = com.skarif.kairos.data.playedTogether(plays.map { it.songId to it.startedAt }),
+            lastPlayedAt = lastAt,
+        ))
     }
 
     private val historyFlow: StateFlow<History> = combine(events, songById, favorites, tasteExcluded) { ev, byId, favs, ex -> history(ev, byId, favs, ex) }
@@ -684,8 +697,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun play(list: List<SongEntity>, index: Int, from: String? = null) { _playingFrom.value = from; ct.player.play(list, index) }
 
     /** Song radio: this song, then similar songs from your library. */
+    /**
+     * Song radio: the song, then 50 that fit it, closest first and widening out (see similarSongs).
+     * Autoplay keeps it going when those run out.
+     */
     fun startRadio(song: SongEntity) {
-        val more = similarSongs(listOf(song), songs.value, historyFlow.value.taste, 40, kotlin.random.Random.Default, blocked.value)
+        val more = similarSongs(listOf(song), songs.value, historyFlow.value.taste, 50, kotlin.random.Random.Default, blocked.value, drift = true)
         play(listOf(song) + more, 0, from = "${song.title} radio")
     }
 
@@ -891,8 +908,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun addLrcFolder(uri: Uri) {
-        getApplication<Application>().contentResolver
-            .takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // Read and write when the picker gave both (so lyrics can also be saved there), else read.
+        val resolver = getApplication<Application>().contentResolver
+        runCatching { resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+            .onFailure { resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         updateSettings { it.copy(lrcFolderUris = it.lrcFolderUris + uri.toString()) }
     }
 
@@ -918,6 +937,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 },
             )
         }
+    }
+
+    /**
+     * Saves the downloaded lyrics as an .lrc next to the song. If no allowed folder covers it,
+     * [onNeedFolder] runs so the screen can open the system folder picker once.
+     */
+    fun saveLyricsFile(onNeedFolder: () -> Unit) {
+        val song = currentSong.value ?: return
+        viewModelScope.launch {
+            when (ct.lyrics.saveLrc(song)) {
+                com.skarif.kairos.data.LyricsRepository.SaveLrc.SAVED -> notify("Saved ${song.fileName.substringBeforeLast('.')}.lrc next to the song")
+                com.skarif.kairos.data.LyricsRepository.SaveLrc.NOTHING -> notify("Download lyrics first, then save them")
+                com.skarif.kairos.data.LyricsRepository.SaveLrc.NEED_FOLDER -> onNeedFolder()
+            }
+        }
+    }
+
+    /** The folder picker's answer for saving lyrics: remember it (read and write), then save. */
+    fun grantLyricsFolderAndSave(uri: Uri) {
+        addLrcFolder(uri)
+        saveLyricsFile { notify("That folder doesn't hold this song. Pick its folder, or one above it") }
     }
 
     /** Drops this song's downloaded lyrics and goes back to its own. */
@@ -1023,7 +1063,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 autoplayedAfter = id
                 val queued = now.value.queue.mapNotNull { songById.value[it.songId] }
                 val more = kotlinx.coroutines.withContext(Dispatchers.Default) {
-                    similarSongs(queued.takeLast(10), songs.value, historyFlow.value.taste, 10, kotlin.random.Random.Default, blocked.value + queued.map { it.id })
+                    similarSongs(queued.takeLast(10), songs.value, historyFlow.value.taste, 10, kotlin.random.Random.Default, blocked.value + queued.map { it.id }, drift = true)
                 }
                 ct.player.append(more)
             }

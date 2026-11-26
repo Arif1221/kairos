@@ -101,21 +101,41 @@ fun formatTime(ms: Long): String {
     return "${s / 60}:${(s % 60).toString().padStart(2, '0')}"
 }
 
-/** Shrinks slightly while pressed: the tactile feedback every tappable element uses. */
+/**
+ * The press every tappable element shares. Down the instant you touch, a little dimmer; back up
+ * with a soft bounce. A quick tap always shows the whole press: inside a scrolling list Android
+ * reports the press late (it first waits to see if you're scrolling), and a fast tap used to be
+ * released before the button had moved at all. Now a release finishes the dip first, then bounces.
+ * Read only while drawing: nothing recomposes.
+ */
 @Composable
 fun Modifier.pressScale(interaction: MutableInteractionSource, pressed: Float = 0.93f): Modifier {
-    val isPressed by interaction.collectIsPressedAsState()
-    // iOS feel: goes down the instant you touch (fast, no wobble), comes back with a small bounce.
     val scale = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(1f) }
-    androidx.compose.runtime.LaunchedEffect(isPressed) {
-        if (isPressed) scale.animateTo(pressed, com.skarif.kairos.ui.motion.Motion.interactive())
-        else scale.animateTo(1f, com.skarif.kairos.ui.motion.Motion.bouncy())
+    androidx.compose.runtime.LaunchedEffect(interaction, pressed) {
+        kotlinx.coroutines.coroutineScope {
+            interaction.interactions.collect { i ->
+                when (i) {
+                    is androidx.compose.foundation.interaction.PressInteraction.Press -> launch {
+                        scale.animateTo(pressed, androidx.compose.animation.core.tween(90, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                    }
+                    is androidx.compose.foundation.interaction.PressInteraction.Release,
+                    is androidx.compose.foundation.interaction.PressInteraction.Cancel -> launch {
+                        // Not down far enough yet (a fast tap): finish the dip so it's felt.
+                        if (scale.value > pressed + (1f - pressed) * 0.4f) {
+                            scale.animateTo(pressed, androidx.compose.animation.core.tween(70, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
+                        }
+                        // Spring back past 1 a touch and settle: lively, never wobbly.
+                        scale.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.5f, stiffness = 520f))
+                    }
+                }
+            }
+        }
     }
-    // Pressed things also dim slightly, like an iOS highlight. Both read in the draw phase.
+    // Pressed things also dim slightly, like an iOS highlight.
     return this.graphicsLayer {
         val v = scale.value
         scaleX = v; scaleY = v
-        alpha = (1f - (1f - v) / (1f - pressed).coerceAtLeast(0.01f) * 0.12f).coerceIn(0f, 1f)
+        alpha = (1f - ((1f - v) / (1f - pressed).coerceAtLeast(0.01f)).coerceIn(0f, 1f) * 0.12f).coerceIn(0f, 1f)
     }
 }
 
@@ -387,14 +407,16 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
     ) {
         options.forEachIndexed { i, label ->
             val on = i == selected
+            val press = remember { MutableInteractionSource() }
             Box(
                 Modifier
                     .weight(1f)
                     .height(42.dp)
+                    .pressScale(press, 0.95f)
                     .clip(RoundedCornerShape(21.dp))
                     // The chosen option wears the album's colour, like the rest of the controls.
                     .background(animateColorAsState(if (on) c.accent else Color.Transparent, tween(250), label = "seg").value)
-                    .selectable(selected = on, role = Role.RadioButton) { onSelect(i) },
+                    .selectable(selected = on, interactionSource = press, indication = ripple(), role = Role.RadioButton) { onSelect(i) },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(label, style = T.label.copy(fontSize = 14.sp), color = animateColorAsState(if (on) c.onAccent else c.text, tween(250), label = "segT").value, maxLines = 1)

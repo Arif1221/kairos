@@ -421,11 +421,17 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 if (seenFirst) glow.flash(1f) else seenFirst = true // not on app start
             }
             val chorus by vm.chorusMs.collectAsStateWithLifecycle()
+            val momentHaptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+            val momentLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
             LaunchedEffect(glowSong, chorus) {
                 val at = chorus ?: return@LaunchedEffect
                 // Once per song: when playback crosses the chorus (not when you seek far past it).
                 vm.position.first { p -> vm.isPlaying.value && p in at..(at + 1_500) }
-                glow.flash(0.6f)
+                // Only when you can see it: no glow queued up or buzz in a pocket.
+                if (momentLifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                    glow.moment()
+                    momentHaptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                }
             }
             com.skarif.kairos.ui.components.EdgeGlowOverlay(glow, P.colors.accent)
         }

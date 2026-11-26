@@ -37,6 +37,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -450,6 +453,7 @@ fun PlayerSheet(
                             // Morph the cover into a disc in the middle of the hero, then spin it.
                             shape = VinylShape(vt, top, bottom)
                             rotationZ = ctrl.vinylAngle * vt
+                            shadowElevation = 20.dp.toPx() * vt
                         } else if (offset == 0 && ctrl.page == PlayerPage.MAIN) {
                             // Shrink toward the centre while paused, only once the player is open.
                             val k = ((1f - pauseScale) / 0.06f).coerceIn(0f, 1f) * p.coerceIn(0f, 1f)
@@ -467,8 +471,8 @@ fun PlayerSheet(
                     }
                     .background(c.accent)
                     .drawWithContent {
-                        drawContent()
-                        if (offset == 0 && vinylT > 0.001f && ctrl.page == PlayerPage.MAIN) drawVinyl(vinylT)
+                        val vt = if (offset == 0 && ctrl.page == PlayerPage.MAIN) vinylT else 0f
+                        if (vt > 0.001f) drawVinyl(vt, ctrl.vinylAngle) { this@drawWithContent.drawContent() } else drawContent()
                     },
             ) {
                 if (img != null) Image(img, desc, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -480,6 +484,18 @@ fun PlayerSheet(
         if (pagerOn && prevSong != null) cover(prevImg, -1, null)
         if (pagerOn && nextSong != null) cover(nextImg, 1, null)
         cover(curImg ?: artImg, 0, "${s.album} cover")
+        // The tonearm: doesn't turn with the record; rests on it while playing, lifts on pause.
+        val armDown by androidx.compose.animation.core.animateFloatAsState(
+            if (now.isPlaying) 1f else 0f, Motion.ios(0.6f, 1f), label = "tonearm",
+        )
+        if (ctrl.page == PlayerPage.MAIN && (ctrl.vinyl || vinylT > 0.001f)) {
+            Box(
+                Modifier.placeAt { artRect() }.drawBehind {
+                    val a = (vinylT * ctrl.progress.value).coerceIn(0f, 1f)
+                    if (a > 0.01f) drawTonearm(a, armDown)
+                },
+            )
+        }
 
         // 3. The full player's pages, fading in over the last part of the opening.
         // Built ahead of time, a moment after a song is loaded, and only *placed* while the player
@@ -656,25 +672,67 @@ private data class VinylShape(val t: Float, val top: Float, val bottom: Float) :
     }
 }
 
-/** Grooves, a label ring and the spindle hole, fading in with the morph. */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVinyl(t: Float) {
+/**
+ * The record, drawn inside the cover's (rotating) layer. [t] is the morph: at 0 the plain cover,
+ * at 1 a black disc whose paper label is the whole cover art, shrunk into the middle.
+ * [angle] is the record's turn: the light's reflections are drawn turned back by it, so they stay
+ * still while the grooves spin under them, which is what makes it read as spinning.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVinyl(t: Float, angle: Float, content: () -> Unit) {
     val d = minOf(size.width, size.height) * 0.84f
+    val r = d / 2
     val c = center
     val a = t.coerceIn(0f, 1f)
-    // Darken the cover toward the rim, like the vinyl around the paper label.
-    drawCircle(
-        androidx.compose.ui.graphics.Brush.radialGradient(
-            0f to Color.Transparent, 0.36f to Color.Transparent, 0.4f to Color(0xCC0B0B0B), 1f to Color(0xF2050505),
-            center = c, radius = d / 2,
-        ),
-        radius = d / 2, center = c, alpha = a,
-    )
-    // Grooves: thin rings with a soft sheen.
-    var r = d * 0.22f
-    while (r < d / 2 - 2f) {
-        drawCircle(Color.White.copy(alpha = 0.05f * a), r, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1f))
-        r += 5f
+    val labelR = r * 0.36f
+    // Vinyl.
+    drawCircle(Color(0xFF0C0C0E).copy(alpha = a), r, c)
+    // Grooves: fine rings, a little lighter every few for the bands between tracks.
+    var g = labelR + 6f
+    var k = 0
+    while (g < r - 3f) {
+        drawCircle(Color.White.copy(alpha = (if (k % 9 == 0) 0.08f else 0.035f) * a), g, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1f))
+        g += 4.5f; k++
     }
-    drawCircle(Color.White.copy(alpha = 0.16f * a), d * 0.2f, c, style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
-    drawCircle(Color(0xFF0B0B0B).copy(alpha = a), d * 0.025f, c)
+    // Reflections, held still against the spin.
+    rotate(-angle, c) {
+        drawCircle(
+            androidx.compose.ui.graphics.Brush.sweepGradient(
+                0f to Color.Transparent, 0.1f to Color.White.copy(alpha = 0.16f * a), 0.18f to Color.Transparent,
+                0.5f to Color.Transparent, 0.6f to Color.White.copy(alpha = 0.12f * a), 0.68f to Color.Transparent, 1f to Color.Transparent,
+                center = c,
+            ),
+            r, c,
+        )
+    }
+    // The label: the whole cover, scaled from full size into the middle as the morph runs.
+    val labelScale = 1f + ((labelR * 2) / minOf(size.width, size.height) * 1.02f - 1f) * a
+    val clipR = mix(maxOf(size.width, size.height), labelR, a)
+    clipPath(androidx.compose.ui.graphics.Path().apply { addOval(Rect(c, clipR)) }) {
+        scale(labelScale, c) { content() }
+    }
+    // Label rim and the spindle hole.
+    drawCircle(Color.Black.copy(alpha = 0.35f * a), labelR, c, style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+    drawCircle(Color(0xFFE9E9E4).copy(alpha = a), r * 0.035f, c)
+    drawCircle(Color(0xFF0C0C0E).copy(alpha = a), r * 0.018f, c)
+}
+
+/** Tonearm in the hero's top-right: pivot, arm and headshell. [down] 1 = resting on the record. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTonearm(alpha: Float, down: Float) {
+    val d = minOf(size.width, size.height) * 0.84f
+    val r = d / 2
+    val pivot = Offset(center.x + r * 0.98f, center.y - r * 0.92f)
+    val len = r * 1.32f
+    // Pointing down-left; lowering swings it in over the grooves.
+    val deg = 112f + 24f * down
+    val rad = Math.toRadians(deg.toDouble())
+    val tip = Offset(pivot.x + (len * kotlin.math.cos(rad)).toFloat(), pivot.y + (len * kotlin.math.sin(rad)).toFloat())
+    val metal = Color(0xFFD9D9D4).copy(alpha = alpha)
+    val dark = Color(0xFF2A2A2C).copy(alpha = alpha)
+    drawLine(Color.Black.copy(alpha = 0.25f * alpha), pivot + Offset(6f, 8f), tip + Offset(6f, 8f), 10f, androidx.compose.ui.graphics.StrokeCap.Round)
+    drawLine(metal, pivot, tip, 7f, androidx.compose.ui.graphics.StrokeCap.Round)
+    rotate(deg - 90f, tip) {
+        drawRoundRect(dark, Offset(tip.x - 13f, tip.y - 4f), androidx.compose.ui.geometry.Size(26f, 34f), androidx.compose.ui.geometry.CornerRadius(5f))
+    }
+    drawCircle(dark, 26f, pivot)
+    drawCircle(metal, 15f, pivot)
 }

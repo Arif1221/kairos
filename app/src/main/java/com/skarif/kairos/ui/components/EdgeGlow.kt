@@ -28,6 +28,18 @@ import kotlinx.coroutines.launch
 @Stable
 class EdgeGlow(private val scope: CoroutineScope) {
     internal val amount = Animatable(0f)
+    /** 0 -> 1: the Kairos moment's bloom rising from the bottom; 0 when not showing. */
+    internal val bloom = Animatable(0f)
+
+    /** The chorus moment: a bloom of the album colour rising from below, with a lighter edge glow. */
+    fun moment() {
+        scope.launch {
+            bloom.snapTo(0.001f)
+            bloom.animateTo(1f, tween(1800, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+            bloom.snapTo(0f)
+        }
+        flash(0.5f)
+    }
 
     fun flash(strength: Float = 1f) {
         scope.launch {
@@ -47,6 +59,17 @@ fun rememberEdgeGlow(scope: CoroutineScope): EdgeGlow = remember { EdgeGlow(scop
 fun EdgeGlowOverlay(glow: EdgeGlow, color: Color) {
     Box(
         Modifier.fillMaxSize().drawBehind {
+            val b = glow.bloom.value
+            if (b > 0f) {
+                // Rises and widens from the bottom edge while it fades.
+                val r = size.height * (0.25f + 1.05f * b)
+                val o = Offset(size.width / 2, size.height + size.height * 0.1f)
+                val fade = (if (b < 0.2f) b / 0.2f else 1f - (b - 0.2f) / 0.8f).coerceIn(0f, 1f)
+                drawCircle(
+                    Brush.radialGradient(listOf(color.copy(alpha = 0.42f * fade), color.copy(alpha = 0.12f * fade), Color.Transparent), center = o, radius = r),
+                    radius = r, center = o,
+                )
+            }
             val a = glow.amount.value
             if (a <= 0.001f) return@drawBehind
             val w = 34.dp.toPx()

@@ -210,11 +210,13 @@ fun ActionSheet(
 private fun QuickTile(a: SheetAction, bg: Color, modifier: Modifier, onClick: () -> Unit) {
     val c = P.colors
     val tint = when { a.destructive -> Destructive; a.selected -> c.accent; else -> c.text }
+    val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Column(
         modifier
+            .pressScale(press, 0.94f)
             .clip(RoundedCornerShape(18.dp))
             .background(bg)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(interactionSource = press, indication = androidx.compose.material3.ripple(), role = Role.Button, onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),

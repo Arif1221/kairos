@@ -1,5 +1,11 @@
 package com.skarif.kairos.ui.screens
 
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material3.Icon
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -179,10 +185,14 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
             }
             Text(
                 if (now.shuffle) "Swipe left to remove. Hold a song for more."
-                else "Swipe right to play next, left to remove. Hold a song for more.",
+                else "Drag ≡ to reorder. Swipe right to play next, left to remove.",
                 Modifier.padding(horizontal = 22.dp, vertical = 8.dp), style = T.small, color = c.muted,
             )
 
+            // Drag to reorder (shuffle off). Plain values, read while drawing: no recomposition per move.
+            val drag = remember { QueueDrag() }
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val gapPx = with(density) { 6.dp.toPx() }
             Box(Modifier.weight(1f)) {
                 LazyColumn(
                     Modifier.fillMaxSize(), state = list,
@@ -194,7 +204,30 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
                         val song = songMap[e.songId]
                         val playing = pos == now.queuePosition
                         val played = pos < now.queuePosition
-                        Box(Modifier.animateItem()) {
+                        Box(
+                            Modifier
+                                .then(if (drag.key == e.index) Modifier else Modifier.animateItem())
+                                .onSizeChanged { drag.rowPx = it.height.toFloat() }
+                                .zIndex(if (drag.key == e.index) 1f else 0f)
+                                .graphicsLayer {
+                                    val from = drag.fromPos
+                                    if (drag.key == null || from < 0) return@graphicsLayer
+                                    if (drag.key == e.index) {
+                                        translationY = drag.offset
+                                        scaleX = 1.03f; scaleY = 1.03f
+                                        shadowElevation = 12.dp.toPx(); shape = RoundedCornerShape(22.dp)
+                                    } else {
+                                        // Rows between the start and the target slide out of the way.
+                                        val to = drag.target(gapPx, now.queue.size)
+                                        val step = drag.rowPx + gapPx
+                                        translationY = when {
+                                            pos in (from + 1)..to -> -step
+                                            pos in to until from -> step
+                                            else -> 0f
+                                        }
+                                    }
+                                },
+                        ) {
                             SwipeActions(
                                 "Play next", Ic.Next, if (playing || now.shuffle) null else ({ vm.moveToNext(e.index) }),
                                 "Remove", Ic.Close, if (playing) null else ({ vm.removeQueueItem(e.index) }),
@@ -227,6 +260,20 @@ fun QueuePane(vm: MainViewModel, onBack: () -> Unit, onSaveAsPlaylist: () -> Uni
                                         Text(song?.artist ?: "", style = T.small, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                     Text(formatTime(song?.durationMs ?: 0), style = T.num, color = c.muted)
+                                    if (!now.shuffle) Icon(
+                                        Ic.Menu, "Drag to reorder", tint = c.muted,
+                                        modifier = Modifier.size(28.dp).pointerInput(e.index, pos) {
+                                            detectVerticalDragGestures(
+                                                onDragStart = { drag.key = e.index; drag.fromPos = pos; drag.offset = 0f },
+                                                onDragEnd = {
+                                                    val to = drag.target(gapPx, now.queue.size)
+                                                    if (to != pos) now.queue.getOrNull(to)?.let { vm.moveQueueItem(e.index, it.index) }
+                                                    drag.reset()
+                                                },
+                                                onDragCancel = { drag.reset() },
+                                            ) { change, dy -> change.consume(); drag.offset += dy }
+                                        },
+                                    )
                                 }
                             }
                         }
@@ -493,4 +540,17 @@ fun MenuDrawer(vm: MainViewModel, onClose: () -> Unit, onNavigate: (String) -> U
             Box(Modifier.width(1.dp).height(8.dp))
         }
     }
+}
+
+/** The queue row being dragged: which one, where it started, how far it has moved. */
+@androidx.compose.runtime.Stable
+private class QueueDrag {
+    var key by androidx.compose.runtime.mutableStateOf<Int?>(null)
+    var fromPos = -1
+    var offset by androidx.compose.runtime.mutableFloatStateOf(0f)
+    var rowPx = 1f
+    /** The position the row would land on if dropped now. */
+    fun target(gapPx: Float, size: Int): Int =
+        (fromPos + kotlin.math.round(offset / (rowPx + gapPx)).toInt()).coerceIn(0, (size - 1).coerceAtLeast(0))
+    fun reset() { key = null; fromPos = -1; offset = 0f }
 }

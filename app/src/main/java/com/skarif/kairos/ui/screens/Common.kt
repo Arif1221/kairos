@@ -184,7 +184,7 @@ fun SongActionsDialog(
     val favAction = SheetAction(
         if (fav) "Favourited" else "Favourite", if (fav) Ic.HeartFilled else Ic.Heart, selected = fav,
     ) { vm.toggleFavorite(song.id) }
-    val shareAction = SheetAction("Share", Ic.Share) { shareSong(ctx, song, file = false) }
+    val shareAction = SheetAction("Share", Ic.Share) { shareSong(ctx, song) }
 
     val quick = if (queueIndex != null) listOfNotNull(
         SheetAction("Play now", Ic.Play) { vm.playQueueItem(queueIndex) },

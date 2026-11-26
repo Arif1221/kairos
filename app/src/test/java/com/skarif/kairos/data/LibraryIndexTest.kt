@@ -115,15 +115,51 @@ class LibraryIndexTest {
 
     @Test
     fun similarSongsPreferSameArtistAndGenre() {
-        val seed = song("seed", "Arijit Singh", genre = "Bollywood")
-        val sameArtist = (1..5).map { song("a$it", "Arijit Singh") }
-        val sameGenre = (1..5).map { song("g$it", "Someone", genre = "Bollywood") }
-        val other = (1..40).map { song("o$it", "Metal Band $it", genre = "Metal") }
+        val seed = song("seed", "Arijit Singh", genre = "Bollywood", albumId = 100)
+        val sameArtist = (1..5).map { song("a$it", "Arijit Singh", albumId = 200L + it) }
+        val sameGenre = (1..5).map { song("g$it", "Someone $it", genre = "Bollywood", albumId = 300L + it) }
+        val other = (1..40).map { song("o$it", "Metal Band $it", genre = "Metal", albumId = 400L + it) }
         val all = listOf(seed) + sameArtist + sameGenre + other
         val r = similarSongs(listOf(seed), all, noTaste, 10, Random(1))
         assertEquals(10, r.size)
         assertTrue(seed !in r)
-        assertTrue(r.containsAll(sameArtist + sameGenre))
+        // Every same-genre song (all different artists) makes it; the seed's artist is capped at a
+        // quarter of the list (2 of 10), so one artist can't take over a radio.
+        assertTrue(r.containsAll(sameGenre))
+        assertEquals(2, r.count { it in sameArtist })
+    }
+
+    @Test
+    fun similarSongsCapAnAlbumButNotUnknownAlbum() {
+        val seed = song("seed", "Band", albumId = 1)
+        val sameAlbum = (1..6).map { song("al$it", "Band $it", genre = "Rock", albumId = 7) }
+        val loose = (1..6).map { song("l$it", "Loose $it", album = UNKNOWN_ALBUM, albumId = 9, genre = "Rock") }
+        val seedR = song("seedR", "Band", genre = "Rock", albumId = 1)
+        val r = similarSongs(listOf(seed, seedR), listOf(seed, seedR) + sameAlbum + loose, noTaste, 8, Random(3))
+        assertTrue(r.count { it in sameAlbum } <= 2)
+        // Untagged files share one "Unknown album" id, and aren't treated as one album.
+        assertTrue(r.count { it in loose } > 2)
+    }
+
+    @Test
+    fun playedTogetherLinksNeighboursInASitting() {
+        val t0 = 1_000_000_000L
+        val links = playedTogether(listOf(1L to t0, 2L to t0 + 60_000, 3L to t0 + 120_000, 4L to t0 + 5 * 3_600_000))
+        assertEquals(1f, links[1]?.get(2))
+        assertTrue((links[1]?.get(3) ?: 0f) > 0f)
+        // Hours later is another sitting: no link.
+        assertEquals(null, links[3]?.get(4))
+    }
+
+    @Test
+    fun similarSongsFavourWhatYouPlayTogether() {
+        val seed = song("seed", "X", genre = "Pop", albumId = 1)
+        val buddy = song("buddy", "Unrelated", genre = "Jazz", albumId = 2)
+        val others = (1..30).map { song("o$it", "Other $it", genre = "Metal", albumId = 10L + it) }
+        val taste = Taste(emptyMap(), emptyMap(), emptySet(), emptyMap(), together = mapOf(seed.id to mapOf(buddy.id to 1f)))
+        val r = similarSongs(listOf(seed), listOf(seed, buddy) + others, taste, 3, Random(5), drift = true)
+        // Played together beats unrelated songs, with nothing else in common.
+        assertTrue(buddy in r)
     }
 
     @Test
