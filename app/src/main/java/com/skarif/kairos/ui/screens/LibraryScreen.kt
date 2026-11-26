@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
@@ -63,6 +64,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.SongSort
 import com.skarif.kairos.ui.motion.Motion
+import com.skarif.kairos.ui.components.headerPanel
 import com.skarif.kairos.ui.components.stretchTitle
 import com.skarif.kairos.data.matchesQuery
 import com.skarif.kairos.data.db.SongEntity
@@ -112,6 +114,7 @@ fun LibraryScreen(
     onOpenCollection: (String) -> Unit,
 ) {
     val c = P.colors
+    val menu = LocalCollectionMenu.current
     val songs by vm.sortedSongs.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
@@ -176,8 +179,8 @@ fun LibraryScreen(
 
     actionsFor?.let { s -> SongActionsDialog(vm, s, onOpenAlbum) { actionsFor = null } }
     // Header panel follows the theme: frosted light glass by day, dark glass by night.
-    val panel = if (c.dark) Color(0xE6121212) else c.card.copy(alpha = 0.92f)
-    val chip = if (c.dark) Color(0xFF2A2A2A) else c.bg
+    val panel = c.panel
+    val chip = c.chip
     val fg = c.text
     val soft = c.muted
 
@@ -201,12 +204,7 @@ fun LibraryScreen(
         ) {
             item(span = { GridItemSpan(2) }, key = "header") {
                 Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
-                        .background(panel)
-                        .statusBarsPadding()
-                        .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 18.dp),
+                    Modifier.headerPanel { band.pull },
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -260,6 +258,25 @@ fun LibraryScreen(
                     Spacer(Modifier.weight(1f))
                 }
             }
+            // Mood by colour: shuffle songs whose cover is mostly this colour.
+            if (tab == LibTab.SONGS) item(span = { GridItemSpan(2) }, key = "colours") {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("Play by colour", Modifier.weight(1f), style = T.small, color = c.muted)
+                    com.skarif.kairos.data.CoverColour.entries.forEach { col ->
+                        Box(
+                            Modifier.size(26.dp).clip(CircleShape).background(Color(col.swatch))
+                                .clickable(role = Role.Button, onClickLabel = "Shuffle ${col.label.lowercase()} covers") {
+                                    // The player stays closed: it may take a moment, or there may be too few.
+                                    vm.playByColour(col)
+                                },
+                        )
+                    }
+                }
+            }
 
             when (tab) {
                 LibTab.SONGS -> {
@@ -299,7 +316,7 @@ fun LibraryScreen(
                 }
                 LibTab.ALBUMS -> {
                     itemsIndexed(albums, key = { _, g -> "al" + g.id }, contentType = { _, _ -> "album" }) { i, g ->
-                        Box(Modifier.padding(start = if (i % 2 == 0) 18.dp else 0.dp, end = if (i % 2 == 1) 18.dp else 0.dp)) {
+                        Box(Modifier.gridGutter(i)) {
                             CoverTile(vm, g.songs.first(), key = "album:${g.id}", kicker = g.artist, title = g.title) { onOpenCollection("album:${g.id}") }
                         }
                     }
@@ -310,7 +327,7 @@ fun LibraryScreen(
                         val list = a.songs
                         Row(
                             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
-                                .cardClick("Open $name") { onOpenCollection("artist:$name") }
+                                .cardClick("Open $name", onLongClick = { menu("artist:$name") }) { onOpenCollection("artist:$name") }
                                 .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item)).padding(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -334,7 +351,7 @@ fun LibraryScreen(
                         }
                     }
                     itemsIndexed(genres, key = { _, g -> "ge" + g.name.lowercase() }, contentType = { _, _ -> "genre" }) { i, g ->
-                        Box(Modifier.padding(start = if (i % 2 == 0) 18.dp else 0.dp, end = if (i % 2 == 1) 18.dp else 0.dp)) {
+                        Box(Modifier.gridGutter(i)) {
                             CoverTile(vm, g.songs.first(), key = "genre:${g.name}", kicker = "${g.songs.size} songs", title = g.name) {
                                 onOpenCollection("genre:${g.name}")
                             }

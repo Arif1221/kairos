@@ -8,6 +8,7 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -52,11 +53,18 @@ fun Modifier.sharedCard(key: String, shape: Shape = RectangleShape): Modifier {
     }
 }
 
-/** Tappable card: shrinks a little under the finger, ripples, then runs [onClick]. */
+/** Tappable card: shrinks a little under the finger, ripples, then runs [onClick]. [onLongClick] opens its menu. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun Modifier.cardClick(label: String, onClick: () -> Unit): Modifier {
+fun Modifier.cardClick(label: String, onLongClick: (() -> Unit)? = null, onClick: () -> Unit): Modifier {
     val interaction = remember { MutableInteractionSource() }
     return this
         .pressScale(interaction, 0.96f)
-        .clickable(interactionSource = interaction, indication = ripple(), role = Role.Button, onClickLabel = label, onClick = onClick)
+        .then(
+            if (onLongClick == null) Modifier.clickable(interactionSource = interaction, indication = ripple(), role = Role.Button, onClickLabel = label, onClick = onClick)
+            else Modifier.combinedClickable(
+                interactionSource = interaction, indication = ripple(), role = Role.Button, onClickLabel = label, onClick = onClick,
+                onLongClickLabel = "More options", onLongClick = onLongClick,
+            ),
+        )
 }

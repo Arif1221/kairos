@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -24,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +54,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.ArtworkRepository
 import com.skarif.kairos.data.db.SongEntity
 import com.skarif.kairos.ui.MainViewModel
+import com.skarif.kairos.ui.components.ScreenBackground
+import com.skarif.kairos.ui.components.KairosDialog
+import com.skarif.kairos.ui.components.Pill
+import com.skarif.kairos.ui.components.ActionSheet
+import com.skarif.kairos.ui.components.SheetAction
 import com.skarif.kairos.ui.components.pressScale
 import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.formatTime
@@ -150,8 +158,9 @@ private fun SongRowContent(song: SongEntity, playing: Boolean, vm: MainViewModel
 }
 
 /**
- * Long-press menu: play next, add to a playlist, favourite. With [queueIndex] it acts on that
- * queue entry instead: play it now, move it up next, or remove it.
+ * Long-press menu for a song, as an [ActionSheet]: quick actions on top, then what this place
+ * allows (playlist or queue), then going places, the player's extras and the taste controls.
+ * With [queueIndex] it acts on that queue entry instead (play it now, move it, remove it).
  */
 @Composable
 fun SongActionsDialog(
@@ -159,60 +168,91 @@ fun SongActionsDialog(
     /** Set when opened from a playlist: (playlist id, position of this song in it). */
     inPlaylist: Pair<Long, Int>? = null,
     onOpenArtist: ((String) -> Unit)? = null,
-    /** Extra items shown first (the player adds radio, share, speed and song info). */
-    extra: (@Composable (dismiss: () -> Unit) -> Unit)? = null,
+    /** Extra rows, shown as their own group (the player adds radio, speed, sleep, EQ and info). */
+    extra: List<SheetAction> = emptyList(),
     onDismiss: () -> Unit,
 ) {
-    val c = P.colors
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     val playlists by vm.playlists.collectAsStateWithLifecycle()
     val favs by vm.favorites.collectAsStateWithLifecycle()
     val hidden by vm.hiddenIds.collectAsStateWithLifecycle()
     val snoozed by vm.snoozedIds.collectAsStateWithLifecycle()
     val excluded by vm.tasteExcluded.collectAsStateWithLifecycle()
-    com.skarif.kairos.ui.components.KairosDialog(
-        onDismissRequest = onDismiss,
-        containerColor = c.sheet,
-        title = { Text(song.title, style = T.h2, color = c.text, maxLines = 2) },
-        text = {
-            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                extra?.invoke(onDismiss)
-                if (inPlaylist != null) {
-                    val (pid, pos) = inPlaylist
-                    val size = playlists.firstOrNull { it.id == pid }?.songs?.size ?: 0
-                    DialogItem("Remove from this playlist") { vm.removeFromPlaylist(pid, pos); onDismiss() }
-                    if (pos > 0) DialogItem("Move up") { vm.moveInPlaylist(pid, pos, pos - 1); onDismiss() }
-                    if (pos < size - 1) DialogItem("Move down") { vm.moveInPlaylist(pid, pos, pos + 1); onDismiss() }
-                }
-                if (queueIndex != null) {
-                    DialogItem("Play now") { vm.playQueueItem(queueIndex); onDismiss() }
-                    // Reordering follows the unshuffled order, so it is only offered with shuffle off.
-                    if (!vm.now.value.shuffle) {
-                        DialogItem("Play next") { vm.moveToNext(queueIndex); onDismiss() }
-                        DialogItem("Move to end of queue") { vm.moveToEnd(queueIndex); onDismiss() }
-                    }
-                    DialogItem("Remove from queue") { vm.removeQueueItem(queueIndex); onDismiss() }
-                } else {
-                    DialogItem("Play next") { vm.playNext(listOf(song)); vm.notify("Plays next"); onDismiss() }
-                }
-                DialogItem(if (song.id in favs) "Remove from favourites" else "Add to favourites") { vm.toggleFavorite(song.id); onDismiss() }
-                DialogItem("Go to album") { onOpenAlbum(song.albumId); onDismiss() }
-                if (onOpenArtist != null) com.skarif.kairos.data.splitArtists(song.artist).forEach { a ->
-                    DialogItem("Go to $a") { onOpenArtist(a); onDismiss() }
-                }
-                // Like Spotify's hide and snooze: keeps the song out of mixes, shuffle-all and autoplay.
-                if (song.id in hidden) DialogItem("Show in mixes again") { vm.setHidden(song.id, false); onDismiss() }
-                else DialogItem("Hide from mixes and autoplay") { vm.setHidden(song.id, true); onDismiss() }
-                if (song.id in snoozed) DialogItem("Stop snoozing") { vm.unsnooze(song.id); onDismiss() }
-                else if (song.id !in hidden) DialogItem("Snooze for 30 days") { vm.snooze(song.id); onDismiss() }
-                if (song.id in excluded) DialogItem("Use for recommendations again") { vm.setTasteExcluded(song.id, false); onDismiss() }
-                else DialogItem("Don't use for recommendations") { vm.setTasteExcluded(song.id, true); onDismiss() }
-                if (playlists.isNotEmpty()) Text("Add to playlist", Modifier.padding(top = 10.dp, bottom = 4.dp), style = T.small, color = c.muted)
-                playlists.forEach { p -> DialogItem(p.name) { vm.addToPlaylistNamed(p.id, listOf(song.id)); onDismiss() } }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close", color = c.text) } },
+    val shuffleOn = vm.now.collectAsStateWithLifecycle().value.shuffle
+    val fav = song.id in favs
+
+    val favAction = SheetAction(
+        if (fav) "Favourited" else "Favourite", if (fav) Ic.HeartFilled else Ic.Heart, selected = fav,
+    ) { vm.toggleFavorite(song.id) }
+    val shareAction = SheetAction("Share", Ic.Share) { shareSong(ctx, song, file = false) }
+
+    val quick = if (queueIndex != null) listOfNotNull(
+        SheetAction("Play now", Ic.Play) { vm.playQueueItem(queueIndex) },
+        // Reordering follows the unshuffled order, so it is only offered with shuffle off.
+        if (!shuffleOn) SheetAction("Play next", Ic.Queue) { vm.moveToNext(queueIndex) } else null,
+        favAction, shareAction,
+    ) else listOf(
+        SheetAction("Play next", Ic.Queue) { vm.playNext(listOf(song)); vm.notify("Plays next") },
+        SheetAction("Add to queue", Ic.AddQueue) { vm.addToQueue(listOf(song)) },
+        favAction, shareAction,
+    )
+
+    val here = buildList {
+        if (inPlaylist != null) {
+            val (pid, pos) = inPlaylist
+            val size = playlists.firstOrNull { it.id == pid }?.songs?.size ?: 0
+            if (pos > 0) add(SheetAction("Move up", Ic.Up) { vm.moveInPlaylist(pid, pos, pos - 1) })
+            if (pos < size - 1) add(SheetAction("Move down", Ic.DownArrow) { vm.moveInPlaylist(pid, pos, pos + 1) })
+            add(SheetAction("Remove from this playlist", Ic.Trash, destructive = true) { vm.removeFromPlaylist(pid, pos) })
+        }
+        if (queueIndex != null) {
+            if (!shuffleOn) add(SheetAction("Move to end of queue", Ic.Queue) { vm.moveToEnd(queueIndex) })
+            add(SheetAction("Remove from queue", Ic.Trash, destructive = true) { vm.removeQueueItem(queueIndex) })
+        }
+    }
+
+    val go = buildList {
+        add(addToPlaylistAction(vm, playlists, listOf(song.id)))
+        add(SheetAction("Go to album", Ic.Disc) { onOpenAlbum(song.albumId) })
+        if (onOpenArtist != null) com.skarif.kairos.data.splitArtists(song.artist).forEach { a ->
+            add(SheetAction("Go to $a", Ic.Person) { onOpenArtist(a) })
+        }
+    }
+
+    // Like Spotify's hide and snooze: keeps the song out of mixes, shuffle-all and autoplay.
+    val taste = buildList {
+        if (song.id in hidden) add(SheetAction("Show in mixes again", Ic.EyeOff, selected = true) { vm.setHidden(song.id, false) })
+        else add(SheetAction("Hide from mixes and autoplay", Ic.EyeOff) { vm.setHidden(song.id, true) })
+        if (song.id in snoozed) add(SheetAction("Stop snoozing", Ic.Clock, selected = true) { vm.unsnooze(song.id) })
+        else if (song.id !in hidden) add(SheetAction("Snooze for 30 days", Ic.Clock) { vm.snooze(song.id) })
+        if (song.id in excluded) add(SheetAction("Use for recommendations again", Ic.Wave, selected = true) { vm.setTasteExcluded(song.id, false) })
+        else add(SheetAction("Don't use for recommendations", Ic.Wave) { vm.setTasteExcluded(song.id, true) })
+    }
+
+    ActionSheet(
+        title = song.title,
+        subtitle = listOf(song.artist, song.album).filter { it.isNotBlank() }.joinToString(" · "),
+        art = { SongArt(vm, song, 52.dp, corner = 12.dp) },
+        quick = quick,
+        groups = listOf(here, extra, go, taste),
+        onDismiss = onDismiss,
     )
 }
+
+/** "Add to playlist" with every playlist as a second page; the songs go to the end. */
+fun addToPlaylistAction(
+    vm: MainViewModel,
+    playlists: List<com.skarif.kairos.ui.PlaylistUi>,
+    songIds: List<Long>,
+    exceptId: Long? = null,
+) = SheetAction(
+    "Add to playlist", Ic.PlaylistAdd,
+    submenu = playlists.filter { it.id != exceptId }.map { p ->
+        SheetAction(p.name, Ic.Music) {
+            vm.addToPlaylistNamed(p.id, songIds)
+        }
+    },
+)
 
 @Composable
 fun DialogItem(text: String, onClick: () -> Unit) {
@@ -428,3 +468,136 @@ fun NoticeBar(vm: MainViewModel, modifier: Modifier = Modifier) {
 /** Screen readers announce the message when it appears. */
 private fun Modifier.androidx_semantics_live(): Modifier =
     semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }
+
+/**
+ * Opens the menu for a collection key ("album:12", "artist:Name", "genre:Pop", "playlist:3", a mix).
+ * Provided once at the app root, so every tile in the app gets a long-press menu without each
+ * screen wiring its own.
+ */
+val LocalCollectionMenu = androidx.compose.runtime.staticCompositionLocalOf<(String) -> Unit> { {} }
+
+/**
+ * The menu for an album, artist, genre, playlist or mix: play, shuffle, queue, add to a playlist,
+ * go to the artist; for playlists also rename and delete (with their own dialogs).
+ * [extra] adds rows (the playlist page adds cover and export). [showOpen] adds "Open" for tiles.
+ */
+@Composable
+fun CollectionActionsSheet(
+    vm: MainViewModel,
+    key: String,
+    onOpenCollection: (String) -> Unit,
+    onDismiss: () -> Unit,
+    showOpen: Boolean = true,
+    extra: List<SheetAction> = emptyList(),
+    onDeleted: () -> Unit = {},
+) {
+    val c = P.colors
+    val playlists by vm.playlists.collectAsStateWithLifecycle()
+    val col = androidx.compose.runtime.remember(key, playlists) { vm.collection(key) }
+    if (col == null || col.songs.isEmpty() && col.playlistId == null) { androidx.compose.runtime.LaunchedEffect(Unit) { onDismiss() }; return }
+    val songs = col.songs
+    val pid = col.playlistId
+    var renaming by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var deleting by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
+    when {
+        renaming && pid != null -> {
+            var name by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(col.title) }
+            KairosDialog(
+                onDismissRequest = onDismiss,
+                containerColor = c.sheet,
+                title = { Text("Rename playlist", style = T.h2, color = c.text) },
+                text = {
+                    androidx.compose.material3.OutlinedTextField(
+                        name, { name = it }, singleLine = true, textStyle = T.body.copy(color = c.text),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+                confirmButton = { Pill("Save", { if (name.isNotBlank()) vm.renamePlaylist(pid, name.trim()); onDismiss() }, selected = true) },
+                dismissButton = { Pill("Cancel", onDismiss) },
+            )
+        }
+        deleting && pid != null -> ConfirmDialog(
+            "Delete ${col.title}?", "The songs stay on your phone. Only the playlist is removed.",
+            confirm = "Delete", dismiss = "Keep",
+            onConfirm = { vm.deletePlaylist(pid); onDismiss(); onDeleted() }, onDismiss = onDismiss,
+        )
+        else -> {
+            val isArtist = key.startsWith("artist:")
+            val quick = listOf(
+                SheetAction("Play", Ic.Play) { vm.play(songs, 0, col.title) },
+                SheetAction("Shuffle", Ic.Shuffle) { vm.shuffle(songs, from = col.title) },
+                SheetAction("Play next", Ic.Queue) {
+                    vm.playNext(songs); vm.notify(if (songs.size == 1) "Plays next" else "${songs.size} songs play next")
+                },
+                SheetAction("Add to queue", Ic.AddQueue) { vm.addToQueue(songs) },
+            )
+            val go = buildList {
+                if (showOpen) add(SheetAction("Open", Ic.Chevron) { onOpenCollection(key) })
+                add(addToPlaylistAction(vm, playlists, songs.map { it.id }, exceptId = pid))
+                if (key.startsWith("album:")) {
+                    val first = songs.first()
+                    val albumArtist = vm.albumGroup(first.albumId)?.artist ?: first.artist
+                    com.skarif.kairos.data.splitArtists(albumArtist).forEach { a ->
+                        add(SheetAction("Go to $a", Ic.Person) { onOpenCollection("artist:$a") })
+                    }
+                }
+            }
+            val manage = if (pid == null) emptyList() else listOf(
+                SheetAction("Rename", Ic.Edit, keepOpen = true) { renaming = true },
+                SheetAction("Delete playlist", Ic.Trash, destructive = true, keepOpen = true) { deleting = true },
+            )
+            ActionSheet(
+                title = col.title,
+                subtitle = col.subtitle,
+                art = { songs.firstOrNull()?.let { SongArt(vm, it, 52.dp, corner = if (isArtist) 26.dp else 12.dp) } },
+                quick = if (songs.isEmpty()) emptyList() else quick,
+                groups = listOf(go, extra, manage),
+                onDismiss = onDismiss,
+            )
+        }
+    }
+}
+
+/**
+ * The skeleton of a pushed, scrolling page (Settings, Music folders): the album-art background,
+ * iOS scrolling, status and navigation bar insets, page padding, and room for the mini player.
+ */
+@Composable
+fun PageColumn(spacing: Dp = 18.dp, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    ScreenBackground {
+        Column(
+            Modifier.fillMaxSize()
+                .verticalScroll(androidx.compose.foundation.rememberScrollState(), flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling())
+                .statusBarsPadding().navigationBarsPadding()
+                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp + LocalBottomClearance.current),
+            verticalArrangement = Arrangement.spacedBy(spacing),
+            content = content,
+        )
+    }
+}
+
+/** Gutters for a two-column grid item: the outer edge of each column gets the page margin. */
+fun Modifier.gridGutter(index: Int): Modifier =
+    padding(start = if (index % 2 == 0) 18.dp else 0.dp, end = if (index % 2 == 1) 18.dp else 0.dp)
+
+/** A yes/no dialog: a title, an explanation, a confirm pill and a cancel pill. */
+@Composable
+fun ConfirmDialog(
+    title: String,
+    text: String,
+    confirm: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    dismiss: String = "Cancel",
+) {
+    val c = P.colors
+    KairosDialog(
+        onDismissRequest = onDismiss,
+        containerColor = c.sheet,
+        title = { Text(title, style = T.h2, color = c.text) },
+        text = { Text(text, style = T.body, color = c.muted) },
+        confirmButton = { Pill(confirm, onConfirm, selected = true) },
+        dismissButton = { Pill(dismiss, onDismiss) },
+    )
+}

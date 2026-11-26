@@ -176,6 +176,10 @@ abstract class PlaylistDao {
 
 @Dao
 interface PlayEventDao {
+    /** When a song was first played, for the "first played" memory in song info. */
+    @Query("SELECT MIN(startedAt) FROM play_events WHERE songId = :songId")
+    suspend fun firstPlayedAt(songId: Long): Long?
+
     @Insert
     suspend fun insert(e: PlayEventEntity): Long
 

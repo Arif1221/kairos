@@ -1,5 +1,8 @@
 package com.skarif.kairos.ui.screens
 
+import com.skarif.kairos.ui.components.Ic
+import com.skarif.kairos.ui.components.SheetAction
+
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -78,15 +81,15 @@ fun PlayerMenu(
         info -> SongInfoDialog(vm, song) { info = false; onDismiss() }
         else -> SongActionsDialog(
             vm, song, onOpenAlbum, onOpenArtist = onOpenArtist,
-            extra = { dismiss ->
-                DialogItem("Start song radio") { vm.startRadio(song); dismiss() }
-                DialogItem("Share") { shareSong(ctx, song, file = false); dismiss() }
-                DialogItem("Share the audio file") { shareSong(ctx, song, file = true); dismiss() }
-                DialogItem("Playback speed") { speed = true }
-                DialogItem("Sleep timer") { onSleep(); dismiss() }
-                DialogItem("Equalizer") { onEqualizer(); dismiss() }
-                DialogItem("Song info and credits") { info = true }
-            },
+            extra = listOf(
+                SheetAction("Start song radio", Ic.Radio) { vm.startRadio(song) },
+                // These two swap this menu for their own dialog, so the sheet must not close itself.
+                SheetAction("Playback speed", Ic.Speed, keepOpen = true) { speed = true },
+                SheetAction("Sleep timer", Ic.Clock) { onSleep() },
+                SheetAction("Equalizer", Ic.Sliders) { onEqualizer() },
+                SheetAction("Song info and credits", Ic.Info, keepOpen = true) { info = true },
+                SheetAction("Share the audio file", Ic.Share) { shareSong(ctx, song, file = true) },
+            ),
             onDismiss = onDismiss,
         )
     }
@@ -152,7 +155,10 @@ private fun SongInfoRows(vm: MainViewModel, song: SongEntity) {
         "Added" to java.time.Instant.ofEpochSecond(song.dateAddedSec).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString(),
         "File" to song.folder + song.fileName,
     )
+    // A small memory: when this song first came into your life (from your listening history).
+    val first by androidx.compose.runtime.produceState<Long?>(null, song.id) { value = vm.firstPlayedAt(song.id) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        first?.let { Text(firstPlayedLine(it), style = T.body.copy(fontWeight = FontWeight.SemiBold), color = c.accent, modifier = Modifier.padding(bottom = 6.dp)) }
         rows.forEach { (k, v) ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(k, Modifier.width(96.dp), style = T.small, color = c.muted)
@@ -160,6 +166,15 @@ private fun SongInfoRows(vm: MainViewModel, song: SongEntity) {
             }
         }
     }
+}
+
+/** "You first played this on a Tuesday evening, 14 November 2026." */
+private fun firstPlayedLine(atMs: Long): String {
+    val t = java.time.Instant.ofEpochMilli(atMs).atZone(java.time.ZoneId.systemDefault())
+    val part = when (t.hour) { in 5..11 -> "morning"; in 12..16 -> "afternoon"; in 17..21 -> "evening"; else -> "night" }
+    val day = t.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault())
+    val date = t.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.getDefault()))
+    return "You first played this on a $day $part, $date."
 }
 
 /** Elapsed on the left, time left on the right, under the seek bar. */

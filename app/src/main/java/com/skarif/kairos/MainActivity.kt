@@ -39,8 +39,8 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -216,12 +216,16 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
         }
 
         // Every list gets the iOS rubber band instead of Android's stretch (ui/motion/Scroll.kt).
+        var collectionMenu by remember { mutableStateOf<String?>(null) }
         val backArt by vm.artwork.collectAsStateWithLifecycle()
-        val backdrop = com.skarif.kairos.ui.components.rememberBackdrop(backArt, settings.blurBackground)
+        val backPlaying by vm.isPlaying.collectAsStateWithLifecycle()
+        val backdrop = com.skarif.kairos.ui.components.rememberBackdrop(backArt, settings.blurBackground, backPlaying)
         CompositionLocalProvider(
             LocalPlayer provides player, com.skarif.kairos.ui.components.LocalBackdrop provides backdrop,
             // Mini player: 12 dp above the nav bar, 64 dp tall, plus a little air above it.
             com.skarif.kairos.ui.screens.LocalBottomClearance provides (if (song != null) 96.dp else 0.dp),
+            // One long-press menu for every album, artist, genre, playlist and mix tile.
+            com.skarif.kairos.ui.screens.LocalCollectionMenu provides { k -> collectionMenu = k },
             androidx.compose.foundation.LocalOverscrollFactory provides com.skarif.kairos.ui.motion.IosOverscrollFactory,
         ) {
         // Black behind everything: what shows around the app when it sinks back behind the player.
@@ -396,12 +400,34 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
             }
             BackHandler(enabled = menuOpen) { menuOpen = false }
 
+            collectionMenu?.let { k ->
+                com.skarif.kairos.ui.screens.CollectionActionsSheet(vm, k, ::openCollection, onDismiss = { collectionMenu = null })
+            }
+
             when (tool) {
                 Tool.SLEEP -> SleepTimerSheet(vm, onBack = { tool = null })
                 Tool.EQ -> EqualizerSheet(vm, onBack = { tool = null })
                 Tool.SORT -> SortSheet(vm, onBack = { tool = null })
                 null -> Unit
             }
+
+            // Edge glow: the album's colour arriving with each new song, and a lighter one at the
+            // "Kairos moment" (the chorus first hitting). Over everything, draw-only.
+            val glow = com.skarif.kairos.ui.components.rememberEdgeGlow(scope)
+            val glowSong = song?.id
+            var seenFirst by remember { mutableStateOf(false) }
+            LaunchedEffect(glowSong) {
+                if (glowSong == null) return@LaunchedEffect
+                if (seenFirst) glow.flash(1f) else seenFirst = true // not on app start
+            }
+            val chorus by vm.chorusMs.collectAsStateWithLifecycle()
+            LaunchedEffect(glowSong, chorus) {
+                val at = chorus ?: return@LaunchedEffect
+                // Once per song: when playback crosses the chorus (not when you seek far past it).
+                vm.position.first { p -> vm.isPlaying.value && p in at..(at + 1_500) }
+                glow.flash(0.6f)
+            }
+            com.skarif.kairos.ui.components.EdgeGlowOverlay(glow, P.colors.accent)
         }
         }
     }

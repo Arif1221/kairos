@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.db.SongEntity
 import com.skarif.kairos.ui.MainViewModel
+import com.skarif.kairos.ui.components.SheetAction
 import com.skarif.kairos.ui.components.CircleButton
 import com.skarif.kairos.ui.components.Ic
 import com.skarif.kairos.ui.components.Pill
@@ -103,6 +104,7 @@ fun SearchField(
  */
 @Composable
 fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (String) -> Unit, onOpenNowPlaying: () -> Unit) {
+    val menu = LocalCollectionMenu.current
     val c = P.colors
     val q by vm.query.collectAsStateWithLifecycle()
     val results by vm.searchResults.collectAsStateWithLifecycle()
@@ -146,6 +148,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                     "Search",
                     left = { chip -> CircleButton(Ic.Menu, "Menu", onMenu, container = chip, content = c.text) },
                     right = { chip -> Box(Modifier.size(52.dp)) },
+                    pull = { band.pull },
                 ) { chip ->
                     Text(mixedHeadline("Explore " to false, "your music" to true), Modifier.stretchTitle { band.pull }, style = T.h1.copy(fontSize = 34.sp, lineHeight = 38.sp), color = c.text)
                     SearchField(q, vm::setQuery, "Songs, artists, albums, genres", container = chip, height = 52.dp)
@@ -169,7 +172,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                         androidx.compose.foundation.lazy.LazyRow(contentPadding = PaddingValues(horizontal = 18.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                             items(hits.artists, key = { "sa" + it.name.lowercase() }, contentType = { "artist" }) { a ->
                                 Column(
-                                    Modifier.width(92.dp).cardClick("Open ${a.name}") { onOpenCollection("artist:${a.name}") },
+                                    Modifier.width(92.dp).cardClick("Open ${a.name}", onLongClick = { menu("artist:${a.name}") }) { onOpenCollection("artist:${a.name}") },
                                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
                                     SongArt(vm, a.songs.first(), 84.dp, corner = 42.dp)
@@ -225,7 +228,7 @@ fun SearchScreen(vm: MainViewModel, onMenu: () -> Unit, onOpenCollection: (Strin
                 }
                 gridItemsIndexed(list, key = { _, t -> t.key }, contentType = { _, _ -> "tile" }) { i, t ->
                     // Same edge spacing as the Library's album grid.
-                    Box(Modifier.padding(start = if (i % 2 == 0) 18.dp else 0.dp, end = if (i % 2 == 1) 18.dp else 0.dp)) {
+                    Box(Modifier.gridGutter(i)) {
                         CoverTile(vm, t.song, key = t.key, kicker = t.kicker, title = t.title) { onOpenCollection(t.key) }
                     }
                 }
@@ -248,7 +251,11 @@ fun CoverTile(vm: MainViewModel, song: SongEntity, key: String, kicker: String, 
     Box(
         Modifier.fillMaxWidth().height(214.dp)
             .sharedCard("col-$key", RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card))
-            .cardClick("Open $title", onClick)
+            .let { m ->
+                // Long-press: the shared menu for this album, genre or mix (see LocalCollectionMenu).
+                val menu = LocalCollectionMenu.current
+                m.cardClick("Open $title", onLongClick = { menu(key) }, onClick = onClick)
+            }
             .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(c.tint),
     ) {
         if (img != null) Image(img, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -262,6 +269,7 @@ fun CoverTile(vm: MainViewModel, song: SongEntity, key: String, kicker: String, 
 
 @Composable
 fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, onOpenCollection: (String) -> Unit) {
+    val menu = LocalCollectionMenu.current
     val c = P.colors
     val playlists by vm.playlists.collectAsStateWithLifecycle()
     val mixes by vm.mixes.collectAsStateWithLifecycle()
@@ -312,7 +320,7 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
             items(tiles, key = { it.key }, contentType = { "playlist" }) { t ->
                 Column(
                     Modifier.sharedCard("col-${t.key}", RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card))
-                        .cardClick("Open ${t.name}") { onOpenCollection(t.key) }
+                        .cardClick("Open ${t.name}", onLongClick = { menu(t.key) }) { onOpenCollection(t.key) }
                         .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(c.card)
                         .padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -441,8 +449,6 @@ fun CollectionScreen(
     val now by vm.now.collectAsStateWithLifecycle()
     val col = remember(key, songs, playlists, mixes) { vm.collection(key) }
     var actionsFor by remember { mutableStateOf<SongEntity?>(null) }
-    var confirmDelete by remember { mutableStateOf(false) }
-    var renaming by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     val settings by vm.settings.collectAsStateWithLifecycle()
     // Genre filter for favourites, playlists and mixes ("Liked songs by genre").
@@ -495,25 +501,17 @@ fun CollectionScreen(
     val exportM3u = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.CreateDocument("audio/x-mpegurl"),
     ) { uri -> if (uri != null && pid != null) vm.exportPlaylist(pid, uri) }
-    if (renaming && pid != null) {
-        var name by remember { mutableStateOf(colTitle) }
-        com.skarif.kairos.ui.components.KairosDialog(
-            onDismissRequest = { renaming = false },
-            containerColor = c.sheet,
-            title = { Text("Rename playlist", style = T.h2, color = c.text) },
-            text = { SearchFieldPlain(name, { name = it }, "Playlist name") },
-            confirmButton = { Pill("Save", { vm.renamePlaylist(pid, name); renaming = false }, selected = true) },
-            dismissButton = { Pill("Cancel", { renaming = false }) },
-        )
-    }
-    if (confirmDelete && pid != null) {
-        com.skarif.kairos.ui.components.KairosDialog(
-            onDismissRequest = { confirmDelete = false },
-            containerColor = c.sheet,
-            title = { Text("Delete $colTitle?", style = T.h2, color = c.text) },
-            text = { Text("The songs stay on your phone. Only the playlist is removed.", style = T.body, color = c.muted) },
-            confirmButton = { Pill("Delete", { vm.deletePlaylist(pid); confirmDelete = false; onBack() }, selected = true) },
-            dismissButton = { Pill("Keep", { confirmDelete = false }) },
+    if (menu) {
+        CollectionActionsSheet(
+            vm, key, onOpenCollection, onDismiss = { menu = false }, showOpen = false,
+            extra = if (pid == null) emptyList() else listOf(
+                SheetAction("Change cover", Ic.Palette) {
+                    pickCover.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
+                SheetAction("Use album covers", Ic.Disc) { vm.removePlaylistCover(pid) },
+                SheetAction("Export as .m3u", Ic.Share) { exportM3u.launch("$colTitle.m3u8") },
+            ),
+            onDeleted = onBack,
         )
     }
 
@@ -565,24 +563,7 @@ fun CollectionScreen(
                         ) {
                             CircleButton(Ic.Back, "Back", onBack, container = Color(0xE6FFFFFF), content = Color(0xFF151515))
                             Box(Modifier.weight(1f))
-                            if (pid != null) {
-                                Box {
-                                    CircleButton(Ic.Menu, "Playlist options", { menu = true }, container = Color(0x38FFFFFF), content = Color.White)
-                                    androidx.compose.material3.DropdownMenu(menu, { menu = false }, containerColor = c.sheet, shape = RoundedCornerShape(20.dp)) {
-                                        @Composable
-                                        fun item(label: String, action: () -> Unit) = androidx.compose.material3.DropdownMenuItem(
-                                            text = { Text(label, style = T.title, color = c.text) }, onClick = { menu = false; action() },
-                                        )
-                                        item("Rename") { renaming = true }
-                                        item("Change cover") {
-                                            pickCover.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
-                                        }
-                                        item("Use album covers") { vm.removePlaylistCover(pid) }
-                                        item("Export as .m3u") { exportM3u.launch("$colTitle.m3u8") }
-                                        item("Delete playlist") { confirmDelete = true }
-                                    }
-                                }
-                            }
+                            CircleButton(Ic.More, if (pid != null) "Playlist options" else "More options", { menu = true }, container = Color(0x38FFFFFF), content = Color.White)
                         }
                         Column(Modifier.align(Alignment.BottomStart).padding(start = 22.dp, end = 110.dp, bottom = 30.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (isAlbum && first != null) {

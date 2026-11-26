@@ -44,6 +44,9 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -389,11 +392,12 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, mod
                     .weight(1f)
                     .height(42.dp)
                     .clip(RoundedCornerShape(21.dp))
-                    .background(animateColorAsState(if (on) c.ink else Color.Transparent, tween(250), label = "seg").value)
+                    // The chosen option wears the album's colour, like the rest of the controls.
+                    .background(animateColorAsState(if (on) c.accent else Color.Transparent, tween(250), label = "seg").value)
                     .selectable(selected = on, role = Role.RadioButton) { onSelect(i) },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, style = T.label.copy(fontSize = 14.sp), color = animateColorAsState(if (on) c.inkFg else c.text, tween(250), label = "segT").value, maxLines = 1)
+                Text(label, style = T.label.copy(fontSize = 14.sp), color = animateColorAsState(if (on) c.onAccent else c.text, tween(250), label = "segT").value, maxLines = 1)
             }
         }
     }
@@ -550,7 +554,7 @@ fun KairosSheet(onDismiss: () -> Unit, content: @Composable androidx.compose.fou
 @Composable
 fun BoxScope.CompactTitleBar(title: String, visible: Boolean, onTop: () -> Unit) {
     val c = P.colors
-    val panel = if (c.dark) Color(0xE6121212) else c.card.copy(alpha = 0.94f)
+    val panel = c.panel
     androidx.compose.animation.AnimatedVisibility(
         visible,
         modifier = Modifier.align(Alignment.TopCenter),
@@ -571,6 +575,36 @@ fun BoxScope.CompactTitleBar(title: String, visible: Boolean, onTop: () -> Unit)
 }
 
 /** Grows a large title a little while the page is pulled down past the top (iOS). Draw phase only. */
+/**
+ * A tab's header panel background that stretches up with the iOS pull: pulled down at the top,
+ * the panel grows to fill the gap above it instead of the list sliding away from the top edge.
+ * One shape drawn per frame, read in the draw phase only (no recomposition). Put it before any clip.
+ */
+/** The tab header panel's shape: square top under the status bar, round bottom. */
+val HeaderShape = RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp)
+
+/**
+ * Everything a tab header panel needs, in one place: full width, the stretching background,
+ * the clip, the status bar and the padding. Used by [TabHeader] and the Home and Library headers.
+ */
+@Composable
+fun Modifier.headerPanel(pull: () -> Float = { 0f }): Modifier = this
+    .fillMaxWidth()
+    .stretchPanel(P.colors.panel, pull = pull)
+    .clip(HeaderShape)
+    .statusBarsPadding()
+    .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 18.dp)
+
+fun Modifier.stretchPanel(
+    color: Color,
+    shape: androidx.compose.ui.graphics.Shape = HeaderShape,
+    pull: () -> Float,
+): Modifier = drawBehind {
+    val p = pull().coerceAtLeast(0f)
+    val outline = shape.createOutline(androidx.compose.ui.geometry.Size(size.width, size.height + p), layoutDirection, this)
+    translate(top = -p) { drawOutline(outline, color) }
+}
+
 fun Modifier.stretchTitle(pull: () -> Float): Modifier = graphicsLayer {
     val s = 1f + (pull().coerceAtLeast(0f) / 1400f).coerceAtMost(0.1f)
     scaleX = s; scaleY = s
@@ -635,17 +669,14 @@ fun TabHeader(
     left: @Composable (chip: Color) -> Unit,
     right: @Composable (chip: Color) -> Unit,
     modifier: Modifier = Modifier,
+    /** The list's [com.skarif.kairos.ui.motion.RubberBand.pull], so the panel stretches with it. */
+    pull: () -> Float = { 0f },
     content: @Composable ColumnScope.(chip: Color) -> Unit,
 ) {
     val c = P.colors
-    val panel = if (c.dark) Color(0xE6121212) else c.card.copy(alpha = 0.92f)
-    val chip = if (c.dark) Color(0xFF2A2A2A) else c.bg
+    val chip = c.chip
     Column(
-        modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
-            .background(panel)
-            .statusBarsPadding()
-            .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 18.dp),
+        modifier.headerPanel(pull),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -25,6 +25,8 @@ import com.skarif.kairos.data.smartShuffle
 import com.skarif.kairos.data.toM3u
 import com.skarif.kairos.data.yearRecap
 import android.app.Application
+import com.skarif.kairos.data.CoverColour
+import com.skarif.kairos.data.coverHue
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -186,6 +188,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (desc != naturallyDesc) sorted.asReversed() else sorted
     }.flowOn(Dispatchers.Default).distinctUntilChanged().state(emptyList())
 
+    /** Just "is music playing", so screens that only need that don't recompose on every queue change. */
+    val isPlaying: StateFlow<Boolean> = now.map { it.isPlaying }.distinctUntilChanged().state(false)
+
     /**
      * The playing song, straight from the in-memory library (falling back to the database for a
      * song not indexed yet). The database lookup alone made the player show the new song
@@ -244,6 +249,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 emit(if (l == null) LyricsState.None else LyricsState.Ready(l))
             }
         }.state(LyricsState.Loading)
+
+    /**
+     * The "Kairos moment": when the chorus first hits, guessed from synced lyrics as the first
+     * time the most repeated line is sung (it has to repeat at least 3 times and come after the
+     * intro). Null without synced lyrics or a clear chorus.
+     */
+    val chorusMs: StateFlow<Long?> = lyrics.map { st ->
+        val l = (st as? LyricsState.Ready)?.lyrics?.takeIf { it.synced } ?: return@map null
+        l.lines.filter { it.text.length >= 8 && it.timeMs >= 15_000 }
+            .groupBy { it.text.lowercase().filter(Char::isLetterOrDigit) }
+            .values.filter { it.size >= 3 }
+            .maxByOrNull { it.size }?.minOf { it.timeMs }
+    }.distinctUntilChanged().state(null)
 
     val lyricsOffset: StateFlow<Long> = currentSong
         .flatMapLatest { s -> if (s == null) flowOf(0L) else ct.lyrics.observeOffset(s.id) }
@@ -794,6 +812,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun toast(text: String) = kotlinx.coroutines.withContext(Dispatchers.Main) { notify(text) }
     fun playNext(list: List<SongEntity>) { ct.player.playNext(list) }
+    suspend fun firstPlayedAt(songId: Long): Long? = ct.db.playEvents().firstPlayedAt(songId)
+    /** Adds to the end of the queue. */
+    fun addToQueue(list: List<SongEntity>) {
+        if (list.isEmpty()) return
+        ct.player.append(list)
+        notify(if (list.size == 1) "Added to queue" else "${list.size} songs added to queue")
+    }
     fun toggle() { ct.player.toggle() }
     fun next() { ct.player.next() }
     fun previous() { ct.player.previous() }
@@ -818,6 +843,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun clearPlayed() { ct.player.clearPlayed() }
     fun toggleShuffle() { ct.player.toggleShuffle() }
+    fun reshuffle() { if (ct.player.reshuffleUpcoming()) notify("Shuffled what's coming up") }
     fun cycleRepeat() { ct.player.cycleRepeat() }
     fun song(id: Long): SongEntity? = songById.value[id]
 
@@ -922,6 +948,44 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     suspend fun thumbnail(song: SongEntity): Bitmap? = ct.artwork.load(song, 160)
+
+    // ---------------------------------------------------------------- colour mood
+
+    /** Album id -> the cover's hue in degrees (null for a grey or black-and-white cover). */
+    private var coverHues: MutableMap<Long, Float?>? = null
+    private val huesFile get() = java.io.File(getApplication<Application>().filesDir, "cover_hues.txt")
+    private var colourJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * "Play something blue": shuffles songs whose album cover is mostly that colour. Each cover's
+     * colour is worked out once from an 8x8 copy of its thumbnail and saved, so only the first
+     * use (or a new album) reads covers.
+     */
+    fun playByColour(colour: CoverColour) {
+        if (colourJob?.isActive == true) return
+        colourJob = viewModelScope.launch(Dispatchers.Default) {
+            val hues = coverHues ?: loadHues().also { coverHues = it }
+            val byAlbum = songs.value.filter { it.id !in blocked.value }.groupBy { it.albumId }
+            val missing = byAlbum.keys.filter { it !in hues }
+            if (missing.size > 20) notify("Reading your covers' colours…")
+            missing.forEach { id -> hues[id] = byAlbum[id]?.first()?.let { s -> ct.artwork.load(s, 160)?.let(::coverHue) } }
+            if (missing.isNotEmpty()) saveHues(hues)
+            val pick = byAlbum.filterKeys { id -> hues[id]?.let(colour::contains) == true }.values.flatten()
+            if (pick.size < 5) { notify("Not enough ${colour.label.lowercase()} covers yet"); return@launch }
+            kotlinx.coroutines.withContext(Dispatchers.Main) { shuffle(pick, smart = false, from = "${colour.label} covers") }
+        }
+    }
+
+    private fun loadHues(): MutableMap<Long, Float?> = runCatching {
+        huesFile.readLines().mapNotNull { l ->
+            val (k, v) = l.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
+            (k.toLongOrNull() ?: return@mapNotNull null) to v.toFloatOrNull()
+        }.toMap(HashMap())
+    }.getOrDefault(HashMap())
+
+    private fun saveHues(h: Map<Long, Float?>) {
+        runCatching { huesFile.writeText(h.entries.joinToString("\n") { "${it.key}=${it.value ?: "-"}" }) }
+    }
     suspend fun cover(song: SongEntity): Bitmap? = ct.artwork.load(song, 720)
     fun cachedCover(song: SongEntity): Bitmap? = ct.artwork.peek(song, 720)
 

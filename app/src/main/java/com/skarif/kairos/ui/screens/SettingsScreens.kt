@@ -93,23 +93,14 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
     val scan by vm.scan.collectAsStateWithLifecycle()
     val ctx = androidx.compose.ui.platform.LocalContext.current
     var confirmClear by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    if (confirmClear) {
-        com.skarif.kairos.ui.components.KairosDialog(
-            onDismissRequest = { confirmClear = false },
-            containerColor = c.sheet,
-            title = { Text("Clear listening history?", style = T.h2, color = c.text) },
-            text = { Text("Stats, Most played, On repeat and your mixes start over. Favourites and playlists stay. Back up first if you might want it back.", style = T.body, color = c.muted) },
-            confirmButton = { Pill("Clear", { vm.clearHistory(); confirmClear = false }, selected = true) },
-            dismissButton = { Pill("Keep", { confirmClear = false }) },
-        )
-    }
+    if (confirmClear) ConfirmDialog(
+        "Clear listening history?",
+        "Stats, Most played, On repeat and your mixes start over. Favourites and playlists stay. Back up first if you might want it back.",
+        confirm = "Clear", dismiss = "Keep",
+        onConfirm = { vm.clearHistory(); confirmClear = false }, onDismiss = { confirmClear = false },
+    )
 
-    ScreenBackground {
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState(), flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling()).statusBarsPadding().navigationBarsPadding()
-                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp + com.skarif.kairos.ui.screens.LocalBottomClearance.current),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
+    PageColumn {
             Header("Settings", onBack)
             Text(mixedHeadline("Make it " to false, "yours" to true), style = T.h1, color = c.text)
 
@@ -325,7 +316,6 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
             }
 
             Pill("Equalizer", onEqualizer, icon = Ic.Sliders, big = true, modifier = Modifier.fillMaxWidth())
-        }
     }
 }
 
@@ -343,12 +333,7 @@ fun FoldersScreen(vm: MainViewModel, onBack: () -> Unit) {
     LaunchedEffect(s.skipShortFiles) { vm.loadFolders() }
     val total = folders.filter { it.key !in s.excludedFolders }.sumOf { it.count }
 
-    ScreenBackground {
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState(), flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling()).statusBarsPadding().navigationBarsPadding()
-                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp + com.skarif.kairos.ui.screens.LocalBottomClearance.current),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
+    PageColumn {
             Header("Music folders", onBack)
             Text(mixedHeadline("Choose " to false, "where" to true, " to look for " to false, "music" to true), style = T.h1, color = c.text)
             Card {
@@ -372,6 +357,5 @@ fun FoldersScreen(vm: MainViewModel, onBack: () -> Unit) {
                 vm::scanNow, accent = true, big = true, modifier = Modifier.fillMaxWidth(),
             )
             (scan as? ScanState.Done)?.let { Text("Library updated: ${it.songs} songs.", style = T.body, color = c.text) }
-        }
     }
 }

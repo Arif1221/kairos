@@ -17,12 +17,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
@@ -42,6 +47,7 @@ import com.skarif.kairos.ui.components.Pill
 import com.skarif.kairos.ui.components.PillMeter
 import com.skarif.kairos.ui.components.ScreenBackground
 import com.skarif.kairos.ui.components.CompactTitleBar
+import com.skarif.kairos.ui.components.headerPanel
 import com.skarif.kairos.ui.components.stretchTitle
 import kotlinx.coroutines.launch
 import com.skarif.kairos.ui.components.sharedCard
@@ -66,6 +72,9 @@ fun HomeScreen(
     onLibrary: () -> Unit,
 ) {
     val c = P.colors
+    // Long-press on a "Recently played" card.
+    var songMenu by remember { mutableStateOf<com.skarif.kairos.data.db.SongEntity?>(null) }
+    songMenu?.let { s -> SongActionsDialog(vm, s, { onOpenCollection("album:$it") }, onOpenArtist = { a -> onOpenCollection("artist:$a") }) { songMenu = null } }
     val settings by vm.settings.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
     val mixes by vm.mixes.collectAsStateWithLifecycle()
@@ -78,9 +87,8 @@ fun HomeScreen(
     val byKey = remember(mixes) { mixes.associateBy { it.key } }
     val hour = remember { java.time.LocalTime.now().hour }
     val part = when (hour) { in 5..11 -> "morning"; in 12..16 -> "afternoon"; in 17..21 -> "evening"; else -> "night" }
-    // Same panel and chip colours as the Library header.
-    val panel = if (c.dark) androidx.compose.ui.graphics.Color(0xE6121212) else c.card.copy(alpha = 0.92f)
-    val chip = if (c.dark) androidx.compose.ui.graphics.Color(0xFF2A2A2A) else c.bg
+    // Same chip colour as the Library header.
+    val chip = c.chip
     val card = c.card.copy(alpha = if (c.dark) 0.85f else 0.92f)
 
     val scroll = rememberScrollState()
@@ -102,11 +110,7 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(22.dp),
         ) {
             Column(
-                Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
-                    .background(panel)
-                    .statusBarsPadding()
-                    .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 18.dp),
+                Modifier.headerPanel { band.pull },
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -132,6 +136,35 @@ fun HomeScreen(
                 }
             }
 
+            // Right now: the mix for this time of day, on a card that changes colour with the hour.
+            // Falls back to forgotten gems, then something never played, so it's never empty.
+            val dayPart = remember(hour) { com.skarif.kairos.data.dayPart(hour) }
+            val rightNow = listOf("daylist", "forgotten", "never").firstNotNullOfOrNull { k -> byKey[k]?.takeIf { it.songs.size >= 3 } }
+            if (rightNow != null) {
+                RightNowCard(
+                    vm, rightNow, dayPart, Modifier.padding(horizontal = 18.dp),
+                    onOpen = { onOpenCollection(rightNow.key) },
+                    onPlay = { vm.play(rightNow.songs, 0, rightNow.title); onOpenNowPlaying() },
+                )
+            }
+            // Rediscover: one song you loved and drifted away from, one tap to hear it again.
+            val gem = byKey["forgotten"]?.songs?.firstOrNull()?.takeIf { rightNow?.key != "forgotten" }
+            if (gem != null) {
+                Row(
+                    Modifier.padding(horizontal = 18.dp).fillMaxWidth()
+                        .cardClick("Play ${gem.title}", onLongClick = { songMenu = gem }) { vm.play(listOf(gem), 0, "Rediscover"); onOpenNowPlaying() }
+                        .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item)).background(card).padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SongArt(vm, gem, 44.dp, corner = 14.dp)
+                    Column(Modifier.weight(1f)) {
+                        Text("REDISCOVER", style = T.small.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp), color = c.accent)
+                        Text("${gem.title} · ${gem.artist}", style = T.title.copy(fontSize = 15.sp), color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Icon(Ic.Play, null, Modifier.size(20.dp), tint = c.text)
+                }
+            }
+
             // Quick picks: only the ones that have songs, so a new install isn't a wall of "0 songs".
             val picks = listOf("favourites", "most", "onrepeat", "recent", "lastplayed", "never")
                 .mapNotNull { byKey[it] }.filter { it.songs.isNotEmpty() }.take(6)
@@ -152,7 +185,7 @@ fun HomeScreen(
             if (album != null && song != null) {
                 val idx = album.songs.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
                 Column(
-                    Modifier.padding(horizontal = 18.dp).fillMaxWidth().cardClick("Open player", onOpenNowPlaying)
+                    Modifier.padding(horizontal = 18.dp).fillMaxWidth().cardClick("Open player", onClick = onOpenNowPlaying)
                         .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(card).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
@@ -184,7 +217,7 @@ fun HomeScreen(
                     items(recent.size, key = { recent[it].id }, contentType = { "song" }) { i ->
                         val s2 = recent[i]
                         Column(
-                            Modifier.width(150.dp).cardClick("Play ${s2.title}") { vm.play(recent, i, "Recently played"); onOpenNowPlaying() },
+                            Modifier.width(150.dp).cardClick("Play ${s2.title}", onLongClick = { songMenu = s2 }) { vm.play(recent, i, "Recently played"); onOpenNowPlaying() },
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             SongArt(vm, s2, 150.dp, corner = 30.dp)
@@ -255,8 +288,9 @@ private fun Section(title: String, action: String? = null, order: Int = 0, onAct
 @Composable
 private fun QuickPick(vm: MainViewModel, m: Collection, card: androidx.compose.ui.graphics.Color, modifier: Modifier, onOpen: () -> Unit) {
     val c = P.colors
+    val menu = LocalCollectionMenu.current
     Row(
-        modifier.height(72.dp).cardClick("Open ${m.title}", onOpen)
+        modifier.height(72.dp).cardClick("Open ${m.title}", onLongClick = { menu(m.key) }, onClick = onOpen)
             .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item)).background(card).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -271,10 +305,11 @@ private fun QuickPick(vm: MainViewModel, m: Collection, card: androidx.compose.u
 @Composable
 private fun MixCard(vm: MainViewModel, m: Collection, card: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier, onOpen: () -> Unit, onPlay: () -> Unit) {
     val c = P.colors
+    val menu = LocalCollectionMenu.current
     Row(
         modifier
             .sharedCard("col-${m.key}", RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card))
-            .cardClick("Open ${m.title}", onOpen)
+            .cardClick("Open ${m.title}", onLongClick = { menu(m.key) }, onClick = onOpen)
             .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(card).padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -291,5 +326,58 @@ private fun MixCard(vm: MainViewModel, m: Collection, card: androidx.compose.ui.
                 CircleButton(Ic.Play, "Play ${m.title}", onPlay, size = 44.dp, container = c.accent, content = c.onAccent)
             }
         }
+    }
+}
+
+/**
+ * "Right now": the mix for this part of the day. The card's light follows the clock (warm morning,
+ * bright afternoon, violet evening, deep night), mixed with the album colour; a fan of three
+ * covers on the right. Static drawing: one gradient and three thumbnails.
+ */
+@Composable
+private fun RightNowCard(
+    vm: MainViewModel, m: Collection, part: com.skarif.kairos.data.DayPart, modifier: Modifier,
+    onOpen: () -> Unit, onPlay: () -> Unit,
+) {
+    val c = P.colors
+    val menu = LocalCollectionMenu.current
+    val sky = when (part) {
+        com.skarif.kairos.data.DayPart.MORNING -> androidx.compose.ui.graphics.Color(0xFFF6A55B)
+        com.skarif.kairos.data.DayPart.AFTERNOON -> androidx.compose.ui.graphics.Color(0xFF3FA7E0)
+        com.skarif.kairos.data.DayPart.EVENING -> androidx.compose.ui.graphics.Color(0xFF7A45D8)
+        com.skarif.kairos.data.DayPart.NIGHT -> androidx.compose.ui.graphics.Color(0xFF14204A)
+    }
+    val label = if (m.key == "daylist") "RIGHT NOW · ${part.label.uppercase()}" else "FOR YOU"
+    Box(
+        modifier.fillMaxWidth().height(176.dp)
+            .cardClick("Open ${m.title}", onLongClick = { menu(m.key) }, onClick = onOpen)
+            .clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card))
+            .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(sky, androidx.compose.ui.graphics.lerp(sky, c.accent, 0.6f), c.accent)))
+            .padding(18.dp),
+    ) {
+        // Fan of covers, tilted like cards in a hand.
+        Box(Modifier.align(Alignment.CenterEnd).size(width = 130.dp, height = 120.dp)) {
+            m.songs.take(3).forEachIndexed { i, s ->
+                SongArt(
+                    vm, s, 84.dp, corner = 18.dp,
+                    modifier = Modifier.align(Alignment.Center).graphicsLayer {
+                        rotationZ = (i - 1) * 9f
+                        translationX = (i - 1) * 20.dp.toPx()
+                        translationY = if (i == 1) -6.dp.toPx() else 0f
+                        shadowElevation = 8.dp.toPx()
+                        shape = RoundedCornerShape(18.dp)
+                    }.zIndex(if (i == 1) 1f else 0f),
+                )
+            }
+        }
+        Column(Modifier.align(Alignment.TopStart).padding(end = 140.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, style = T.small.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp), color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.85f))
+            Text(m.title, style = T.h2.copy(fontSize = 24.sp, lineHeight = 28.sp), color = androidx.compose.ui.graphics.Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("${m.songs.size} songs", style = T.small, color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.8f))
+        }
+        CircleButton(
+            Ic.Play, "Play ${m.title}", onPlay, modifier = Modifier.align(Alignment.BottomStart),
+            container = androidx.compose.ui.graphics.Color.White, content = androidx.compose.ui.graphics.Color.Black,
+        )
     }
 }

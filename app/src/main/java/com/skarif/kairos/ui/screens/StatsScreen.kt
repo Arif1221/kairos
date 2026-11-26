@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.width
@@ -59,6 +60,12 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
     val c = P.colors
     val st by vm.stats.collectAsStateWithLifecycle()
     val range by vm.statsRange.collectAsStateWithLifecycle()
+    var story by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    val rangeName = when (range) {
+        com.skarif.kairos.ui.StatsRange.WEEK -> "week"; com.skarif.kairos.ui.StatsRange.MONTH -> "month"
+        com.skarif.kairos.ui.StatsRange.YEAR -> "year"; com.skarif.kairos.ui.StatsRange.ALL -> "time with Kairos"
+    }
+    if (story) WrappedStory(vm, st, rangeName) { story = false }
     val sel by vm.selectedBar.collectAsStateWithLifecycle()
     val art by vm.artwork.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -86,6 +93,7 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
                 "Statistics",
                 left = { chip -> CircleButton(Ic.Menu, "Menu", onMenu, container = chip, content = c.text) },
                 right = { chip -> CircleButton(Ic.Settings, "Settings", onSettings, container = chip, content = c.text) },
+                pull = { band.pull },
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(hoursText(st.totalMs) + " listened", Modifier.stretchTitle { band.pull }, style = T.big, color = c.text)
@@ -93,6 +101,11 @@ fun StatsScreen(vm: MainViewModel, onMenu: () -> Unit, onSettings: () -> Unit) {
                 }
             }
             Column(Modifier.padding(horizontal = 18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            // Wrapped, any time: the range below as a story you can swipe through and share.
+            if (st.plays > 0) com.skarif.kairos.ui.components.Pill(
+                "Play your $rangeName as a story", { story = true }, icon = Ic.Play, accent = true, big = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.card)).background(c.accent).padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),

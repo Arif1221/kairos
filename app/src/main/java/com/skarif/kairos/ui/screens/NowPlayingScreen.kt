@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -99,6 +100,12 @@ fun NowPlayingPane(
     val song by vm.currentSong.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
     val favs by vm.favorites.collectAsStateWithLifecycle()
+    // Shake the phone to reshuffle what's coming up; only while this page is actually showing.
+    val haptic = LocalHapticFeedback.current
+    com.skarif.kairos.ui.components.ShakeDetector(LocalPlayerVisible.current.value && ctrl.page == com.skarif.kairos.ui.player.PlayerPage.MAIN) {
+        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+        vm.reshuffle()
+    }
     val sleep by vm.sleep.collectAsStateWithLifecycle()
     val s = song ?: return
     // Must match the cover rectangle in PlayerSheet.
@@ -146,12 +153,25 @@ fun NowPlayingPane(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .pointerInput(s.id, hasPrev, hasNext) {
+                        // Long-press the cover: vinyl mode on or off.
+                        .pointerInput(Unit) {
+                            detectTapGestures(onLongPress = {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                ctrl.vinyl = !ctrl.vinyl
+                            })
+                        }
+                        .pointerInput(s.id, hasPrev, hasNext, ctrl.vinyl) {
+                            // Vinyl: turn the record to scrub. One full turn is 10 seconds of music.
+                            var turned = 0f
                             detectDragGestures(
-                                onDragStart = { tracker.resetTracking(); axis = 0 },
+                                onDragStart = { tracker.resetTracking(); axis = 0; turned = 0f; if (ctrl.vinyl) ctrl.vinylHeld = true },
                                 onDragEnd = {
                                     val v = tracker.calculateVelocity()
-                                    if (axis == 2) {
+                                    if (ctrl.vinyl) {
+                                        ctrl.vinylHeld = false
+                                        val to = vm.position.value + (turned / 360f * 10_000f).toLong()
+                                        vm.seekTo(to.coerceIn(0L, (vm.now.value.durationMs - 500).coerceAtLeast(0L)))
+                                    } else if (axis == 2) {
                                         ctrl.settle(v.y)
                                     } else {
                                         // Shared swipe rule: 72 dp or a quick flick, same as everywhere else.
@@ -160,11 +180,22 @@ fun NowPlayingPane(
                                     }
                                 },
                                 onDragCancel = {
-                                    if (axis == 2) ctrl.settle(0f) else onSkip(0, 0f)
+                                    if (ctrl.vinyl) ctrl.vinylHeld = false
+                                    else if (axis == 2) ctrl.settle(0f) else onSkip(0, 0f)
                                 },
                             ) { change, amount ->
                                 change.consume()
                                 tracker.addPosition(change.uptimeMillis, change.position)
+                                if (ctrl.vinyl) {
+                                    // The angle the finger swept around the record's centre.
+                                    val c0 = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+                                    fun deg(o: androidx.compose.ui.geometry.Offset) = Math.toDegrees(kotlin.math.atan2((o.y - c0.y).toDouble(), (o.x - c0.x).toDouble())).toFloat()
+                                    var d = deg(change.position) - deg(change.previousPosition)
+                                    if (d > 180f) d -= 360f else if (d < -180f) d += 360f
+                                    turned += d
+                                    ctrl.vinylAngle += d
+                                    return@detectDragGestures
+                                }
                                 // Lock to one direction from the first movement: change song or close, never both.
                                 if (axis == 0) axis = if (kotlin.math.abs(amount.x) >= kotlin.math.abs(amount.y)) 1 else 2
                                 if (axis == 1) {

@@ -13,6 +13,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.draggable
@@ -34,6 +35,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -102,6 +105,18 @@ class PlayerController(private val scope: CoroutineScope) {
     var page by mutableStateOf(PlayerPage.MAIN)
     /** Sideways offset of the cover while swiping between songs. */
     val skipX = Animatable(0f)
+    /** A cover swipe changed song (-1 next, 1 previous) and is waiting for the new song to arrive. */
+    internal var pendingSkip = 0
+    /** Vinyl mode: the cover becomes a spinning record (long-press the cover). */
+    var vinyl by mutableStateOf(false)
+    /** The record's angle in degrees. Read only while drawing. */
+    var vinylAngle by androidx.compose.runtime.mutableFloatStateOf(0f)
+    /** True while a finger turns the record; the motor lets go meanwhile. */
+    internal var vinylHeld = false
+    /** Platter speed in degrees a second, kept across play/pause so it spins up and down smoothly. */
+    internal var vinylSpeed = 0f
+    /** Width of the hero cover, one swipe step. Set by the sheet. */
+    internal var coverWidth = 1f
     /** Scroll of the full player, so the cover scrolls with the page. */
     val mainScroll = ScrollState(0)
     /** Pixels between collapsed and expanded, so a drag of N pixels moves the sheet N pixels. */
@@ -249,10 +264,26 @@ fun PlayerSheet(
     val artImg = remember(art) { art?.asImageBitmap() }
     val prevImg = rememberCoverNow(vm, prevSong)
     val nextImg = rememberCoverNow(vm, nextSong)
-    // The neighbour that slid in is now the current cover, so snapping back shows the same picture.
-    LaunchedEffect(s.id) { ctrl.skipX.snapTo(0f) }
+    // A swipe changes song the moment you let go, while the cover is still sliding. When the new
+    // song arrives, the neighbour that was sliding in *is* the current cover now: shift the offset
+    // by one cover width so nothing jumps, and finish the slide from there with the same speed.
+    // (Before, the song changed only after the slide had finished: 0.6-0.8 s later than the buttons.)
+    LaunchedEffect(s.id) {
+        val dir = ctrl.pendingSkip
+        ctrl.pendingSkip = 0
+        if (dir == 0) { ctrl.skipX.snapTo(0f); return@LaunchedEffect }
+        val v = ctrl.skipX.velocity
+        val width = ctrl.coverWidth.coerceAtLeast(1f)
+        ctrl.skipX.snapTo(ctrl.skipX.value - dir * width)
+        ctrl.skipX.animateTo(0f, Motion.sheet(), initialVelocity = v)
+    }
 
     val open by remember { derivedStateOf { ctrl.progress.value > 0.001f } }
+    // Long-press on the mini player: the full player's menu, without opening the player.
+    var miniMenu by remember { mutableStateOf(false) }
+    if (miniMenu) com.skarif.kairos.ui.screens.PlayerMenu(
+        vm, s, onAlbum, { a -> onOpenCollection("artist:$a") }, onSleep, onEqualizer,
+    ) { miniMenu = false }
     // Safety net: if anything ever leaves the player resting half open, finish the move.
     LaunchedEffect(ctrl) {
         // Only wakes when motion stops, not on every frame of it.
@@ -288,6 +319,7 @@ fun PlayerSheet(
         val w = constraints.maxWidth.toFloat()
         val h = constraints.maxHeight.toFloat()
         val px = { d: Float -> with(density) { d.dp.toPx() } }
+        ctrl.coverWidth = w
         val miniH = px(64f)
         val inset = px(14f)
         val miniTop = h - miniBottomPx - miniH
@@ -320,11 +352,11 @@ fun PlayerSheet(
             val mini = Rect(sr.left + px(8f), sr.top + px(8f), sr.left + px(56f), sr.top + px(56f))
             val full = pageRect.value.let { r ->
                 if (ctrl.page == PlayerPage.MAIN) r.translate(0f, -ctrl.mainScroll.value.toFloat()) else r
-            }
+            }.translate(0f, sheetRect(p).top) // rides down with the sheet while it's dragged
             return lerp(mini, full, p.coerceIn(0f, 1f))
         }
 
-        val miniBg = if (c.dark) Color(0xF0262626) else Color(0xF5FFFFFF)
+        val miniBg = c.mini
 
         // 1. The surface: a floating card when collapsed, the whole screen when open. It is drawn
         // full size and clipped to the sheet's shape, so the blurred backdrop inside is drawn once
@@ -356,9 +388,14 @@ fun PlayerSheet(
                     enabled = !ctrl.isOpen || ctrl.progress.isRunning,
                     onDragStopped = { v -> ctrl.settle(v) },
                 )
-                .clickable(
+                .combinedClickable(
                     enabled = !ctrl.isOpen, role = Role.Button, onClickLabel = "Open player",
                     interactionSource = null, indication = null,
+                    onLongClickLabel = "Song options",
+                    onLongClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        miniMenu = true
+                    },
                 ) { ctrl.expand() },
         ) {
             MiniContent(vm, ctrl, s.title, s.artist, now.isPlaying, now.durationMs.takeIf { it > 0 } ?: s.durationMs)
@@ -368,6 +405,24 @@ fun PlayerSheet(
         // Neighbours sit either side for swiping between songs.
         // Apple Music's touch: the cover settles back a little while paused and springs forward on play.
         // No overshoot: a bounce past full size pushed the cover out of its frame on play.
+        // Vinyl: 33 1/3 rpm = 200 degrees a second while playing; spins down to a stop on pause
+        // (a real platter doesn't stop dead). Only the angle state changes, read while drawing.
+        val vinylT by androidx.compose.animation.core.animateFloatAsState(
+            if (ctrl.vinyl) 1f else 0f, Motion.spatial(), label = "vinylMorph",
+        )
+        LaunchedEffect(ctrl.vinyl, now.isPlaying) {
+            if (!ctrl.vinyl) return@LaunchedEffect
+            var last = withFrameNanos { it }
+            while (true) {
+                val t = withFrameNanos { it }
+                val dt = (t - last) / 1e9f
+                last = t
+                val target = if (now.isPlaying) 200f else 0f
+                ctrl.vinylSpeed += (target - ctrl.vinylSpeed) * (dt * 3f).coerceAtMost(1f)
+                if (!ctrl.vinylHeld) ctrl.vinylAngle = (ctrl.vinylAngle + ctrl.vinylSpeed * dt) % 360f
+                if (!now.isPlaying && ctrl.vinylSpeed < 1f) { ctrl.vinylSpeed = 0f; break }
+            }
+        }
         val pauseScale by androidx.compose.animation.core.animateFloatAsState(
             if (now.isPlaying) 1f else 0.94f, Motion.ios(0.45f, 1f), label = "pauseScale",
         )
@@ -390,7 +445,12 @@ fun PlayerSheet(
                         shape = RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
                         clip = true
                         translationX = if (offset == 0) ctrl.skipX.value else ctrl.skipX.value + offset * size.width
-                        if (offset == 0 && ctrl.page == PlayerPage.MAIN) {
+                        val vt = if (offset == 0 && ctrl.page == PlayerPage.MAIN) vinylT * p.coerceIn(0f, 1f) else 0f
+                        if (vt > 0.001f) {
+                            // Morph the cover into a disc in the middle of the hero, then spin it.
+                            shape = VinylShape(vt, top, bottom)
+                            rotationZ = ctrl.vinylAngle * vt
+                        } else if (offset == 0 && ctrl.page == PlayerPage.MAIN) {
                             // Shrink toward the centre while paused, only once the player is open.
                             val k = ((1f - pauseScale) / 0.06f).coerceIn(0f, 1f) * p.coerceIn(0f, 1f)
                             val s = (1f - 0.06f * k).coerceAtMost(1f)
@@ -401,16 +461,22 @@ fun PlayerSheet(
                             val t = mix(top, bottom, k).coerceAtLeast(0f)
                             shape = RoundedCornerShape(topStart = t, topEnd = t, bottomStart = bottom, bottomEnd = bottom)
                         }
-                        if (offset != 0) alpha = (0.55f + 0.45f * (1f - abs(translationX) / size.width)).coerceIn(0f, 1f)
+                        // Neighbours belong to the open player only: gone as soon as it's dragged down.
+                        if (offset != 0) alpha = (0.55f + 0.45f * (1f - abs(translationX) / size.width)).coerceIn(0f, 1f) *
+                            ((p - 0.97f) / 0.03f).coerceIn(0f, 1f)
                     }
-                    .background(c.accent),
+                    .background(c.accent)
+                    .drawWithContent {
+                        drawContent()
+                        if (offset == 0 && vinylT > 0.001f && ctrl.page == PlayerPage.MAIN) drawVinyl(vinylT)
+                    },
             ) {
                 if (img != null) Image(img, desc, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             }
         }
         // Neighbours only once the cover has settled in the hero; during the move between pages
         // they used to show up beside the shrinking cover.
-        val pagerOn = ctrl.page == PlayerPage.MAIN && open && !pageRect.isRunning
+        val pagerOn = ctrl.page == PlayerPage.MAIN && open && !pageRect.isRunning && !ctrl.vinyl
         if (pagerOn && prevSong != null) cover(prevImg, -1, null)
         if (pagerOn && nextSong != null) cover(nextImg, 1, null)
         cover(curImg ?: artImg, 0, "${s.album} cover")
@@ -433,7 +499,12 @@ fun PlayerSheet(
                     .graphicsLayer {
                     val p = ctrl.progress.value
                     alpha = ((p - 0.45f) / 0.55f).coerceIn(0f, 1f)
-                    translationY = (1f - p) * 64.dp.toPx()
+                    // Ride with the sheet's top edge and stay inside it. Before, the pages stayed
+                    // full screen and only faded, so dragging down showed them ghosted over Home.
+                    val r = sheetRect(p)
+                    translationY = r.top
+                    shape = SheetShape(r.translate(0f, -r.top), mix(30f, 0f, p).coerceAtLeast(0f).dp.toPx())
+                    clip = true
                 },
             ) {
                 val visibleState = remember { androidx.compose.runtime.derivedStateOf { ctrl.progress.value > 0.001f } }
@@ -459,8 +530,13 @@ fun PlayerSheet(
                                     val go = if (dir < 0) nextSong != null else prevSong != null
                                     if (go && dir != 0) {
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        ctrl.skipX.animateTo(dir * w, Motion.sheet(), initialVelocity = vx)
+                                        // Change song now, as the buttons do; the slide carries on meanwhile.
+                                        ctrl.pendingSkip = dir
                                         if (dir < 0) vm.next() else vm.previousTrack()
+                                        ctrl.skipX.animateTo(dir * w, Motion.sheet(), initialVelocity = vx)
+                                        // Slide done before the song arrived: the neighbour is centred,
+                                        // so the plain snap back on arrival is right.
+                                        ctrl.pendingSkip = 0
                                     } else {
                                         ctrl.skipX.animateTo(0f, Motion.spatial(), initialVelocity = vx)
                                     }
@@ -555,4 +631,50 @@ private data class SheetShape(val rect: Rect, val radius: Float) : androidx.comp
         layoutDirection: androidx.compose.ui.unit.LayoutDirection,
         density: androidx.compose.ui.unit.Density,
     ) = androidx.compose.ui.graphics.Outline.Rounded(androidx.compose.ui.geometry.RoundRect(rect, androidx.compose.ui.geometry.CornerRadius(radius)))
+}
+
+/** The record's disc inside the cover's box: [t] 0 = the cover's own shape, 1 = a centred circle. */
+private data class VinylShape(val t: Float, val top: Float, val bottom: Float) : androidx.compose.ui.graphics.Shape {
+    override fun createOutline(
+        size: androidx.compose.ui.geometry.Size,
+        layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+        density: androidx.compose.ui.unit.Density,
+    ): androidx.compose.ui.graphics.Outline {
+        val d = minOf(size.width, size.height) * 0.84f
+        val disc = Rect(Offset((size.width - d) / 2, (size.height - d) / 2), androidx.compose.ui.geometry.Size(d, d))
+        val r = androidx.compose.ui.geometry.lerp(Rect(Offset.Zero, size).topLeft, disc.topLeft, t)
+        val r2 = androidx.compose.ui.geometry.lerp(Rect(Offset.Zero, size).bottomRight, disc.bottomRight, t)
+        val rr = Rect(r, r2)
+        val tr = mix(top, d / 2, t)
+        val br = mix(bottom, d / 2, t)
+        return androidx.compose.ui.graphics.Outline.Rounded(
+            androidx.compose.ui.geometry.RoundRect(
+                rr, topLeft = androidx.compose.ui.geometry.CornerRadius(tr), topRight = androidx.compose.ui.geometry.CornerRadius(tr),
+                bottomRight = androidx.compose.ui.geometry.CornerRadius(br), bottomLeft = androidx.compose.ui.geometry.CornerRadius(br),
+            ),
+        )
+    }
+}
+
+/** Grooves, a label ring and the spindle hole, fading in with the morph. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVinyl(t: Float) {
+    val d = minOf(size.width, size.height) * 0.84f
+    val c = center
+    val a = t.coerceIn(0f, 1f)
+    // Darken the cover toward the rim, like the vinyl around the paper label.
+    drawCircle(
+        androidx.compose.ui.graphics.Brush.radialGradient(
+            0f to Color.Transparent, 0.36f to Color.Transparent, 0.4f to Color(0xCC0B0B0B), 1f to Color(0xF2050505),
+            center = c, radius = d / 2,
+        ),
+        radius = d / 2, center = c, alpha = a,
+    )
+    // Grooves: thin rings with a soft sheen.
+    var r = d * 0.22f
+    while (r < d / 2 - 2f) {
+        drawCircle(Color.White.copy(alpha = 0.05f * a), r, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1f))
+        r += 5f
+    }
+    drawCircle(Color.White.copy(alpha = 0.16f * a), d * 0.2f, c, style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+    drawCircle(Color(0xFF0B0B0B).copy(alpha = a), d * 0.025f, c)
 }

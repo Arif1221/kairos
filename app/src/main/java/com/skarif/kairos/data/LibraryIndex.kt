@@ -495,3 +495,36 @@ fun libraryLetter(text: String, ignoreArticles: Boolean = false): Char {
 /** Sort key: "#" group first, then A–Z, each by [libraryKey]. */
 fun librarySortKey(text: String, ignoreArticles: Boolean = false): String =
     (if (libraryLetter(text, ignoreArticles) == '#') "0" else "1") + libraryKey(text, ignoreArticles)
+
+/** The colour dots in Library: a name, a swatch and the hue range (degrees) it covers. */
+enum class CoverColour(val label: String, val swatch: Long, private val from: Float, private val to: Float) {
+    RED("Red", 0xFFE5484D, 345f, 15f),
+    ORANGE("Orange", 0xFFF2994A, 15f, 45f),
+    YELLOW("Yellow", 0xFFF2C94C, 45f, 70f),
+    GREEN("Green", 0xFF3FB97C, 70f, 165f),
+    BLUE("Blue", 0xFF2F80ED, 165f, 250f),
+    PURPLE("Purple", 0xFF8E5CE6, 250f, 300f),
+    PINK("Pink", 0xFFE85AA8, 300f, 345f);
+
+    fun contains(hue: Float): Boolean = if (from < to) hue >= from && hue < to else hue >= from || hue < to
+}
+
+/**
+ * A cover's main hue: the vivid pixels of an 8x8 copy, averaged around the colour wheel and
+ * weighted by how vivid they are. Null for a grey, black or white cover.
+ */
+fun coverHue(bmp: android.graphics.Bitmap): Float? {
+    val small = android.graphics.Bitmap.createScaledBitmap(bmp, 8, 8, true)
+    val hsv = FloatArray(3)
+    var x = 0.0; var y = 0.0; var weight = 0.0
+    for (px in 0 until 8) for (py in 0 until 8) {
+        android.graphics.Color.colorToHSV(small.getPixel(px, py), hsv)
+        val w = (hsv[1] * hsv[2]).toDouble()
+        if (w < 0.12) continue
+        val rad = Math.toRadians(hsv[0].toDouble())
+        x += kotlin.math.cos(rad) * w; y += kotlin.math.sin(rad) * w; weight += w
+    }
+    if (small !== bmp) small.recycle()
+    if (weight < 1.5) return null
+    return ((Math.toDegrees(kotlin.math.atan2(y, x)) + 360.0) % 360.0).toFloat()
+}

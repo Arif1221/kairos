@@ -201,6 +201,25 @@ class PlayerConnection(private val context: Context, private val appScope: Corou
     /** Removes the songs already played. */
     fun clearPlayed() = controller?.run { if (currentMediaItemIndex > 0) removeMediaItems(0, currentMediaItemIndex) }
     fun toggleShuffle() = controller?.run { shuffleModeEnabled = !shuffleModeEnabled }
+
+    /**
+     * Shake to shuffle: puts everything after the current song in a new random order. Done as
+     * one remove and one add (not one move per song, which is a binder call each). With shuffle
+     * mode on, "what's next" isn't the list order, so it's switched off: the list itself is now
+     * random, and the queue shows exactly what will play. False if there's nothing to shuffle.
+     */
+    fun reshuffleUpcoming(): Boolean {
+        val c = controller ?: return false
+        if (filling.value) return false
+        if (c.shuffleModeEnabled) c.shuffleModeEnabled = false
+        val cur = c.currentMediaItemIndex
+        val n = c.mediaItemCount
+        if (n - cur - 1 < 2) return false
+        val rest = (cur + 1 until n).map { c.getMediaItemAt(it) }.shuffled()
+        c.removeMediaItems(cur + 1, n)
+        c.addMediaItems(rest)
+        return true
+    }
     fun cycleRepeat() = controller?.run {
         repeatMode = when (repeatMode) {
             Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL

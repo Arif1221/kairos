@@ -396,7 +396,7 @@ fun SleepTimerSheet(vm: MainViewModel, onBack: () -> Unit) {
                     listOf(15, 30, 45, 60).forEach { m -> Pill("$m min", { minutes = m; endOfSong = false }, selected = !endOfSong && minutes == m) }
                     Pill("End of song", { endOfSong = true }, selected = endOfSong)
                 }
-                ToggleRow("Fade out", fade, { fade = it }, "Lower the volume over the last 30 seconds")
+                ToggleRow("Fade out", fade, { fade = it }, "Gently lower the volume over the last minute")
                 Pill("Start timer", {
                     if (endOfSong) vm.startSleepEndOfSong(fade) else vm.startSleep(minutes, fade)
                     close()
