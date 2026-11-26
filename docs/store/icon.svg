@@ -1,9 +1,39 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="512" height="512">
-  <rect width="108" height="108" fill="#15131C"/>
-  <circle cx="54" cy="54" r="34" fill="#2A2340"/>
-  <path fill="#FFFFFF" d="M36,35a4,4 0,0 1,4 -4h2a4,4 0,0 1,4 4v38a4,4 0,0 1,-4 4h-2a4,4 0,0 1,-4 -4z"/>
-  <path fill="#8B6CFF" d="M50,38.5c0,-3.1 3.4,-5 6,-3.4l20.6,13.2c2.4,1.6 2.4,5.1 0,6.7L56,68.2c-2.6,1.7 -6,-0.2 -6,-3.4z"/>
-  <path fill="#FFFFFF" d="M52,72.5a2.5,2.5 0,0 1,5 0v2a2.5,2.5 0,0 1,-5 0z"/>
-  <path fill="#FFFFFF" d="M60,70a2.5,2.5 0,0 1,5 0v4.5a2.5,2.5 0,0 1,-5 0z"/>
-  <path fill="#FFFFFF" d="M68,67.5a2.5,2.5 0,0 1,5 0v7a2.5,2.5 0,0 1,-5 0z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="1024" height="1024">
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0" stop-color="#2A0F5C"/><stop offset="0.55" stop-color="#8A1E78"/><stop offset="1" stop-color="#F0713C"/>
+ </linearGradient>
+ <radialGradient id="blobA" cx="26" cy="24" r="42" gradientUnits="userSpaceOnUse">
+  <stop offset="0" stop-color="#FF5FA8" stop-opacity="0.75"/><stop offset="1" stop-color="#FF5FA8" stop-opacity="0"/>
+ </radialGradient>
+ <radialGradient id="blobB" cx="90" cy="94" r="40" gradientUnits="userSpaceOnUse">
+  <stop offset="0" stop-color="#FFC04D" stop-opacity="0.7"/><stop offset="1" stop-color="#FFC04D" stop-opacity="0"/>
+ </radialGradient>
+ <radialGradient id="shadow" cx="56.0" cy="57.5" r="28.0" gradientUnits="userSpaceOnUse">
+  <stop offset="0.82" stop-color="#000" stop-opacity="0.45"/><stop offset="1" stop-color="#000" stop-opacity="0"/>
+ </radialGradient>
+ <radialGradient id="vinyl" cx="48.0" cy="46.0" r="30.0" gradientUnits="userSpaceOnUse">
+  <stop offset="0" stop-color="#26242C"/><stop offset="1" stop-color="#08080A"/>
+ </radialGradient>
+ <linearGradient id="label" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0" stop-color="#FF5FA8"/><stop offset="1" stop-color="#FFB547"/>
+ </linearGradient>
+</defs>
+<rect width="108" height="108" fill="url(#bg)"/>
+<rect width="108" height="108" fill="url(#blobA)"/>
+<rect width="108" height="108" fill="url(#blobB)"/>
+<path d="M28.00,57.50a28.00,28.00 0 1,1 56.00,0a28.00,28.00 0 1,1 -56.00,0z" fill="url(#shadow)"/>
+<path d="M30.00,54.00a24.00,24.00 0 1,1 48.00,0a24.00,24.00 0 1,1 -48.00,0z" fill="url(#vinyl)"/>
+<path d="M41.17,54.00a12.82,12.82 0 1,1 25.65,0a12.82,12.82 0 1,1 -25.65,0zM41.62,54.00a12.38,12.38 0 1,1 24.75,0a12.38,12.38 0 1,1 -24.75,0z" fill="#FFFFFF" fill-opacity="0.12" fill-rule="evenodd"/>
+<path d="M39.27,54.00a14.72,14.72 0 1,1 29.45,0a14.72,14.72 0 1,1 -29.45,0zM39.73,54.00a14.28,14.28 0 1,1 28.55,0a14.28,14.28 0 1,1 -28.55,0z" fill="#FFFFFF" fill-opacity="0.055" fill-rule="evenodd"/>
+<path d="M37.38,54.00a16.62,16.62 0 1,1 33.25,0a16.62,16.62 0 1,1 -33.25,0zM37.83,54.00a16.17,16.17 0 1,1 32.35,0a16.17,16.17 0 1,1 -32.35,0z" fill="#FFFFFF" fill-opacity="0.055" fill-rule="evenodd"/>
+<path d="M35.48,54.00a18.52,18.52 0 1,1 37.05,0a18.52,18.52 0 1,1 -37.05,0zM35.93,54.00a18.07,18.07 0 1,1 36.15,0a18.07,18.07 0 1,1 -36.15,0z" fill="#FFFFFF" fill-opacity="0.055" fill-rule="evenodd"/>
+<path d="M33.58,54.00a20.42,20.42 0 1,1 40.85,0a20.42,20.42 0 1,1 -40.85,0zM34.03,54.00a19.97,19.97 0 1,1 39.95,0a19.97,19.97 0 1,1 -39.95,0z" fill="#FFFFFF" fill-opacity="0.12" fill-rule="evenodd"/>
+<path d="M31.68,54.00a22.32,22.32 0 1,1 44.65,0a22.32,22.32 0 1,1 -44.65,0zM32.13,54.00a21.87,21.87 0 1,1 43.75,0a21.87,21.87 0 1,1 -43.75,0z" fill="#FFFFFF" fill-opacity="0.055" fill-rule="evenodd"/>
+
+<path d="M64.89,33.52A23.2,23.2 0 0,1 74.09,42.40L63.61,48.45A11.1,11.1 0 0,0 59.21,44.20z" fill="#FFFFFF" fill-opacity="0.09"/>
+<path d="M43.11,74.48A23.2,23.2 0 0,1 36.23,68.91L45.50,61.13A11.1,11.1 0 0,0 48.79,63.80z" fill="#FFFFFF" fill-opacity="0.055"/>
+<path d="M44.40,54.00a9.60,9.60 0 1,1 19.20,0a9.60,9.60 0 1,1 -19.20,0z" fill="url(#label)"/>
+<path d="M44.45,54.00a9.55,9.55 0 1,1 19.10,0a9.55,9.55 0 1,1 -19.10,0zM44.95,54.00a9.05,9.05 0 1,1 18.10,0a9.05,9.05 0 1,1 -18.10,0z" fill="#000" fill-opacity="0.18" fill-rule="evenodd"/>
+<g transform="translate(54.0 54.0) scale(0.8348) translate(-54.0 -54.0)"><path d="M48.6,48.9a1.3,1.3 0 0,1 1.3,-1.3h0.9a1.3,1.3 0 0,1 1.3,1.3v10.2a1.3,1.3 0 0,1 -1.3,1.3h-0.9a1.3,1.3 0 0,1 -1.3,-1.3z" fill="#17121F"/><path d="M53.4,49.6c0,-1 1.1,-1.6 1.9,-1.1l6.0,3.9c0.8,0.5 0.8,1.7 0,2.2l-6.0,3.9c-0.8,0.5 -1.9,-0.1 -1.9,-1.1z" fill="#17121F"/></g>
 </svg>
