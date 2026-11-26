@@ -1,0 +1,1 @@
+• Fixed a black screen when tapping the play button with nothing playing
