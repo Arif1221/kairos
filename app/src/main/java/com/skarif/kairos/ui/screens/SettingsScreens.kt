@@ -306,6 +306,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 }
                 Text("Kairos $version", style = T.title, color = c.text)
                 Text("An offline music player. No account, no ads, no tracking: everything stays on this phone, unless you turn on fetching lyrics online.", style = T.small, color = c.muted)
+                Text("© 2026 SK Arif Hossain. Licensed under Apache 2.0: free to use, with credit.", style = T.small, color = c.muted)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Pill("Source code", {
                         runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("https://github.com/Arif1221/kairos"))) }
@@ -317,6 +318,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
             }
 
             com.skarif.kairos.ui.components.DeveloperCard()
+            com.skarif.kairos.ui.components.CreditsCard(online = false)
 
             Pill("Equalizer", onEqualizer, icon = Ic.Sliders, big = true, modifier = Modifier.fillMaxWidth())
     }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.3
+- Licence: Apache 2.0 with credit required (see NOTICE); earlier versions stay GPL-3.0
+- Settings > Credits lists every project Kairos is built with
+
 ## 0.9.2
 - "Made by" card in Settings and on the welcome screen
 

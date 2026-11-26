@@ -29,4 +29,4 @@ Use the [feature request form](https://github.com/Arif1221/kairos/issues/new?tem
 
 Kairos Online (YouTube streaming) is a separate app in its own repository, [Arif1221/kairos-online](https://github.com/Arif1221/kairos-online). It merges this repo's `main`; nothing from it comes back here.
 
-By contributing you agree that your contribution is licensed under the [GPL-3.0](LICENSE).
+By contributing you agree that your contribution is licensed under the [Apache License 2.0](LICENSE), like the rest of Kairos.

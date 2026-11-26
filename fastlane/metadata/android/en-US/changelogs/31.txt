@@ -1,0 +1,2 @@
+• Kairos is now under the Apache 2.0 licence: free to use, with credit
+• Settings > Credits lists every project Kairos is built with

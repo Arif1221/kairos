@@ -9,7 +9,7 @@
 [![Latest release](https://img.shields.io/github/v/release/Arif1221/kairos?label=release&color=8B6CFF)](https://github.com/Arif1221/kairos/releases/latest)
 [![Build](https://img.shields.io/github/actions/workflow/status/Arif1221/kairos/build.yml?branch=main)](https://github.com/Arif1221/kairos/actions/workflows/build.yml)
 [![Android 9+](https://img.shields.io/badge/Android-9%2B-3DDC84?logo=android&logoColor=white)](#requirements)
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![License: Apache 2.0 with credit](https://img.shields.io/badge/license-Apache%202.0%20%2B%20credit-blue)](LICENSE)
 
 [Download the APK](https://github.com/Arif1221/kairos/releases/latest) · [Report a bug](https://github.com/Arif1221/kairos/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/Arif1221/kairos/issues/new?template=feature_request.yml)
 
@@ -115,8 +115,26 @@ app/src/main/java/com/skarif/kairos/
 
 Bug reports, ideas and pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first. For security issues, see [SECURITY.md](SECURITY.md).
 
+## Credits
+
+Kairos is built with these, and thanks everyone behind them:
+
+| Project | By | Licence |
+|---|---|---|
+| [Kotlin](https://kotlinlang.org) and kotlinx.coroutines | JetBrains | Apache 2.0 |
+| [Jetpack Compose](https://developer.android.com/jetpack/compose), Material 3, AndroidX (Core, Activity, Lifecycle, Navigation) | Google, Android Open Source Project | Apache 2.0 |
+| [Media3](https://developer.android.com/media/media3): ExoPlayer and MediaSession | Google, Android Open Source Project | Apache 2.0 |
+| Room, DataStore, Palette | Google, Android Open Source Project | Apache 2.0 |
+| [Guava](https://github.com/google/guava) | Google | Apache 2.0 |
+| [Urbanist](https://github.com/coreyhu/Urbanist) font | Corey Hu | SIL OFL 1.1 |
+| [LRCLIB](https://lrclib.net) lyrics | LRCLIB | Free public API |
+
+The same list is in the app under Settings > Credits.
+
 ## License
 
-Kairos is free software under the [GNU General Public License v3.0](LICENSE). You can use, study, share and change it; versions you distribute must stay under the same licence.
+Copyright © 2026 SK Arif Hossain. Kairos is under the [Apache License 2.0](LICENSE): **use it, change it, ship it, but credit it.** Anything you distribute that uses this code must keep the [NOTICE](NOTICE) file and credit "Kairos by SK Arif Hossain" where your app lists its credits. The names "Kairos" and "Kairos Online" and the icon are not part of the licence: give your version its own.
+
+Versions 0.9.2 and earlier were released under GPL-3.0.
 
 The Urbanist font is under the [SIL Open Font License](app/src/main/assets/licenses/urbanist-OFL.txt).

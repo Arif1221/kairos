@@ -1,0 +1,23 @@
+Kairos
+Copyright 2026 SK Arif Hossain
+https://github.com/Arif1221/kairos
+
+This product includes software developed by SK Arif Hossain.
+
+You may use, change and share this code, including in your own apps, under the Apache
+License 2.0 (see LICENSE). As that licence requires (section 4), anything you distribute
+that uses this code must:
+
+  - keep this NOTICE file with it, and
+  - credit the original where your app shows its credits or licences (an "About" or
+    "Open-source licences" screen), for example:
+        "Based on Kairos by SK Arif Hossain (github.com/Arif1221/kairos)".
+
+The licence does not let you use the names "Kairos" or "Kairos Online", or the Kairos
+icon, for your own app (section 6). Give your version its own name and icon.
+
+Versions 0.9.2 and earlier were released under GPL-3.0 and remain available under it.
+
+Third-party components keep their own licences; they are listed under "Credits" in
+README.md and in the app (Settings > Credits). The Urbanist font is under the SIL Open
+Font License 1.1 (app/src/main/assets/licenses/urbanist-OFL.txt).
