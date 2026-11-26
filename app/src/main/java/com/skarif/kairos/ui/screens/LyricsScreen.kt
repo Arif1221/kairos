@@ -107,6 +107,9 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
         onDispose { view.keepScreenOn = false }
     }
     var options by rememberSaveable { mutableStateOf(false) }
+    var getPanel by rememberSaveable { mutableStateOf(false) }
+    val downloading by vm.lyricsDownloading.collectAsStateWithLifecycle()
+    val fromOnline = (state as? LyricsState.Ready)?.lyrics?.source == Lyrics.SOURCE_ONLINE
     // The player's own background (the blurred cover) shows through, as on the main player.
     Box(Modifier.fillMaxSize()    ) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
@@ -125,12 +128,40 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
                     )
                     Text(song?.artist ?: "", style = T.small.copy(fontSize = 12.sp), color = Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                CircleButton(
+                    if (getPanel) Ic.Close else Ic.DownArrow, if (getPanel) "Hide download" else "Download lyrics",
+                    { getPanel = !getPanel; if (getPanel) options = false },
+                    size = 44.dp, container = if (getPanel) c.ink else Glass, content = if (getPanel) c.inkFg else Fg,
+                )
                 val synced = (state as? LyricsState.Ready)?.lyrics?.synced == true
                 if (synced) {
                     CircleButton(
-                        if (options) Ic.Close else Ic.Sliders, if (options) "Hide timing" else "Lyrics timing", { options = !options },
+                        if (options) Ic.Close else Ic.Sliders, if (options) "Hide timing" else "Lyrics timing", { options = !options; if (options) getPanel = false },
                         size = 44.dp, container = if (options) c.ink else Glass, content = if (options) c.inkFg else Fg,
                     )
+                }
+            }
+
+            // Download from LRCLIB, in the form you pick. Works even with auto-fetch off: you asked.
+            AnimatedVisibility(getPanel, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                Column(
+                    Modifier.padding(horizontal = 18.dp).fillMaxWidth().clip(RoundedCornerShape(com.skarif.kairos.ui.theme.Radius.item)).background(Glass)
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        if (downloading) "Searching lrclib.net…" else "Download from lrclib.net. Sends only the title, artist, album and length.",
+                        style = T.small, color = Dim,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SmallPill("Time-synced", "Download time-synced lyrics") {
+                            vm.downloadLyrics(com.skarif.kairos.data.OnlineLyricsType.SYNCED); getPanel = false
+                        }
+                        SmallPill("Plain text", "Download plain lyrics") {
+                            vm.downloadLyrics(com.skarif.kairos.data.OnlineLyricsType.PLAIN); getPanel = false
+                        }
+                        if (fromOnline) SmallPill("Remove", "Remove downloaded lyrics") { vm.removeDownloadedLyrics(); getPanel = false }
+                    }
                 }
             }
 
@@ -168,10 +199,16 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
             ) {
                 when (val st = state) {
                     LyricsState.Loading -> Message("Looking for lyrics…")
-                    LyricsState.None -> Message(
-                        "No lyrics for this song yet. Add them to the file's tags, or put a .lrc file with the " +
-                            "same name next to the song and allow that folder in Settings.",
-                    )
+                    LyricsState.None -> if (downloading) Message("Searching lrclib.net…") else Column {
+                        Message(
+                            "No lyrics for this song yet. Download them, add them to the file's tags, or put a .lrc " +
+                                "file with the same name next to the song and allow that folder in Settings.",
+                        )
+                        Row(Modifier.padding(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SmallPill("Get time-synced", "Download time-synced lyrics") { vm.downloadLyrics(com.skarif.kairos.data.OnlineLyricsType.SYNCED) }
+                            SmallPill("Get plain", "Download plain lyrics") { vm.downloadLyrics(com.skarif.kairos.data.OnlineLyricsType.PLAIN) }
+                        }
+                    }
                     is LyricsState.Ready -> LyricsList(vm, st.lyrics, offset, c.accent) { t -> vm.seekTo(t) }
                 }
             }

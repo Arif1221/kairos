@@ -870,6 +870,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         updateSettings { it.copy(lrcFolderUris = it.lrcFolderUris + uri.toString()) }
     }
 
+    private val _lyricsDownloading = MutableStateFlow(false)
+    /** True while the lyrics page is fetching from LRCLIB. */
+    val lyricsDownloading: StateFlow<Boolean> = _lyricsDownloading
+
+    /** The lyrics page's download: fetch this song's lyrics now, synced or plain, and show them. */
+    fun downloadLyrics(type: com.skarif.kairos.data.OnlineLyricsType) {
+        val song = currentSong.value ?: return
+        if (_lyricsDownloading.value) return
+        _lyricsDownloading.value = true
+        viewModelScope.launch {
+            val r = try { ct.lyrics.download(song, type) } finally { _lyricsDownloading.value = false }
+            lyricsReload.value++
+            notify(
+                when (r) {
+                    com.skarif.kairos.data.LyricsRepository.Download.SYNCED -> "Time-synced lyrics downloaded"
+                    com.skarif.kairos.data.LyricsRepository.Download.PLAIN -> "Lyrics downloaded"
+                    com.skarif.kairos.data.LyricsRepository.Download.ONLY_PLAIN -> "No synced lyrics for this song, downloaded plain text"
+                    com.skarif.kairos.data.LyricsRepository.Download.NOT_FOUND -> "LRCLIB has no lyrics for this song"
+                    com.skarif.kairos.data.LyricsRepository.Download.FAILED -> "Couldn't reach LRCLIB. Check your connection"
+                },
+            )
+        }
+    }
+
+    /** Drops this song's downloaded lyrics and goes back to its own. */
+    fun removeDownloadedLyrics() {
+        val song = currentSong.value ?: return
+        viewModelScope.launch {
+            ct.lyrics.removeDownloaded(song)
+            lyricsReload.value++
+            notify("Downloaded lyrics removed")
+        }
+    }
+
     /** Deletes lyrics saved from LRCLIB; songs are looked up again the next time they play. */
     fun clearOnlineLyrics() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {

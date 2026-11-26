@@ -27,6 +27,13 @@ class OnlineLyrics(context: Context, private val userAgent: String) {
 
     private val dir = File(context.filesDir, "lyrics_online").apply { mkdirs() }
 
+    /** How a fresh lookup asked for from the lyrics page went. */
+    sealed interface Fetch {
+        data class Got(val found: Found) : Fetch
+        data object NotFound : Fetch
+        data object Failed : Fetch
+    }
+
     fun lookup(song: SongEntity): Found? {
         if (song.title.isBlank()) return null
         val file = File(dir, "${song.id}.json")
@@ -41,6 +48,41 @@ class OnlineLyrics(context: Context, private val userAgent: String) {
         }
         writeCache(file, found)
         return found
+    }
+
+    /** Asks LRCLIB again, ignoring anything saved (the lyrics page's download button). */
+    fun fetchFresh(song: SongEntity): Fetch {
+        if (song.title.isBlank()) return Fetch.NotFound
+        val file = File(dir, "${song.id}.json")
+        val found = try {
+            get(song) ?: search(song)
+        } catch (e: Exception) {
+            Log.w(TAG, "Fetch failed for ${song.id}", e)
+            return Fetch.Failed
+        }
+        writeCache(file, found)
+        return if (found == null) Fetch.NotFound else Fetch.Got(found)
+    }
+
+    /** What is saved for a song, without asking the network. */
+    fun saved(songId: Long): Found? =
+        readCache(File(dir, "$songId.json"))?.takeIf { it.synced != null || it.plain != null }
+
+    /**
+     * Lyrics downloaded from the lyrics page are pinned: they're shown in the chosen form even
+     * over the song's own lyrics and with "Fetch lyrics online" off, until removed.
+     */
+    fun pinned(songId: Long): OnlineLyricsType? =
+        runCatching { OnlineLyricsType.valueOf(File(dir, "$songId.pin").readText().trim()) }.getOrNull()
+
+    fun pin(songId: Long, type: OnlineLyricsType) {
+        runCatching { File(dir, "$songId.pin").writeText(type.name) }
+    }
+
+    /** Drops a song's downloaded lyrics and remembers it as a miss, so auto-fetch leaves it alone for a while. */
+    fun remove(songId: Long) {
+        File(dir, "$songId.pin").delete()
+        writeCache(File(dir, "$songId.json"), null)
     }
 
     /** Exact match on title, artist, album and duration (LRCLIB allows ±2 s). */

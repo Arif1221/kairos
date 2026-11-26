@@ -41,6 +41,14 @@ class LyricsRepository(
         val key = "${song.id}|${s.readEmbeddedLyrics}|${s.readLrcFiles}|${s.lyricsPreference}|${s.lrcFolderUris.hashCode()}|${s.fetchLyricsOnline}|${s.onlineLyricsType}"
         cache.get(key)?.let { return@withContext it.lyrics }
 
+        // Downloaded on purpose from the lyrics page: that choice wins.
+        online.pinned(song.id)?.let { type ->
+            online.saved(song.id)?.let { fromFound(it, type) }?.let { pinned ->
+                cache.put(key, LyricsResult(pinned))
+                return@withContext pinned
+            }
+        }
+
         val embedded = if (s.readEmbeddedLyrics) readEmbedded(song) else null
         val lrc = if (s.readLrcFiles) readLrcFile(song, s.lrcFolderUris) else null
         val pick = when {
@@ -71,6 +79,41 @@ class LyricsRepository(
             else -> null
         }
         return fetched?.takeUnless { it.isEmpty } ?: local
+    }
+
+    /** Synced or plain lyrics from an LRCLIB answer, falling back to the other form if that's all there is. */
+    private fun fromFound(found: OnlineLyrics.Found, type: OnlineLyricsType): Lyrics? {
+        val synced = found.synced?.let { LrcParser.parse(it, Lyrics.SOURCE_ONLINE) }?.takeUnless { it.isEmpty }
+        val plain = found.plain?.let { LrcParser.parse(it, Lyrics.SOURCE_ONLINE) }?.takeUnless { it.isEmpty }
+            ?: synced?.let { l -> Lyrics(false, l.lines.map { LyricLine(-1, it.text) }, Lyrics.SOURCE_ONLINE) }
+        return if (type == OnlineLyricsType.SYNCED) synced ?: plain else plain
+    }
+
+    /** Result of [download], for the message the lyrics page shows. */
+    enum class Download { SYNCED, PLAIN, ONLY_PLAIN, NOT_FOUND, FAILED }
+
+    /** Fetches this song's lyrics now in the chosen form and pins them. */
+    suspend fun download(song: SongEntity, type: OnlineLyricsType): Download = withContext(Dispatchers.IO) {
+        when (val r = online.fetchFresh(song)) {
+            OnlineLyrics.Fetch.Failed -> Download.FAILED
+            OnlineLyrics.Fetch.NotFound -> Download.NOT_FOUND
+            is OnlineLyrics.Fetch.Got -> {
+                val l = fromFound(r.found, type) ?: return@withContext Download.NOT_FOUND
+                online.pin(song.id, type)
+                cache.evictAll()
+                when {
+                    l.synced -> Download.SYNCED
+                    type == OnlineLyricsType.SYNCED -> Download.ONLY_PLAIN
+                    else -> Download.PLAIN
+                }
+            }
+        }
+    }
+
+    /** Back to the song's own lyrics (or none). */
+    suspend fun removeDownloaded(song: SongEntity) = withContext(Dispatchers.IO) {
+        online.remove(song.id)
+        cache.evictAll()
     }
 
     /** Forgets downloaded lyrics; the next play asks LRCLIB again. */
