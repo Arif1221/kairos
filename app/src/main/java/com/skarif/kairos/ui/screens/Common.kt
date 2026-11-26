@@ -42,6 +42,8 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -218,6 +220,17 @@ fun DialogItem(text: String, onClick: () -> Unit) {
         Text(text, Modifier.fillMaxWidth(), style = T.title, color = P.colors.text)
     }
 }
+
+/**
+ * Room to leave at the bottom of a pushed page (not a tab) so its last item can scroll clear of
+ * the mini player and its fade. 0 when no song is loaded. Provided by MainActivity.
+ */
+val LocalBottomClearance = androidx.compose.runtime.compositionLocalOf { 0.dp }
+
+/** The navigation bar's height, for lists that draw edge to edge instead of padding the screen. */
+@Composable
+fun navBarBottom(): Dp =
+    androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
 /** Whether the full player is on screen (false while it is built but hidden). */
 val LocalPlayerVisible = androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.runtime.State<Boolean>> { androidx.compose.runtime.mutableStateOf(true) }

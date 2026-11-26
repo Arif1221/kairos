@@ -288,7 +288,7 @@ fun PlaylistsScreen(vm: MainViewModel, onBack: () -> Unit, onNew: () -> Unit, on
             Modifier.fillMaxSize().statusBarsPadding(),
             flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
             overscrollEffect = band,
-            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp),
+            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp + navBarBottom() + LocalBottomClearance.current),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -381,7 +381,7 @@ fun NewPlaylistScreen(vm: MainViewModel, onDone: () -> Unit, initialSongs: List<
     val pickedSongs = picked.mapNotNull { songMap[it] }
 
     ScreenBackground {
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 12.dp + LocalBottomClearance.current), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             ScreenHeader("New playlist", onDone)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Mosaic(vm, pickedSongs, Modifier.size(104.dp))
@@ -524,7 +524,7 @@ fun CollectionScreen(
             Modifier.fillMaxSize(), state = listState,
             flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling(),
             overscrollEffect = band,
-            contentPadding = PaddingValues(bottom = 40.dp),
+            contentPadding = PaddingValues(bottom = 40.dp + navBarBottom() + LocalBottomClearance.current),
         ) {
             item {
                 Box(Modifier.fillMaxWidth().height(400.dp)) {

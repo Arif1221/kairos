@@ -1,12 +1,16 @@
 # Privacy policy
 
-_Last updated: 19 November 2026_
+_Last updated: 26 November 2026_
 
 Kairos is an offline music player made by SK Arif Hossain. This policy explains what the app does with your information.
 
 ## What Kairos collects
 
-Nothing. Kairos does not collect, transmit, sell or share any personal data, and it contains no analytics, advertising or crash-reporting services. The app does not have the internet permission, so it cannot send data anywhere.
+Nothing. Kairos does not collect, sell or share any personal data, and it contains no analytics, advertising or crash-reporting services.
+
+## Optional: fetching lyrics online
+
+Kairos has the internet permission for one feature, **Fetch lyrics online** (Settings > Lyrics), which is **off** until you turn it on. When it is on and a song has no lyrics of its own, Kairos asks [LRCLIB](https://lrclib.net), a free public lyrics database, for that song. The request contains only the song's title, artist, album name and length, plus the app's name and version. No account, device ID or listening history is sent. LRCLIB's own policies apply to the requests it receives. The lyrics that come back are saved in the app's private storage so each song is fetched once; *Clear downloaded lyrics* deletes them. Turn the setting off and Kairos makes no network requests at all.
 
 ## What stays on your phone
 
@@ -27,6 +31,7 @@ This data never leaves your phone. Uninstalling Kairos, or clearing its storage 
 | Notifications | To show playback controls in the notification |
 | Foreground service (media playback) | To keep playing when the app is in the background |
 | Change audio settings | For bit-perfect USB output on Android 14+ |
+| Internet | Only for the optional *Fetch lyrics online* setting (off by default) |
 
 Folder access for `.lrc` lyrics files is only requested when you choose a folder, and is only used to read lyrics.
 

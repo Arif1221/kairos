@@ -220,6 +220,8 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
         val backdrop = com.skarif.kairos.ui.components.rememberBackdrop(backArt, settings.blurBackground)
         CompositionLocalProvider(
             LocalPlayer provides player, com.skarif.kairos.ui.components.LocalBackdrop provides backdrop,
+            // Mini player: 12 dp above the nav bar, 64 dp tall, plus a little air above it.
+            com.skarif.kairos.ui.screens.LocalBottomClearance provides (if (song != null) 96.dp else 0.dp),
             androidx.compose.foundation.LocalOverscrollFactory provides com.skarif.kairos.ui.motion.IosOverscrollFactory,
         ) {
         // Black behind everything: what shows around the app when it sinks back behind the player.

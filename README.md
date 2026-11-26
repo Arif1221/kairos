@@ -15,7 +15,7 @@
 
 </div>
 
-Kairos plays the music already on your phone: MP3, FLAC, M4A/AAC, OGG, Opus and WAV. No account, no ads, no tracking, and no internet permission at all. It is built with Jetpack Compose and Media3 (ExoPlayer).
+Kairos plays the music already on your phone: MP3, FLAC, M4A/AAC, OGG, Opus and WAV. No account, no ads, no tracking. The only network use is optional lyrics fetching from [LRCLIB](https://lrclib.net), off until you turn it on. It is built with Jetpack Compose and Media3 (ExoPlayer).
 
 <p align="center">
   <img src="docs/screenshots/home.webp" width="23%" alt="Home: greeting, smart playlists and a Continue listening card" />
@@ -60,7 +60,7 @@ Android 9 (API 28) or newer. Bit-perfect USB output needs Android 14.
 
 ## Privacy
 
-Kairos does not collect, send or share any data. It has no internet permission. Your library, playlists and listening history stay in the app's private storage on your phone. Read the full [privacy policy](PRIVACY.md).
+Kairos does not collect, send or share any data. If you turn on *Fetch lyrics online*, it sends a song's title, artist, album and length to lrclib.net to find its lyrics, and nothing else. Your library, playlists and listening history stay in the app's private storage on your phone. Read the full [privacy policy](PRIVACY.md).
 
 ## Build from source
 

@@ -141,7 +141,7 @@ fun LyricsPane(vm: MainViewModel, onBack: () -> Unit, onQueue: () -> Unit, onCol
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    val source = (state as? LyricsState.Ready)?.lyrics?.let { if (it.source == Lyrics.SOURCE_EMBEDDED) "Embedded" else ".lrc file" }
+                    val source = (state as? LyricsState.Ready)?.lyrics?.let { when (it.source) { Lyrics.SOURCE_EMBEDDED -> "Embedded"; Lyrics.SOURCE_ONLINE -> "LRCLIB"; else -> ".lrc file" } }
                     Text(
                         (source?.let { "$it, " } ?: "") + if (offset == 0L) "in sync" else (if (offset > 0) "Later by " else "Earlier by ") + "%.1f s".format(abs(offset) / 1000f),
                         Modifier.weight(1f), style = T.title.copy(fontSize = 14.sp), color = Fg,

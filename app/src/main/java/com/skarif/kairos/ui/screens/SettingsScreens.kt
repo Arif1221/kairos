@@ -107,7 +107,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
     ScreenBackground {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState(), flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling()).statusBarsPadding().navigationBarsPadding()
-                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp),
+                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp + com.skarif.kairos.ui.screens.LocalBottomClearance.current),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             Header("Settings", onBack)
@@ -167,6 +167,24 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                     }
                 }
                 Pill("Allow a folder", { pickFolder.launch(null) }, icon = Ic.Plus, selected = true)
+
+                ToggleRow(
+                    "Fetch lyrics online", s.fetchLyricsOnline, { v -> vm.updateSettings { it.copy(fetchLyricsOnline = v) } },
+                    "When a song has none, look it up on lrclib.net. Sends only the title, artist, album and length; lyrics are saved so each song is fetched once",
+                )
+                if (s.fetchLyricsOnline) {
+                    Text("Fetch", style = T.small, color = c.muted)
+                    Segmented(listOf("Time-synced", "Plain text"), s.onlineLyricsType.ordinal, { i ->
+                        vm.updateSettings { it.copy(onlineLyricsType = com.skarif.kairos.data.OnlineLyricsType.entries[i]) }
+                    })
+                    Text(
+                        if (s.onlineLyricsType == com.skarif.kairos.data.OnlineLyricsType.SYNCED)
+                            "Synced lyrics when they exist, plain text otherwise. Also replaces plain lyrics from your files with synced ones."
+                        else "Just the words, no timing. Your own lyrics always come first.",
+                        style = T.small, color = c.muted,
+                    )
+                    Pill("Clear downloaded lyrics", vm::clearOnlineLyrics, icon = Ic.Close)
+                }
             }
 
             Card(Modifier) {
@@ -295,7 +313,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                     runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""
                 }
                 Text("Kairos $version", style = T.title, color = c.text)
-                Text("An offline music player. No account, no ads, no tracking: everything stays on this phone.", style = T.small, color = c.muted)
+                Text("An offline music player. No account, no ads, no tracking: everything stays on this phone, unless you turn on fetching lyrics online.", style = T.small, color = c.muted)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Pill("Source code", {
                         runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("https://github.com/Arif1221/kairos"))) }
@@ -328,7 +346,7 @@ fun FoldersScreen(vm: MainViewModel, onBack: () -> Unit) {
     ScreenBackground {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState(), flingBehavior = com.skarif.kairos.ui.motion.rememberIosFling()).statusBarsPadding().navigationBarsPadding()
-                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp),
+                .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 40.dp + com.skarif.kairos.ui.screens.LocalBottomClearance.current),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             Header("Music folders", onBack)

@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Only used by "Fetch lyrics online" (off by default) to reach lrclib.net. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Android 13+: audio only. Older versions: the general storage permission. -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission

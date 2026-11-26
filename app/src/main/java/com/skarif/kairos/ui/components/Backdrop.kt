@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -113,7 +114,9 @@ private fun DrawScope.drawCover(img: ImageBitmap, alpha: Float) {
     val side = maxOf(size.width, size.height) * 1.2f
     val dst = IntSize(side.toInt(), side.toInt())
     val off = IntOffset(((size.width - side) / 2).toInt(), ((size.height - side) / 2).toInt())
-    drawImage(img, dstOffset = off, dstSize = dst, alpha = alpha, filterQuality = FilterQuality.Low)
+    // The square is wider than a portrait page, so clip it to the page. Unclipped, the overflow
+    // painted over the page underneath while this one slid away (the "blur card" on back swipe).
+    clipRect { drawImage(img, dstOffset = off, dstSize = dst, alpha = alpha, filterQuality = FilterQuality.Low) }
 }
 
 private fun dotTile(step: Int, radius: Float, color: Color): ImageBitmap {

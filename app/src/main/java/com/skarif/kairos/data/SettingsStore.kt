@@ -26,6 +26,8 @@ enum class ThemeMode { LIGHT, DARK, SYSTEM }
  */
 enum class OutputMode { STANDARD, HI_RES, BIT_PERFECT }
 enum class LyricsPreference { EMBEDDED, LRC_FILE }
+/** What to ask LRCLIB for: synced lyrics (plain if there are none), or plain text only. */
+enum class OnlineLyricsType { SYNCED, PLAIN }
 enum class ReplayGainMode { OFF, TRACK, ALBUM }
 enum class SongSort(val label: String) {
     TITLE("Title"), ARTIST("Artist"), ALBUM("Album"), DATE_ADDED("Date added"), LENGTH("Length"), MOST_PLAYED("Most played")
@@ -42,6 +44,9 @@ data class Settings(
     val lyricsPreference: LyricsPreference = LyricsPreference.EMBEDDED,
     /** Folders the user granted through the system picker, used to find .lrc files. */
     val lrcFolderUris: Set<String> = emptySet(),
+    /** Look lyrics up on lrclib.net when the song has none (off by default: the app is offline otherwise). */
+    val fetchLyricsOnline: Boolean = false,
+    val onlineLyricsType: OnlineLyricsType = OnlineLyricsType.SYNCED,
     val outputMode: OutputMode = OutputMode.HI_RES,
     val replayGain: ReplayGainMode = ReplayGainMode.OFF,
     val excludedFolders: Set<String> = emptySet(),
@@ -89,6 +94,8 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
         val lrc = booleanPreferencesKey("lyrics_lrc")
         val lyricsPref = stringPreferencesKey("lyrics_pref")
         val lrcFolders = stringSetPreferencesKey("lrc_folders")
+        val fetchOnline = booleanPreferencesKey("lyrics_fetch_online")
+        val onlineType = stringPreferencesKey("lyrics_online_type")
         val output = stringPreferencesKey("output_mode")
         val replayGain = stringPreferencesKey("replay_gain")
         val excluded = stringSetPreferencesKey("excluded_folders")
@@ -133,6 +140,8 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
             readLrcFiles = p[K.lrc] ?: d.readLrcFiles,
             lyricsPreference = enumOr(p[K.lyricsPref], d.lyricsPreference),
             lrcFolderUris = p[K.lrcFolders] ?: d.lrcFolderUris,
+            fetchLyricsOnline = p[K.fetchOnline] ?: d.fetchLyricsOnline,
+            onlineLyricsType = enumOr(p[K.onlineType], d.onlineLyricsType),
             outputMode = enumOr(p[K.output], d.outputMode),
             replayGain = enumOr(p[K.replayGain], d.replayGain),
             excludedFolders = p[K.excluded] ?: d.excludedFolders,
@@ -165,6 +174,8 @@ class SettingsStore(context: Context, scope: CoroutineScope) {
         p[K.lrc] = s.readLrcFiles
         p[K.lyricsPref] = s.lyricsPreference.name
         p[K.lrcFolders] = s.lrcFolderUris
+        p[K.fetchOnline] = s.fetchLyricsOnline
+        p[K.onlineType] = s.onlineLyricsType.name
         p[K.output] = s.outputMode.name
         p[K.replayGain] = s.replayGain.name
         p[K.excluded] = s.excludedFolders

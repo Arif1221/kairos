@@ -11,6 +11,7 @@ import com.skarif.kairos.data.db.SongEntity
 import com.skarif.kairos.data.db.contentUri
 import com.skarif.kairos.lyrics.ByteSource
 import com.skarif.kairos.lyrics.LrcParser
+import com.skarif.kairos.lyrics.LyricLine
 import com.skarif.kairos.lyrics.Lyrics
 import com.skarif.kairos.lyrics.TagReader
 import kotlinx.coroutines.Dispatchers
@@ -20,7 +21,8 @@ import kotlinx.coroutines.withContext
 import java.io.FileInputStream
 
 /**
- * Finds lyrics for a song: embedded in the file's tags, and/or a .lrc file next to it.
+ * Finds lyrics for a song: embedded in the file's tags, and/or a .lrc file next to it, and, only
+ * if the user turned it on, from LRCLIB ([OnlineLyrics]).
  *
  * Why .lrc needs folder access: on Android 13+, READ_MEDIA_AUDIO only covers audio files, so a
  * plain .lrc file is invisible. The user grants the folder once through the system picker
@@ -29,13 +31,14 @@ import java.io.FileInputStream
 class LyricsRepository(
     private val context: Context,
     private val offsets: LyricsOffsetDao,
+    private val online: OnlineLyrics,
 ) {
     private val cache = LruCache<String, LyricsResult>(30)
 
     data class LyricsResult(val lyrics: Lyrics?)
 
     suspend fun load(song: SongEntity, s: Settings): Lyrics? = withContext(Dispatchers.IO) {
-        val key = "${song.id}|${s.readEmbeddedLyrics}|${s.readLrcFiles}|${s.lyricsPreference}|${s.lrcFolderUris.hashCode()}"
+        val key = "${song.id}|${s.readEmbeddedLyrics}|${s.readLrcFiles}|${s.lyricsPreference}|${s.lrcFolderUris.hashCode()}|${s.fetchLyricsOnline}|${s.onlineLyricsType}"
         cache.get(key)?.let { return@withContext it.lyrics }
 
         val embedded = if (s.readEmbeddedLyrics) readEmbedded(song) else null
@@ -46,8 +49,34 @@ class LyricsRepository(
             s.lyricsPreference == LyricsPreference.EMBEDDED -> embedded
             else -> lrc
         }?.takeUnless { it.isEmpty }
-        cache.put(key, LyricsResult(pick))
-        pick
+        val result = if (s.fetchLyricsOnline) withOnline(song, pick, s.onlineLyricsType) else pick
+        cache.put(key, LyricsResult(result))
+        result
+    }
+
+    /**
+     * Your own lyrics come first. LRCLIB is asked only when the song has none, or (when synced is
+     * wanted) when it only has plain text: then synced lyrics from LRCLIB replace it.
+     */
+    private fun withOnline(song: SongEntity, local: Lyrics?, type: OnlineLyricsType): Lyrics? {
+        val wantSynced = type == OnlineLyricsType.SYNCED
+        if (local != null && (local.synced || !wantSynced)) return local
+        val found = online.lookup(song) ?: return local
+        val fetched = when {
+            wantSynced && found.synced != null -> LrcParser.parse(found.synced, Lyrics.SOURCE_ONLINE)
+            local != null -> return local // plain from the file beats plain from the internet
+            found.plain != null -> LrcParser.parse(found.plain, Lyrics.SOURCE_ONLINE)
+            // Plain only, but LRCLIB has just synced: show its words without the timing.
+            found.synced != null -> LrcParser.parse(found.synced, Lyrics.SOURCE_ONLINE).let { l -> Lyrics(false, l.lines.map { LyricLine(-1, it.text) }, Lyrics.SOURCE_ONLINE) }
+            else -> null
+        }
+        return fetched?.takeUnless { it.isEmpty } ?: local
+    }
+
+    /** Forgets downloaded lyrics; the next play asks LRCLIB again. */
+    fun clearOnline() {
+        online.clear()
+        cache.evictAll()
     }
 
     fun observeOffset(songId: Long): Flow<Long> = offsets.observe(songId).map { it ?: 0L }

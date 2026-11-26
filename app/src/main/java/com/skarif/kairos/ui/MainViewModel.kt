@@ -228,10 +228,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }.state(cachedColors)
 
     private val lyricsInputs = settings.map {
-        listOf(it.readEmbeddedLyrics, it.readLrcFiles, it.lyricsPreference, it.lrcFolderUris)
+        listOf(it.readEmbeddedLyrics, it.readLrcFiles, it.lyricsPreference, it.lrcFolderUris, it.fetchLyricsOnline, it.onlineLyricsType)
     }.distinctUntilChanged()
 
-    val lyrics: StateFlow<LyricsState> = combine(currentSong, lyricsInputs) { s, _ -> s }
+    /** Bumped to load the current song's lyrics again (after clearing downloaded lyrics). */
+    private val lyricsReload = MutableStateFlow(0)
+
+    val lyrics: StateFlow<LyricsState> = combine(currentSong, lyricsInputs, lyricsReload) { s, _, _ -> s }
         .transformLatest { s ->
             if (s == null) {
                 emit(LyricsState.None)
@@ -865,6 +868,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         getApplication<Application>().contentResolver
             .takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         updateSettings { it.copy(lrcFolderUris = it.lrcFolderUris + uri.toString()) }
+    }
+
+    /** Deletes lyrics saved from LRCLIB; songs are looked up again the next time they play. */
+    fun clearOnlineLyrics() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            ct.lyrics.clearOnline()
+            lyricsReload.value++
+        }
+        notify("Downloaded lyrics cleared")
     }
 
     fun removeLrcFolder(uri: String) {

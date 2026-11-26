@@ -105,7 +105,18 @@ class RubberBand : OverscrollEffect {
 
     override suspend fun applyToFling(velocity: Velocity, performFling: suspend (Velocity) -> Velocity) {
         if (stretch != Offset.Zero) {
-            // Let go while stretched: spring back, carrying the finger's speed.
+            // A stretch can be left behind when a touch interrupts the spring-back (the touch
+            // cancels it mid-way). If this fling heads back into the content, it must still scroll:
+            // relax the band alongside it. Before, the fling went into the spring-back only and the
+            // list stopped dead under the finger.
+            if (headsIntoContent(stretch.x, velocity.x) || headsIntoContent(stretch.y, velocity.y)) {
+                coroutineScope {
+                    launch { settle(0f, 0f, Motion.ios(0.3f, 1f)) }
+                    performFling(velocity)
+                }
+                return
+            }
+            // Let go while stretched toward the end: spring back, carrying the finger's speed.
             settle(velocity.x, velocity.y, Motion.ios(0.4f, 1f))
             return
         }
@@ -115,6 +126,10 @@ class RubberBand : OverscrollEffect {
             settle((left.x * 0.35f).coerceIn(-6000f, 6000f), (left.y * 0.35f).coerceIn(-6000f, 6000f), Motion.ios(0.5f, 1f))
         }
     }
+
+    /** A fling away from the end it is stretched past (stretch and speed point opposite ways). */
+    private fun headsIntoContent(pulled: Float, velocity: Float) =
+        pulled != 0f && abs(velocity) > 50f && sign(velocity) != sign(pulled)
 
     private suspend fun settle(vx: Float, vy: Float, spec: androidx.compose.animation.core.AnimationSpec<Float>) = coroutineScope {
         launch { animate(stretch.x, 0f, vx, spec) { v, _ -> stretch = Offset(v, stretch.y) } }
