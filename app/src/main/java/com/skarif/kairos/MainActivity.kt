@@ -163,8 +163,11 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
         // animation before the player existed, so it popped in halfway through.
         val openPlayer: () -> Unit = {
             openScope.launch {
-                kotlinx.coroutines.withTimeoutOrNull(1500) { vm.currentSong.first { it != null } }
-                player.expand()
+                // Wait briefly for a song that's just been started; with none, don't open. Opening
+                // with no song once left the player "open" but not on screen, and the app behind it
+                // stops drawing while the player covers it: a black screen.
+                val s = kotlinx.coroutines.withTimeoutOrNull(1500) { vm.currentSong.first { it != null } }
+                if (s != null) player.expand() else vm.notify("Play a song first")
             }
         }
 
@@ -172,6 +175,15 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
         val route = entry?.destination?.route
         LaunchedEffect(route) { com.skarif.kairos.perf.PerfLog.state("screen", route) }
         val playerUp by remember { derivedStateOf { player.progress.value > 0.5f } }
+        // The player exists only with a song, and not during onboarding.
+        val playerShown = route != null && route != "onboarding" && song != null
+        // Safety net: never leave the player "open" with nothing on screen to show it.
+        // Whatever asks for it (the dock, the menu's Now playing or Queue), while there's no player to
+        // show, any opening is undone at once.
+        LaunchedEffect(playerShown) {
+            if (playerShown) return@LaunchedEffect
+            androidx.compose.runtime.snapshotFlow { player.progress.value }.collect { if (it > 0f) player.progress.snapTo(0f) }
+        }
 
         // Bar icons must contrast with what is behind them: the player's cover is dark at the top,
         // album pages too; everything else follows the theme.
@@ -239,7 +251,8 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 modifier = Modifier
                     .graphicsLayer {
                         val p = maxOf(player.progress.value.coerceIn(0f, 1f), sheetDepth.value * 0.6f)
-                        if (p >= 0.999f) { alpha = 0f; return@graphicsLayer }
+                        // Skip drawing the app only while the player really covers it.
+                        if (p >= 0.999f && playerShown) { alpha = 0f; return@graphicsLayer }
                         if (p > 0f) {
                             val sc = 1f - 0.06f * p
                             scaleX = sc; scaleY = sc
@@ -300,7 +313,7 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
             }
 
             // Where the mini player rests: above the dock on tabs, near the bottom edge elsewhere.
-            val showPlayer = route != null && route != "onboarding" && song != null
+            val showPlayer = playerShown
             val density = androidx.compose.ui.platform.LocalDensity.current
             val navBar = androidx.compose.foundation.layout.WindowInsets.navigationBars.getBottom(density).toFloat()
             val targetBottom = navBar + with(density) { (if (route in TABS) 12.dp + 76.dp + 10.dp else 12.dp).toPx() }
@@ -388,8 +401,8 @@ private fun PlayerRoot(start: String, vm: MainViewModel = viewModel()) {
                 MenuDrawer(vm, onClose = { menuOpen = false }) { r ->
                     menuOpen = false
                     when (r) {
-                        "now" -> player.expand()
-                        "queue" -> player.expand(PlayerPage.QUEUE)
+                        "now" -> if (song != null) player.expand() else vm.notify("Play a song first")
+                        "queue" -> if (song != null) player.expand(PlayerPage.QUEUE) else vm.notify("Play a song first")
                         "eq" -> tool = Tool.EQ
                         "sleep" -> tool = Tool.SLEEP
                         in TABS -> nav.tab(r)
