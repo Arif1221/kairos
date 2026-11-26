@@ -206,6 +206,7 @@ private fun WelcomeStep() {
             Modifier.rise(enter, 2), style = T.body.copy(fontSize = 17.sp, lineHeight = 24.sp), color = c.muted,
         )
         Spacer(Modifier.weight(0.15f))
+        com.skarif.kairos.ui.components.MadeBy(Modifier.rise(enter, 3))
     }
 }
 

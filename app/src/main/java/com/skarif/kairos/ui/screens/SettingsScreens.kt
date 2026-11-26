@@ -38,6 +38,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.skarif.kairos.data.LyricsPreference
 import com.skarif.kairos.data.OutputMode
@@ -315,6 +316,8 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onFolders: () -> Unit,
                 }
             }
 
+            com.skarif.kairos.ui.components.DeveloperCard()
+
             Pill("Equalizer", onEqualizer, icon = Ic.Sliders, big = true, modifier = Modifier.fillMaxWidth())
     }
 }
@@ -359,3 +362,4 @@ fun FoldersScreen(vm: MainViewModel, onBack: () -> Unit) {
             (scan as? ScanState.Done)?.let { Text("Library updated: ${it.songs} songs.", style = T.body, color = c.text) }
     }
 }
+

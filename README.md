@@ -31,6 +31,8 @@ Kairos plays the music already on your phone: MP3, FLAC, M4A/AAC, OGG, Opus and 
 - Reads lyrics embedded in the file (MP3 `USLT`/`SYLT`, FLAC Vorbis comments, M4A `©lyr`) and `.lrc` files next to your songs
 - Word-level timestamps, `[offset]` tags, and a per-song timing fix in 0.1 s steps
 - Tap a line to jump there
+- Fetch missing lyrics from LRCLIB (synced or plain, your pick), keep them in the app, or save them as `.lrc` next to the song
+- Share one or several lines as an image card in the album's colours
 
 **Sound**
 - Hi-res output (32-bit float) and bit-perfect USB output on Android 14+
@@ -43,12 +45,17 @@ Kairos plays the music already on your phone: MP3, FLAC, M4A/AAC, OGG, Opus and 
 - Songs with several artists ("A feat. B") show under each of them
 - Choose which folders to scan; skip short clips
 - Playlists, favourites, and auto playlists: Most played, On repeat, Recently added, Forgotten gems, genre mixes and more
-- Listening stats: time listened, top songs and artists, streaks
+- Listening stats: time listened, top songs and artists, streaks, and a year-in-review story
+- Song radio and Smart Shuffle built from what you play together, with artists and albums spread out
+- Drag to reorder the queue; shake to reshuffle what's coming up
+- Backup and restore of favourites, playlists, history and settings to one file
 
 **Design**
 - The whole app takes its accent colour from the cover that is playing
 - One player surface: swipe the mini player up into the full player and back down
 - Swipe the cover to change song; swipe rows to play next or remove
+- A living background: the album art drifts and breathes behind every screen while music plays
+- Vinyl mode for the player, an edge glow with each new song, and a "Kairos moment" when the chorus hits
 - Light, dark and pure-black themes
 
 ## Download
@@ -93,6 +100,16 @@ app/src/main/java/com/skarif/kairos/
 ├── data/        Room database, MediaScanner, SettingsStore, Lyrics and Artwork repositories
 └── lyrics/      TagReader and LrcParser (pure Java)
 ```
+
+## Developer
+
+<img src="docs/developer.jpg" width="96" align="left" alt="SK Arif Hossain" />
+
+**SK Arif Hossain** builds Kairos on his own: design, code and releases. B.Tech IT student from West Bengal, India.
+
+[Instagram](https://www.instagram.com/seeking.starlight) · [GitHub](https://github.com/Arif1221) · [LinkedIn](https://www.linkedin.com/in/skarifhossain-it)
+
+<br clear="left" />
 
 ## Contributing
 

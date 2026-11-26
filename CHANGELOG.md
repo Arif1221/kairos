@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.9.2
+- "Made by" card in Settings and on the welcome screen
+
 Offline builds. Each version is on the [Releases](https://github.com/Arif1221/kairos/releases) page.
 
 ## 0.8.4 (2026-11-25)
