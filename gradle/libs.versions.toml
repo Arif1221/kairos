@@ -1,4 +1,7 @@
 [versions]
+# 1.2.0 stops a crash: a back gesture still moving after its handler was removed threw
+# "This input is not added to any dispatcher" (b/515890298). Activity 1.13 brings 1.1.x.
+navigationEvent = "1.2.0"
 agp = "9.5.2"
 kotlin = "2.4.21"
 ksp = "2.3.14"
@@ -16,6 +19,7 @@ coroutines = "1.11.0"
 junit = "4.13.2"
 
 [libraries]
+androidx-navigationevent-compose = { module = "androidx.navigationevent:navigationevent-compose", version.ref = "navigationEvent" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }

@@ -12,8 +12,8 @@ android {
         applicationId = "com.skarif.kairos"
         minSdk = 28 // DynamicsProcessing (10-band EQ) needs Android 9
         targetSdk = 37
-        versionCode = 31
-        versionName = "0.9.3"
+        versionCode = 32
+        versionName = "0.9.3.1"
     }
 
     // Release signing comes from the environment (GitHub secrets in CI), never from the repo.
@@ -59,6 +59,7 @@ ksp {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.navigationevent.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)

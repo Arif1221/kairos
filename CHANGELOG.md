@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.9.3.1
+- Fix: a crash during the back gesture on Android 16+ ("This input is not added to any dispatcher")
+
 ## 0.9.3
 - Licence: Apache 2.0 with credit required (see NOTICE); earlier versions stay GPL-3.0
 - Settings > Credits lists every project Kairos is built with
